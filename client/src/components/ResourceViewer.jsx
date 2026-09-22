@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import axios from 'axios';
+import { sortResources } from '../lib/resourceSort';
 import YamlViewer from './YamlViewer';
 import LogsViewer from './LogsViewer';
 import TerminalViewer from './TerminalViewer';
@@ -31,15 +32,6 @@ const formatAge = (createdAt) => {
   if (seconds < 3600) return `${Math.floor(seconds / 60)}m`;
   if (seconds < 86400) return `${Math.floor(seconds / 3600)}h`;
   return `${Math.floor(seconds / 86400)}d`;
-};
-
-// "10Gi" / "500Mi" -> bytes, so capacity columns sort by size and not by string
-const parseQuantity = (q) => {
-  if (!q) return -1;
-  const m = String(q).match(/^([\d.]+)\s*([KMGTP]i?)?/);
-  if (!m) return -1;
-  const units = { K: 1e3, M: 1e6, G: 1e9, T: 1e12, P: 1e15, Ki: 1024, Mi: 1024 ** 2, Gi: 1024 ** 3, Ti: 1024 ** 4, Pi: 1024 ** 5 };
-  return parseFloat(m[1]) * (units[m[2]] || 1);
 };
 
 const RESOURCE_LABELS = {
@@ -306,49 +298,10 @@ export default function ResourceViewer({
     return prev.dir === 'asc' ? { col, dir: 'desc' } : null;
   });
 
-  // Ordering key for a column — a number where the column is numeric, a string
-  // otherwise. Missing numbers sort last in ascending order.
-  const sortValue = (r, col) => {
-    const m = podMetrics[`${r.namespace}/${r.name}`];
-    switch (col) {
-      case 'Name': return r.name || '';
-      case 'Namespace': return r.namespace || '';
-      case 'Node': return r.node || '';
-      case 'Status': return r.status || '';
-      case 'Containers': return (r.containerStates || []).length;
-      case 'CPU': return m ? m.cpuMilli : -1;
-      case 'Memory': return m ? m.memBytes : -1;
-      case 'Restarts': return Number(r.restarts) || 0;
-      // ascending = youngest first, undated rows last
-      case 'Age': return r.createdAt ? -new Date(r.createdAt).getTime() : Infinity;
-      case 'Keys': return Number(r.dataKeys) || 0;
-      case 'Secrets': return Number(r.saSecrets) || 0;
-      case 'Capacity': return parseQuantity(r.capacity);
-      case 'Type': return r.secretType || '';
-      case 'Class': return r.ingressClass || '';
-      case 'Hosts': return r.hosts || '';
-      case 'Policy Types': return r.policyTypes || '';
-      case 'Access Modes': return r.accessModes || '';
-      case 'Reclaim Policy': return r.reclaimPolicy || '';
-      case 'Storage Class': return r.storageClass || '';
-      case 'Volume': return r.volume || '';
-      case 'Claim': return r.claim || '';
-      case 'Provisioner': return r.provisioner || '';
-      case 'Binding Mode': return r.bindingMode || '';
-      default: return '';
-    }
-  };
-
-  const sortedResources = useMemo(() => {
-    if (!sort) return resources;
-    const dir = sort.dir === 'asc' ? 1 : -1;
-    return [...resources].sort((a, b) => {
-      const va = sortValue(a, sort.col);
-      const vb = sortValue(b, sort.col);
-      if (typeof va === 'number' && typeof vb === 'number') return (va - vb) * dir;
-      return String(va).localeCompare(String(vb), undefined, { numeric: true, sensitivity: 'base' }) * dir;
-    });
-  }, [resources, sort, podMetrics]);
+  const sortedResources = useMemo(
+    () => sortResources(resources, sort, podMetrics),
+    [resources, sort, podMetrics]
+  );
 
   const renderCell = (resource, column) => {
     switch (column) {
@@ -548,9 +501,9 @@ export default function ResourceViewer({
               </tr>
             </thead>
             <tbody>
-              {sortedResources.map((resource, idx) => (
+              {sortedResources.map((resource) => (
                 <tr
-                  key={`${rowKey(resource)}-${idx}`}
+                  key={rowKey(resource)}
                   className={`resource-table-row ${
                     selectedResource?.name === resource.name ? 'active' : ''
                   } ${isRowSelected(resource) ? 'selected' : ''}`}
