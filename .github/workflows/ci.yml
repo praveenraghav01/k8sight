@@ -56,7 +56,7 @@ jobs:
         run: npm ci --prefix client
 
       - name: Server syntax check
-        run: node --check server.js
+        run: node --check server.js && node --check gke.js && node --check gke-token.js
 
       # The actual gate: a failing test exits non-zero and fails the job.
       - name: Run tests

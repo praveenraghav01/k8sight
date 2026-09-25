@@ -20,6 +20,7 @@ export default function Navigation({
   onSelectSecurityView,
   onAddAzure,
   onAddAws,
+  onAddGke,
   onAddLocal,
   onOpenPreferences
 }) {
@@ -151,6 +152,7 @@ export default function Navigation({
           onChange={handleContextChange}
           onAddAzure={onAddAzure}
           onAddAws={onAddAws}
+          onAddGke={onAddGke}
           onAddLocal={onAddLocal}
         />
       </div>

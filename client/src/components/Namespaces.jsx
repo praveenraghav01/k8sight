@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import Icon from './Icons';
 import Loader from './Loader';
@@ -14,24 +14,27 @@ const formatAge = (createdAt) => {
 
 const statusClass = (s) => (s === 'Active' ? 'running' : s === 'Terminating' ? 'pending' : 'failed');
 
-export default function Namespaces({ onNavigate }) {
+export default function Namespaces({ onNavigate, refreshSignal = 0 }) {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [search, setSearch] = useState('');
 
+  // Later refreshes reload in place — the table stays, only the values change.
+  const didMount = useRef(false);
   useEffect(() => {
-    fetchNamespaces();
-  }, []);
+    fetchNamespaces({ silent: didMount.current });
+    didMount.current = true;
+  }, [refreshSignal]);
 
-  const fetchNamespaces = async () => {
-    setLoading(true);
+  const fetchNamespaces = async ({ silent = false } = {}) => {
+    if (!silent) setLoading(true);
     try {
       const res = await axios.get('/api/namespaces');
       setItems(res.data.details || (res.data.namespaces || []).map(n => ({ name: n, status: 'Active' })));
       setError(null);
     } catch (err) {
-      setError(`Failed to fetch namespaces: ${err.message}`);
+      if (!silent) setError(`Failed to fetch namespaces: ${err.message}`);
     } finally {
       setLoading(false);
     }

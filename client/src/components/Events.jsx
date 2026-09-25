@@ -1,9 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import Icon from './Icons';
 import Loader from './Loader';
 
-export default function Events({ namespace = 'all' }) {
+export default function Events({ namespace = 'all', refreshSignal = 0 }) {
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -12,16 +12,26 @@ export default function Events({ namespace = 'all' }) {
     fetchEvents();
   }, [namespace]);
 
-  const fetchEvents = async () => {
-    setLoading(true);
+  // Global/auto refresh: pull the new events in under the table, no loader.
+  const didMount = useRef(false);
+  useEffect(() => {
+    if (!didMount.current) { didMount.current = true; return; }
+    fetchEvents({ silent: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refreshSignal]);
+
+  const fetchEvents = async ({ silent = false } = {}) => {
+    if (!silent) setLoading(true);
     try {
       const ns = namespace || 'all';
       const response = await axios.get(`/api/events/${ns}`);
       setEvents(response.data.events || []);
       setError(null);
     } catch (err) {
-      setError(`Failed to fetch events: ${err.message}`);
-      setEvents([]);
+      if (!silent) {
+        setError(`Failed to fetch events: ${err.message}`);
+        setEvents([]);
+      }
     } finally {
       setLoading(false);
     }

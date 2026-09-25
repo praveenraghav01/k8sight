@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import hljs from 'highlight.js';
 import 'highlight.js/styles/atom-one-dark.css';
@@ -17,7 +17,7 @@ const formatAge = (dateStr) => {
   return `${Math.floor(seconds / 86400)}d`;
 };
 
-export default function Helm() {
+export default function Helm({ refreshSignal = 0 }) {
   const [releases, setReleases] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -31,21 +31,31 @@ export default function Helm() {
     fetchReleases();
   }, []);
 
+  // Global/auto refresh: reload the list in place, keeping the open release and
+  // its YAML tab — no remount, no loader flash.
+  const didMount = useRef(false);
+  useEffect(() => {
+    if (!didMount.current) { didMount.current = true; return; }
+    fetchReleases({ silent: true });
+  }, [refreshSignal]);
+
   useEffect(() => {
     if (selectedRelease) {
       fetchYaml(selectedRelease, activeTab);
     }
   }, [selectedRelease, activeTab]);
 
-  const fetchReleases = async () => {
-    setLoading(true);
+  const fetchReleases = async ({ silent = false } = {}) => {
+    if (!silent) setLoading(true);
     try {
       const response = await axios.get('/api/helm/releases');
       setReleases(response.data.releases || []);
       setError(null);
     } catch (err) {
-      setError(`Failed to fetch helm releases: ${err.response?.data?.error || err.message}`);
-      setReleases([]);
+      if (!silent) {
+        setError(`Failed to fetch helm releases: ${err.response?.data?.error || err.message}`);
+        setReleases([]);
+      }
     } finally {
       setLoading(false);
     }

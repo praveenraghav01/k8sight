@@ -42,6 +42,10 @@ pnpm-debug.log*
 *.pem
 *.key
 
+# Google OAuth client for GKE browser sign-in — generated at build time from
+# GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET; never committed.
+gke-oauth.json
+
 # Never commit real kubeconfigs
 kubeconfig
 kubeconfig.*
@@ -75,3 +79,9 @@ coverage/
 
 # Fetched trivy binary (scripts/fetch-trivy.mjs) — not committed
 /bin/
+
+# Bundled token helpers (scripts/bundle-token-helpers.mjs) — generated per build
+/dist-helpers/
+
+# /brag skill video output — not part of the app
+/brag-output/

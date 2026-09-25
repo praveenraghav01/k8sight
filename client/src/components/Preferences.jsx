@@ -20,7 +20,7 @@ const SECTIONS = [
   { key: 'about', label: 'About', icon: 'details' },
 ];
 
-export default function Preferences({ configStatus, theme, onSetTheme, onChangeConfig, onAddAzure, onAddAws, initialSection, onClose }) {
+export default function Preferences({ configStatus, theme, onSetTheme, onChangeConfig, onAddAzure, onAddAws, onAddGke, initialSection, onClose }) {
   const [section, setSection] = useState(initialSection || 'general');
   useEffect(() => { if (initialSection) setSection(initialSection); }, [initialSection]);
 
@@ -50,7 +50,7 @@ export default function Preferences({ configStatus, theme, onSetTheme, onChangeC
         )}
         {section === 'general' && <GeneralSection theme={theme} onSetTheme={onSetTheme} />}
         {section === 'kubernetes' && <KubernetesSection configStatus={configStatus} onChangeConfig={onChangeConfig} />}
-        {section === 'integrations' && <IntegrationsSection onAddAzure={onAddAzure} onAddAws={onAddAws} />}
+        {section === 'integrations' && <IntegrationsSection onAddAzure={onAddAzure} onAddAws={onAddAws} onAddGke={onAddGke} />}
         {section === 'external-tools' && <ExternalToolsSection />}
         {section === 'assistant' && <AssistantSection />}
         {section === 'mcp' && <McpSection />}
@@ -100,7 +100,7 @@ function KubernetesSection({ configStatus, onChangeConfig }) {
 }
 
 /* ── Cloud Integrations ──────────────────────────────────────────── */
-function IntegrationsSection({ onAddAzure, onAddAws }) {
+function IntegrationsSection({ onAddAzure, onAddAws, onAddGke }) {
   return (
     <div className="prefs-section">
       <h2 className="prefs-h2">Cloud Integrations</h2>
@@ -115,6 +115,11 @@ function IntegrationsSection({ onAddAzure, onAddAws }) {
           <div className="prefs-int-head"><Icon name="aws" size={22} /> <span>AWS EKS</span></div>
           <p className="prefs-muted">SSO, access keys or IAM role — discover and import EKS clusters.</p>
           <button className="prefs-btn primary" onClick={onAddAws}>Add AWS clusters</button>
+        </div>
+        <div className="prefs-int-card">
+          <div className="prefs-int-head"><Icon name="gcp" size={22} /> <span>Google GKE</span></div>
+          <p className="prefs-muted">Browser sign-in or a service-account key — no <code>gcloud</code> required.</p>
+          <button className="prefs-btn primary" onClick={onAddGke}>Add GKE clusters</button>
         </div>
       </div>
     </div>

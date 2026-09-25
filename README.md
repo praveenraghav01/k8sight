@@ -30,6 +30,8 @@ A native desktop app (macOS · Windows · Linux) — and a Docker image — for 
 - Live cluster dashboard — node/pod health, workload charts, capacity.
 - Every workload type (Pods, Deployments, StatefulSets, DaemonSets, Services, …) with live CPU/memory, per-container status, and cross-links (namespace → node → pod → owner).
 - Interactive pan/zoom topology graph, lazy-loaded Custom Resource tree, and Helm releases with values and rendered manifests.
+- Sortable resource tables — click any column header to sort by value (CPU, memory, age, restarts, capacity), ascending → descending → off.
+- Background auto-refresh that updates data in place — no loader flash, and your selection, active tab, search, scroll and topology pan/zoom are preserved.
 - Command palette (⌘K), native title bar with back/forward history, light & dark themes.
 
 **Operate**
@@ -39,8 +41,8 @@ A native desktop app (macOS · Windows · Linux) — and a Docker image — for 
 - Port-forward a Service to `localhost`, and a multi-tab bottom panel for logs/terminal/YAML.
 
 **Cloud clusters, no CLI**
-- One-click **AWS EKS** (SSO, access keys, or assume-role) and **Azure AKS** (system browser or `az`) — discover clusters across accounts/subscriptions and merge them into your kubeconfig. Bundled token helpers authenticate at runtime, so *using* imported clusters needs no `aws`/`az`/`kubelogin`.
-- GKE, on-prem, kind/minikube and any other context work straight from your existing kubeconfig.
+- One-click **AWS EKS** (SSO, access keys, or assume-role), **Azure AKS** (system browser or `az`), and **Google GKE** (your existing `gcloud` login, browser OAuth, or a service-account key) — discover clusters across accounts / subscriptions / projects and merge them into your kubeconfig. Bundled token helpers authenticate at runtime, so *using* imported clusters needs no `aws`/`az`/`gcloud`/`kubelogin`/`gke-gcloud-auth-plugin`.
+- On-prem, kind/minikube and any other context work straight from your existing kubeconfig.
 
 **Security Center**
 - Scan running images for CVEs, audit configuration and RBAC risk, and find exposed secrets — reading **Trivy Operator** reports or a **bundled Trivy** binary, so you can scan with nothing installed in-cluster.
@@ -67,7 +69,7 @@ k8sight is a **desktop UI for clusters you already have** — closest in spirit 
 | Built-in security scan (image CVEs, config, RBAC) | ✅ *bundled Trivy* | via add-ons | — |
 | AI assistant + MCP server | ✅ | — | — |
 | Try with no cluster (demo mode) | ✅ | — | — |
-| One-click EKS/AKS onboarding (no CLI) | ✅ | ✅ | — |
+| One-click EKS/AKS/GKE onboarding (no CLI) | ✅ | ✅ | — |
 | Free & open-source | ✅ | ✅ | k9s ✅ · Lens: sign-in required |
 
 > [!NOTE]
@@ -97,7 +99,7 @@ npm run dist        # builds the UI and packages for the current OS → release/
 | Linux | `k8sight-linux.AppImage` and `k8sight-linux.deb` |
 
 > [!IMPORTANT]
-> Builds are unsigned / ad-hoc signed (no paid certificate). On another Mac, right-click → **Open** (or `xattr -dr com.apple.quarantine "/Applications/k8sight.app"`); on Windows, SmartScreen → **More info → Run anyway**.
+> The **macOS** app is **Developer ID–signed and notarized** — open the `.dmg`, drag k8sight to Applications, and it launches normally (no right-click workaround). The disk image itself isn't notarized yet, so macOS may ask you to confirm opening the `.dmg` the first time. **Windows** builds are unsigned — SmartScreen → **More info → Run anyway**.
 
 ### Docker
 
@@ -136,7 +138,7 @@ For a single-port production run: `npm run build && npm start`, then open **http
 
 1. **⌘K** (Ctrl+K) — jump to any view, cluster, or action; the toolbar's back/forward arrows retrace your steps.
 2. **Pick a context** — the searchable sidebar selector switches clusters; pin favourites to the left rail.
-3. **Add a cloud cluster** — the **+** button → **AWS** or **Azure** discovers and merges clusters into your kubeconfig.
+3. **Add a cloud cluster** — the **+** button → **AWS**, **Azure**, or **GKE** discovers and merges clusters into your kubeconfig.
 4. **Click a row** — opens the detail drawer (with live pod metric graphs); the **⋮** menu has Details, Logs, Terminal, Edit YAML.
 5. **AI & agents** — launch from the toolbar; configure in **Preferences → AI / External Tools**.
 
@@ -197,7 +199,7 @@ All tools act on the **currently selected context**. Run the bridge standalone w
 - **Frontend** (`client/`) — React + Vite; same-origin `/api` + `/ws/exec`, xterm.js terminal, ⌘K palette, token-driven theming.
 - **Cloud** (`aws-eks.js`, `azure-aks.js`, `eks-token.js`, `azure-token.js`) — CLI-free EKS/AKS discovery, kubeconfig merge, and native runtime auth via bundled token helpers.
 - **Security** (`trivy-scan.js`) — reads Trivy Operator reports or runs a bundled Trivy binary.
-- **Desktop** (`electron/`) — Electron shell that runs the backend as a utility process; `after-pack.cjs` ad-hoc signs the macOS build. Released for all three OSes by the [`Build & Release`](.github/workflows/release.yml) workflow on a `v*.*.*` tag.
+- **Desktop** (`electron/`) — Electron shell that runs the backend as a utility process. Released macOS builds are **Developer ID–signed and notarized** by the [`Build & Release`](.github/workflows/release.yml) workflow (`after-pack.cjs` ad-hoc-signs local dev builds); all three OSes are published on a `v*.*.*` tag.
 
 ## Troubleshooting
 

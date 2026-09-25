@@ -85,20 +85,23 @@ export default function Topology({ namespaces = [], refreshSignal = 0 }) {
   const didMountRef = useRef(false);
   useEffect(() => {
     if (!didMountRef.current) { didMountRef.current = true; return; }
-    if (namespace) fetchTopology(namespace);
+    if (namespace) fetchTopology(namespace, { silent: true });
   }, [refreshSignal]);
 
-  const fetchTopology = async (ns) => {
-    setLoading(true);
+  // `silent` = background refresh: no loader over the graph, and the view the
+  // user has framed (pan/zoom) is left exactly as it is.
+  const fetchTopology = async (ns, { silent = false } = {}) => {
+    if (!silent) setLoading(true);
     try {
       const res = await axios.get(`/api/topology/${ns}`);
       setData({ nodes: res.data.nodes || [], edges: res.data.edges || [] });
       setError(res.data.error || null);
-      setPan({ x: 40, y: 40 });
-      setZoom(1);
+      if (!silent) { setPan({ x: 40, y: 40 }); setZoom(1); }
     } catch (err) {
-      setError(`Failed to load topology: ${err.message}`);
-      setData({ nodes: [], edges: [] });
+      if (!silent) {
+        setError(`Failed to load topology: ${err.message}`);
+        setData({ nodes: [], edges: [] });
+      }
     } finally {
       setLoading(false);
     }

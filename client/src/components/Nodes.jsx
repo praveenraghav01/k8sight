@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import Icon from './Icons';
 import MetricsChart from './MetricsChart';
@@ -26,7 +26,7 @@ const formatMemory = (mem) => {
   return mem;
 };
 
-export default function Nodes({ focusNode, onFocusHandled, onNavigate }) {
+export default function Nodes({ focusNode, onFocusHandled, onNavigate, refreshSignal = 0 }) {
   const [nodes, setNodes] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -45,6 +45,16 @@ export default function Nodes({ focusNode, onFocusHandled, onNavigate }) {
     fetchNodes();
   }, []);
 
+  // Global/auto refresh: re-fetch in place (no remount), so the selected node,
+  // the open tab and the metrics history stay put and no loader flashes.
+  const didMount = useRef(false);
+  useEffect(() => {
+    if (!didMount.current) { didMount.current = true; return; }
+    fetchNodes({ silent: true });
+    if (selectedNode && activeTab === 'pods') fetchNodePods(selectedNode.name, { silent: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refreshSignal]);
+
   // Auto-select a node when navigated here via a cross-link
   useEffect(() => {
     if (!focusNode || !nodes.length) return;
@@ -56,9 +66,12 @@ export default function Nodes({ focusNode, onFocusHandled, onNavigate }) {
     onFocusHandled?.();
   }, [focusNode, nodes]);
 
-  // Live node metrics polling for the detail graphs
+  // Live node metrics polling for the detail graphs. Keyed on the node *name*:
+  // a refresh swaps in a new node object for the same node, and re-running this
+  // would wipe the collected history.
+  const selectedNodeName = selectedNode?.name;
   useEffect(() => {
-    if (!selectedNode) return;
+    if (!selectedNodeName) return;
     let active = true;
     setNcpuHist([]);
     setNmemHist([]);
@@ -66,7 +79,7 @@ export default function Nodes({ focusNode, onFocusHandled, onNavigate }) {
     setNMetricsAvail(true);
     const poll = async () => {
       try {
-        const res = await axios.get(`/api/metrics/node/${selectedNode.name}`);
+        const res = await axios.get(`/api/metrics/node/${selectedNodeName}`);
         if (!active) return;
         if (res.data?.available === false) { setNMetricsAvail(false); return; }
         setNMetricsNow(res.data);
@@ -79,37 +92,40 @@ export default function Nodes({ focusNode, onFocusHandled, onNavigate }) {
     poll();
     const iv = setInterval(poll, 3000);
     return () => { active = false; clearInterval(iv); };
-  }, [selectedNode]);
+  }, [selectedNodeName]);
 
   useEffect(() => {
-    if (selectedNode && activeTab === 'pods') {
-      fetchNodePods(selectedNode.name);
+    if (selectedNodeName && activeTab === 'pods') {
+      fetchNodePods(selectedNodeName);
     }
-  }, [selectedNode, activeTab]);
+  }, [selectedNodeName, activeTab]);
 
-  const fetchNodes = async () => {
-    setLoading(true);
+  const fetchNodes = async ({ silent = false } = {}) => {
+    if (!silent) setLoading(true);
     try {
       const response = await axios.get('/api/nodes');
-      setNodes(response.data.nodes || []);
+      const list = response.data.nodes || [];
+      setNodes(list);
+      // Keep the detail panel pointed at the fresh copy of the selected node so
+      // its values refresh too (matched by name — the object identity changes).
+      setSelectedNode(prev => (prev ? list.find(n => n.name === prev.name) || prev : prev));
       setError(null);
     } catch (err) {
-      setError(`Failed to fetch nodes: ${err.message}`);
-      setNodes([]);
+      // Background reload: keep the current rows instead of flipping to an error.
+      if (!silent) { setError(`Failed to fetch nodes: ${err.message}`); setNodes([]); }
     } finally {
       setLoading(false);
     }
   };
 
-  const fetchNodePods = async (nodeName) => {
-    setPodsLoading(true);
+  const fetchNodePods = async (nodeName, { silent = false } = {}) => {
+    if (!silent) setPodsLoading(true);
     try {
       const response = await axios.get(`/api/nodes/${nodeName}/pods`);
       setNodePods(response.data.pods || []);
       setPodsError(null);
     } catch (err) {
-      setPodsError(`Failed to fetch pods: ${err.message}`);
-      setNodePods([]);
+      if (!silent) { setPodsError(`Failed to fetch pods: ${err.message}`); setNodePods([]); }
     } finally {
       setPodsLoading(false);
     }

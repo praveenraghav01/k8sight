@@ -6,20 +6,20 @@
 <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
 <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)" />
 <title>k8sight — Documentation</title>
-<meta name="description" content="k8sight documentation — connect your AWS EKS and Azure AKS clusters with no CLI required." />
+<meta name="description" content="k8sight documentation — connect your AWS EKS, Azure AKS and Google GKE clusters with no CLI required." />
 <link rel="canonical" href="https://k8sight.in/docs" />
 <meta property="og:type" content="website" />
 <meta property="og:site_name" content="k8sight" />
 <meta property="og:url" content="https://k8sight.in/docs" />
 <meta property="og:title" content="k8sight — Documentation" />
-<meta property="og:description" content="Connect your AWS EKS and Azure AKS clusters with no CLI required." />
+<meta property="og:description" content="Connect your AWS EKS, Azure AKS and Google GKE clusters with no CLI required." />
 <meta property="og:image" content="https://k8sight.in/assets/og-image.png" />
 <meta property="og:image:width" content="1200" />
 <meta property="og:image:height" content="630" />
 <meta property="og:image:alt" content="k8sight — a beautiful native desktop UI for your Kubernetes clusters" />
 <meta name="twitter:card" content="summary_large_image" />
 <meta name="twitter:title" content="k8sight — Documentation" />
-<meta name="twitter:description" content="Connect your AWS EKS and Azure AKS clusters with no CLI required." />
+<meta name="twitter:description" content="Connect your AWS EKS, Azure AKS and Google GKE clusters with no CLI required." />
 <meta name="twitter:image" content="https://k8sight.in/assets/og-image.png" />
 <link rel="icon" href="assets/icon.svg" type="image/svg+xml" />
 <style>
@@ -253,7 +253,7 @@
       "@type": "TechArticle",
       "@id": "https://k8sight.in/docs#article",
       "headline": "k8sight documentation",
-      "description": "How to install, connect and use k8sight — connect AWS EKS and Azure AKS with no CLI, browse workloads, scan for CVEs, and how k8sight compares to Rancher, Lens and k9s.",
+      "description": "How to install, connect and use k8sight — connect AWS EKS, Azure AKS and Google GKE with no CLI, browse workloads, scan for CVEs, and how k8sight compares to Rancher, Lens and k9s.",
       "url": "https://k8sight.in/docs",
       "inLanguage": "en",
       "image": "https://k8sight.in/assets/og-image.png",
@@ -327,6 +327,7 @@
     <nav>
       <a href="#aws" data-sect>AWS EKS</a>
       <a href="#azure" data-sect>Azure AKS</a>
+      <a href="#gke" data-sect>Google GKE</a>
       <a href="#local" data-sect>Local &amp; other</a>
     </nav>
     <div class="side-group">Using k8sight</div>
@@ -367,7 +368,7 @@
       <p><strong>k8sight</strong> is a fast Kubernetes management app: a native desktop build for <strong>macOS, Windows and Linux</strong>, plus a Docker image you can run anywhere. It reads your kubeconfig and gives you a live dashboard, resource browsing and editing, topology, logs, an in-pod terminal, ArgoCD, and one-click cloud onboarding — all without leaving the app.</p>
       <h3>Highlights</h3>
       <ul>
-        <li><strong>One-click cloud clusters</strong> — import AWS EKS and Azure AKS straight from your account, with <strong>no <code>aws</code>/<code>az</code> CLI required</strong>, at import <em>or</em> runtime.</li>
+        <li><strong>One-click cloud clusters</strong> — import AWS EKS, Azure AKS and Google GKE straight from your account, with <strong>no <code>aws</code>/<code>az</code>/<code>gcloud</code> CLI required</strong>, at import <em>or</em> runtime.</li>
         <li><strong>Live cluster overview</strong> — node/pod health, workload charts, capacity, and per-container status.</li>
         <li><strong>Full resource management</strong> — browse, search, edit YAML, scale, restart and delete across all common kinds, with cross-links (namespace → node → pod → owner).</li>
         <li><strong>Topology, ArgoCD, Helm, Custom Resources</strong> — interactive graphs and GitOps views.</li>
@@ -377,7 +378,7 @@
       </ul>
       <div class="callout tip">
         <span class="cico"><svg aria-hidden="true" focusable="false" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg></span>
-        <p>New here? <a href="#install">Install k8sight</a>, then jump to your cloud: <a href="#aws">AWS</a> or <a href="#azure">Azure</a>. For local clusters (Docker Desktop, kind, minikube), see <a href="#local">Local &amp; other</a>.</p>
+        <p>New here? <a href="#install">Install k8sight</a>, then jump to your cloud: <a href="#aws">AWS</a>, <a href="#azure">Azure</a>, or <a href="#gke">GKE</a>. For local clusters (Docker Desktop, kind, minikube), see <a href="#local">Local &amp; other</a>.</p>
       </div>
     </article>
 
@@ -559,21 +560,25 @@ npm start          # http://localhost:3001</code></pre>
       </ul>
     </article>
 
-    <!-- ============ Google GKE (hidden for now — remove `hidden` + restore sidebar links to re-enable) ============ -->
-    <article id="gke" hidden>
+    <!-- ============ Google GKE ============ -->
+    <article id="gke">
       <div class="prov-head">
         <div class="prov-badge">
           <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none"><path d="M14.9 8.3l1.8-1.8.12-.76c-3.3-3-8.53-2.66-11.5.72A8.2 8.2 0 0 0 3.4 9.9l.64-.09 3.6-.6.28-.28a4 4 0 0 1 5.44-.44l.44.44z" fill="#EA4335"/><path d="M19.9 9.84a8.2 8.2 0 0 0-2.48-4l-2.53 2.53a4 4 0 0 1 1.48 3.16v.45a2 2 0 1 1 0 4h-4.5l-.45.46v2.7l.45.44h4.5a5.86 5.86 0 0 0 3.53-10.4z" fill="#4285F4"/><path d="M7.1 20.06h4.5v-3.6H7.1a1.98 1.98 0 0 1-.82-.18l-.64.18-1.82 1.8-.16.62a5.83 5.83 0 0 0 3.44 1.18z" fill="#34A853"/><path d="M7.1 8.3a5.86 5.86 0 0 0-3.53 10.5l2.6-2.6a2 2 0 1 1 2.65-2.65l2.6-2.6A5.85 5.85 0 0 0 7.1 8.3z" fill="#FBBC05"/></svg>
         </div>
         <h2>Google GKE</h2>
       </div>
-      <div class="tagline">Connect your GKE clusters — browser sign-in or a service-account key.</div>
+      <div class="tagline">Connect your GKE clusters — your existing <code>gcloud</code> login, browser sign-in, or a service-account key.</div>
 
-      <p>k8sight can import <strong>Google GKE</strong> clusters two ways:</p>
+      <p>k8sight can import <strong>Google GKE</strong> clusters three ways:</p>
       <div class="method-grid">
         <div class="method">
-          <h4>Browser sign-in <span class="rec">Recommended</span></h4>
-          <p>Click <em>Sign in with browser</em>, authenticate with your own Google account, and k8sight stores a refresh token and mints access tokens for the kubeconfig. <strong>No service-account key, no <code>gcloud</code>.</strong> This is the Azure/AWS-style experience.</p>
+          <h4>gcloud credentials <span class="rec">No setup</span></h4>
+          <p>If you've run <code>gcloud auth application-default login</code>, k8sight detects those credentials and lists your clusters with <strong>no sign-in step</strong> — the common case for GKE developers. Nothing to configure.</p>
+        </div>
+        <div class="method">
+          <h4>Browser sign-in</h4>
+          <p>Authenticate with your own Google account in the system browser. Available when the build ships an OAuth <em>Desktop app</em> client; otherwise use gcloud or a key.</p>
         </div>
         <div class="method">
           <h4>Service-account key</h4>
@@ -582,14 +587,13 @@ npm start          # http://localhost:3001</code></pre>
       </div>
 
       <h3>Use it</h3>
-      <p><strong>Preferences → Cloud Integrations → Add GKE clusters</strong>, or the <strong>Add GKE</strong> button in the context dropdown.</p>
+      <p><strong>Preferences → Cloud Integrations → Add GKE clusters</strong>, or the <strong>Add cluster → Google GKE</strong> option in the context dropdown.</p>
       <ol>
-        <li>Click <strong>Sign in with browser</strong> → your browser opens Google sign-in. (Or paste a service-account key JSON.)</li>
-        <li>Pick your account and approve.</li>
+        <li>Choose a method: <strong>Use your gcloud credentials</strong> (if detected), <strong>Sign in with browser</strong>, or <strong>Use a service-account key</strong>.</li>
         <li>k8sight discovers your GKE clusters across all accessible projects.</li>
-        <li>Select clusters → <strong>Add</strong> → they're written to your kubeconfig.</li>
+        <li>Select clusters → <strong>Add</strong> → they're merged into your kubeconfig (your current context is left untouched).</li>
       </ol>
-      <p>Using the clusters needs no <code>gcloud</code>/<code>gke-gcloud-auth-plugin</code>: the bundled <code>gke-token.js</code> mints a fresh access token from the stored refresh token whenever <code>kubectl</code> / the app authenticates.</p>
+      <p>Using the clusters needs no <code>gcloud</code> or <code>gke-gcloud-auth-plugin</code>: the bundled <code>gke-token.js</code> mints a fresh access token whenever <code>kubectl</code> / the app authenticates. If you imported via gcloud credentials, signing out of k8sight leaves those clusters working (the helper falls back to your gcloud login).</p>
 
       <h3>Permissions you need</h3>
       <p>The signed-in account needs at least <strong>Kubernetes Engine Viewer</strong> + <strong>Browser</strong> (or <strong>Viewer</strong>) IAM on the projects, and two APIs enabled in those projects:</p>
@@ -600,7 +604,8 @@ npm start          # http://localhost:3001</code></pre>
 
       <h3>How auth works</h3>
       <ul>
-        <li>Sign-in uses <strong>OAuth 2.0 authorization code + PKCE</strong> with a <strong>loopback</strong> redirect — Google's recommended flow for installed apps.</li>
+        <li><strong>gcloud credentials</strong> — k8sight reads <code>~/.config/gcloud/application_default_credentials.json</code> (what <code>gcloud auth application-default login</code> writes), the same <code>authorized_user</code> shape a browser sign-in produces — so there's nothing extra to set up.</li>
+        <li>Browser sign-in uses <strong>OAuth 2.0 authorization code + PKCE</strong> with a <strong>loopback</strong> redirect — Google's recommended flow for installed apps.</li>
         <li>k8sight stores credentials at <code>~/.config/k8s-manager/gke/credentials.json</code> (mode <code>600</code>): browser sign-in → <code>{ type: 'authorized_user', … }</code>; service-account key → the key JSON.</li>
         <li>The kubeconfig <code>user</code> runs an <code>exec</code> credential plugin: <code>gke-token.js --credentials &lt;path&gt;</code>, which prints an <code>ExecCredential</code> with a short-lived access token. Clients refresh automatically.</li>
         <li>Users only ever get the access <strong>their own Google IAM allows</strong> — the shipped OAuth client is just the app's identity, not an authorization grant.</li>
@@ -608,7 +613,7 @@ npm start          # http://localhost:3001</code></pre>
 
       <h3>Troubleshooting</h3>
       <ul>
-        <li><strong>"Sign in with browser" isn't shown</strong> → no OAuth client id is configured in this build; use the <strong>service-account key</strong> option, or set up a client (below).</li>
+        <li><strong>"Sign in with browser" isn't shown</strong> → this build ships no OAuth client id; use <strong>your gcloud credentials</strong> (run <code>gcloud auth application-default login</code>) or the <strong>service-account key</strong> option instead.</li>
         <li><strong><code>access_denied</code> / "app isn't verified"</strong> → add the account under <strong>Test users</strong>, or publish the consent screen.</li>
         <li><strong><code>invalid_grant</code> / no refresh token</strong> → the flow requests <code>access_type=offline&amp;prompt=consent</code>; make sure you approved the consent screen. Remove <code>~/.config/k8s-manager/gke/credentials.json</code> and retry.</li>
         <li><strong>No clusters found</strong> → confirm the IAM roles above and that both APIs are enabled in those projects.</li>
@@ -844,6 +849,26 @@ export GOOGLE_CLIENT_SECRET='GOCSPX-...'</code></pre>
     <article id="release-notes">
       <h2>Release notes</h2>
       <div class="tagline">What's new in each version. Installers for every release are on the <a href="https://github.com/praveenraghav01/k8sight/releases" target="_blank" rel="noopener">Releases</a> page.</div>
+
+      <h3>v1.5.3 <span class="rel-date">Sep 25, 2026</span> — Leaner installs &amp; a fully-notarized macOS download</h3>
+      <p>Packaging and trust improvements across every platform.</p>
+      <ul>
+        <li><strong>Fully-notarized macOS download</strong> — the <code>.dmg</code> itself is now notarized and stapled (not just the app inside), so a freshly-downloaded image opens with no Gatekeeper prompt and no right-click → <strong>Open</strong> workaround.</li>
+        <li><strong>Smaller, faster installs</strong> — the app is packed into a single <code>app.asar</code> and ships English-only Electron locales, cutting the packaged file count from ~5,600 to ~200 — a much quicker Windows install (far less Defender per-file scanning) and faster macOS signing. Cloud token helpers (EKS/AKS/GKE) are bundled so they keep working under the new packaging.</li>
+        <li><strong>Security Center</strong> — clearer messaging when a non-Aqua Trivy operator is installed, so scan results are easier to interpret.</li>
+      </ul>
+      <p><a href="https://github.com/praveenraghav01/k8sight/releases/tag/v1.5.3" target="_blank" rel="noopener">Release on GitHub ↗</a></p>
+
+      <h3>v1.5.2 <span class="rel-date">Sep 25, 2026</span> — Google GKE &amp; signed macOS builds</h3>
+      <p>CLI-free Google GKE, signed &amp; notarized macOS builds, sortable tables and a smoother auto-refresh.</p>
+      <ul>
+        <li><strong>Google GKE, no CLI</strong> — sign in with your existing <code>gcloud</code> login (Application Default Credentials), a browser OAuth flow, or a service-account key, then discover and import clusters across your projects. Using them needs no <code>gcloud</code> or <code>gke-gcloud-auth-plugin</code> — a bundled token helper authenticates at runtime, just like EKS/AKS.</li>
+        <li><strong>Signed &amp; notarized macOS build</strong> — the <code>.dmg</code> is now Developer ID–signed and notarized (hardened runtime), so it opens without the right-click → <strong>Open</strong> / quarantine workaround.</li>
+        <li><strong>Sortable resource tables</strong> — click a column header to sort (ascending → descending → off); CPU, memory and capacity sort by value, not text.</li>
+        <li><strong>Silent background refresh</strong> — auto-refresh updates values in place instead of flashing a loader, so your selected row, active tab, search, scroll and Topology pan/zoom survive a refresh.</li>
+        <li><strong>Security &amp; fixes</strong> — added a missing backend authorization check (CWE-862); fixed a blank-page crash in the Nodes view.</li>
+      </ul>
+      <p><a href="https://github.com/praveenraghav01/k8sight/releases/tag/v1.5.2" target="_blank" rel="noopener">Release on GitHub ↗</a></p>
 
       <h3>v1.5.1 <span class="rel-date">Sep 12, 2026</span> — Demo mode</h3>
       <p>Try every feature with no cluster, plus a simpler connect screen and packaging polish.</p>

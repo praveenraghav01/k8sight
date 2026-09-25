@@ -22,9 +22,12 @@ import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
 import { randomUUID } from 'crypto';
 import { createMcpServer } from './mcp.js';
 import * as awsEks from './aws-eks.js';
+import * as gke from './gke.js';
 import * as trivyScan from './trivy-scan.js';
 import * as demo from './demo.js';
 import { ensurePtyHelperExecutable } from './lib/pty-helper.mjs';
+import { detectForeignTrivy } from './lib/trivy-detect.mjs';
+import { tokenHelperPath } from './lib/resource-path.mjs';
 
 // node-pty powers the pod terminal (a real PTY bridged to `kubectl exec`). Load
 // it defensively so a missing/unbuildable native module never crashes the whole
@@ -47,8 +50,9 @@ const app = express();
 const PORT = 3001;
 const CLIENT_DIST = path.join(__dirname, 'client', 'dist');
 // CLI-free AKS token helper — app-imported AAD clusters exec this instead of
-// kubelogin, so neither `az` nor `kubelogin` is needed at runtime.
-const AZURE_TOKEN_HELPER = path.join(__dirname, 'azure-token.js');
+// kubelogin, so neither `az` nor `kubelogin` is needed at runtime. Bundled and
+// resolved to its unpacked location so it stays spawnable under asar.
+const AZURE_TOKEN_HELPER = tokenHelperPath(import.meta.url, 'azure-token');
 
 // Response caching with TTL
 const cache = new Map();
@@ -313,16 +317,68 @@ app.post('/api/mcp/config', (req, res) => {
   res.json({ allowWrite: mcpAllowWrite });
 });
 
+// ---- Google GKE (CLI-free) ------------------------------------------------
+app.get('/api/gke/status', (req, res) => res.json(gke.getStatus()));
+
+// Service-account key sign-in: validate the key, persist it, return clusters.
+app.post('/api/gke/service-account', async (req, res) => {
+  try {
+    const clusters = await gke.loginWithServiceAccount(req.body?.key);
+    res.json({ clusters });
+  } catch (e) { res.status(400).json({ error: firstLine(e.message) }); }
+});
+
+// Browser (OAuth) sign-in.
+app.post('/api/gke/browser/login', async (req, res) => {
+  try { res.json(await gke.startBrowserLogin()); }
+  catch (e) { res.status(400).json({ error: firstLine(e.message) }); }
+});
+app.get('/api/gke/browser/status', (req, res) => res.json(gke.loginStatus()));
+app.post('/api/gke/browser/cancel', (req, res) => { gke.cancelLogin(); res.json({ ok: true }); });
+app.post('/api/gke/signout', (req, res) => { gke.signOut(); res.json({ ok: true }); });
+
+// List clusters using the current (browser or key) sign-in.
+app.get('/api/gke/clusters', async (req, res) => {
+  try {
+    if (!gke.readCreds()) return res.status(401).json({ error: 'Not signed in to Google' });
+    res.json({ clusters: await gke.discoverClusters() });
+  } catch (e) { res.status(400).json({ error: firstLine(e.message) }); }
+});
+
+// Import selected clusters into the kubeconfig.
+app.post('/api/gke/import', async (req, res) => {
+  const { clusters = [] } = req.body || {};
+  if (!Array.isArray(clusters) || clusters.length === 0) return res.status(400).json({ error: 'No clusters selected' });
+  const imported = [], failed = [], replaced = [];
+  for (const c of clusters) {
+    try {
+      const { context, replacedExternalAuth } = gke.writeCluster(c);
+      imported.push(c.name);
+      if (replacedExternalAuth) replaced.push(context);
+    }
+    catch (e) { failed.push({ name: c?.name || '?', error: firstLine(e.message) }); }
+  }
+  const prev = currentContext;
+  const p = getKubeConfigPath();
+  if (fs.existsSync(p)) loadKubeConfig(p);
+  if (prev && kubeConfig?.contexts.some((c) => c.name === prev)) { kubeConfig.setCurrentContext(prev); currentContext = prev; }
+  cache.clear();
+  res.json({ imported, failed, replaced, contexts: kubeConfig?.contexts.map((c) => c.name) || [], currentContext });
+});
+
 app.get('/api/config/status', (req, res) => {
   const demoInfo = demo.demoContextInfo(); // { name, cluster, provider: 'demo' }
 
   // Tag each context with its cloud provider (derived from the cluster's server
   // URL) so the UI can group and icon them.
-  const providerOf = (server = '') => {
+  const providerOf = (server = '', name = '') => {
     const s = server.toLowerCase();
     if (s.includes('.azmk8s.io') || s.includes('azure')) return 'azure';
     if (s.includes('.eks.amazonaws.com') || s.includes('eks.') ) return 'aws';
-    if (s.includes('.gke.') || s.includes('container.googleapis.com')) return 'gcp';
+    // GKE is reached on a bare public IP, so the server URL says nothing. Both
+    // gcloud and this app name their contexts gke_<project>_<location>_<cluster>,
+    // which is the only reliable signal.
+    if (s.includes('.gke.') || s.includes('container.googleapis.com') || name.toLowerCase().startsWith('gke_')) return 'gcp';
     if (/(127\.0\.0\.1|localhost|:6443|:8443|host\.docker|kubernetes\.docker|minikube|kind|orbstack|rancher)/.test(s)) return 'local';
     return 'other';
   };
@@ -332,7 +388,7 @@ app.get('/api/config/status', (req, res) => {
     const clusterByName = new Map(kubeConfig.clusters.map((c) => [c.name, c]));
     contextsInfo = kubeConfig.contexts.map((c) => {
       const cl = clusterByName.get(c.cluster);
-      return { name: c.name, cluster: c.cluster, provider: providerOf(cl?.server) };
+      return { name: c.name, cluster: c.cluster, provider: providerOf(cl?.server, c.name) };
     });
     contexts = kubeConfig.contexts.map((c) => c.name);
     clusters = kubeConfig.clusters.map((c) => c.name);
@@ -2098,6 +2154,11 @@ app.get('/api/security/status', async (req, res) => {
         rbac: has('rbacassessmentreports') || has('clusterrbacassessmentreports'),
         exposedSecret: has('exposedsecretreports'),
       },
+      // When the official operator is absent, look for a *different* Trivy
+      // operator (e.g. devopstales/trivy-operator, group trivy-operator.
+      // devopstales.io) so the UI can explain the mismatch instead of just
+      // saying "not installed" when the user clearly did install one.
+      foreignOperator: installed ? null : detectForeignTrivy(names, TRIVY_GROUP),
     });
   } catch (e) {
     res.json({ installed: false, error: firstLine(e.message) });

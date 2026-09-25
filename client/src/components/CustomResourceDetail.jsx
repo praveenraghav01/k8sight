@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import hljs from 'highlight.js';
 import 'highlight.js/styles/atom-one-dark.css';
@@ -14,22 +14,27 @@ const formatAge = (createdAt) => {
   return `${Math.floor(seconds / 86400)}d`;
 };
 
-function InstanceView({ sel, onSelect }) {
+function InstanceView({ sel, onSelect, refreshSignal = 0 }) {
   const [yaml, setYaml] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
+  // A refresh re-reads the YAML in place: the pane keeps the current content
+  // (and its scroll position) until the new text arrives.
+  const loadedFor = useRef(null);
   useEffect(() => {
+    const target = `${sel.group}/${sel.version}/${sel.plural}/${sel.namespace || ''}/${sel.name}`;
+    const silent = loadedFor.current === target;
+    loadedFor.current = target;
     let active = true;
-    setLoading(true);
-    setError(null);
+    if (!silent) { setLoading(true); setError(null); }
     const ns = sel.namespace && sel.namespace !== '-' ? `?namespace=${encodeURIComponent(sel.namespace)}` : '';
     axios.get(`/api/customresource/${sel.group}/${sel.version}/${sel.plural}/${encodeURIComponent(sel.name)}${ns}`)
-      .then(res => { if (active) setYaml(res.data.yaml || ''); })
-      .catch(err => { if (active) setError(err.response?.data?.error || err.message); })
+      .then(res => { if (active) { setYaml(res.data.yaml || ''); setError(null); } })
+      .catch(err => { if (active && !silent) setError(err.response?.data?.error || err.message); })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
-  }, [sel.group, sel.version, sel.plural, sel.name, sel.namespace]);
+  }, [sel.group, sel.version, sel.plural, sel.name, sel.namespace, refreshSignal]);
 
   const highlighted = () => {
     // hljs.highlight() HTML-escapes its output. On the error path, escape the raw
@@ -67,21 +72,26 @@ function InstanceView({ sel, onSelect }) {
   );
 }
 
-function KindView({ sel, onSelect }) {
+function KindView({ sel, onSelect, refreshSignal = 0 }) {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
+  // Same kind as last time (i.e. a refresh, not a new selection) → reload the
+  // instances quietly underneath the table.
+  const loadedFor = useRef(null);
   useEffect(() => {
+    const target = `${sel.group}/${sel.version}/${sel.plural}`;
+    const silent = loadedFor.current === target;
+    loadedFor.current = target;
     let active = true;
-    setLoading(true);
-    setError(null);
+    if (!silent) { setLoading(true); setError(null); }
     axios.get(`/api/customresources/${sel.group}/${sel.version}/${sel.plural}`)
       .then(res => { if (active) { setItems(res.data.items || []); setError(res.data.error || null); } })
-      .catch(err => { if (active) setError(err.message); })
+      .catch(err => { if (active && !silent) setError(err.message); })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
-  }, [sel.group, sel.version, sel.plural]);
+  }, [sel.group, sel.version, sel.plural, refreshSignal]);
 
   return (
     <div className="cr-detail">
@@ -130,7 +140,7 @@ function KindView({ sel, onSelect }) {
   );
 }
 
-export default function CustomResourceDetail({ selection, onSelect }) {
+export default function CustomResourceDetail({ selection, onSelect, refreshSignal = 0 }) {
   if (!selection) {
     return (
       <div className="resource-viewer">
@@ -145,8 +155,8 @@ export default function CustomResourceDetail({ selection, onSelect }) {
   return (
     <div className="resource-viewer">
       {selection.level === 'instance'
-        ? <InstanceView sel={selection} onSelect={onSelect} />
-        : <KindView sel={selection} onSelect={onSelect} />}
+        ? <InstanceView sel={selection} onSelect={onSelect} refreshSignal={refreshSignal} />
+        : <KindView sel={selection} onSelect={onSelect} refreshSignal={refreshSignal} />}
     </div>
   );
 }

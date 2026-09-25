@@ -64,7 +64,7 @@ function classify(auth) {
     return {
       title: 'Auth helper not found',
       summary: "A credential helper CLI referenced by your kubeconfig isn't installed or isn't on PATH.",
-      fix: (provider === 'aws' || provider === 'azure') ? { kind: provider, note } : { kind: 'note', note },
+      fix: (provider === 'aws' || provider === 'azure' || provider === 'gcp') ? { kind: provider, note } : { kind: 'note', note },
     };
   }
   // TLS / certificate
@@ -100,9 +100,23 @@ function classify(auth) {
   };
 }
 
-export default function AuthErrorModal({ auth, onRetry, onChangeConfig, retrying, contexts = [], contextsInfo, currentContext, onSwitchContext, onAddAzure, onAddAws, onDemo }) {
+// Providers we can re-authenticate from inside the app. Re-adding a cluster
+// through its own flow rewrites the broken exec entry, which is what actually
+// fixes both the expired-token and the missing-helper cases.
+const SIGN_IN = {
+  azure: { icon: 'azure', label: 'Azure' },
+  aws: { icon: 'aws', label: 'AWS' },
+  gcp: { icon: 'gcp', label: 'GKE' },
+};
+
+export default function AuthErrorModal({ auth, onRetry, onChangeConfig, retrying, contexts = [], contextsInfo, currentContext, onSwitchContext, onAddAzure, onAddAws, onAddGke, onDemo }) {
   const raw = auth?.message || '';
   const { title, summary, fix, unmatched } = classify(auth);
+  // Map the classified provider to its in-app sign-in handler.
+  const signInHandlers = { azure: onAddAzure, aws: onAddAws, gcp: onAddGke };
+  const signIn = fix && SIGN_IN[fix.kind]
+    ? { ...SIGN_IN[fix.kind], handler: signInHandlers[fix.kind] }
+    : null;
   const [copied, setCopied] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
   const addRef = useRef(null);
@@ -117,7 +131,7 @@ export default function AuthErrorModal({ auth, onRetry, onChangeConfig, retrying
     return () => { document.removeEventListener('mousedown', onDown); document.removeEventListener('keydown', onKey); };
   }, [addOpen]);
 
-  const canAdd = onChangeConfig || onAddAzure || onAddAws;
+  const canAdd = onChangeConfig || onAddAzure || onAddAws || onAddGke;
 
   // Only surface the raw error separately when it isn't already the summary.
   const showRaw = !!raw && (!unmatched || raw.length > 160);
@@ -147,14 +161,14 @@ export default function AuthErrorModal({ auth, onRetry, onChangeConfig, retrying
 
         {fix && (
           <div className="auth-fix">
-            {(fix.kind === 'azure' || fix.kind === 'aws') && (
+            {signIn && (
               <button
                 className="auth-fix-btn"
-                onClick={() => (fix.kind === 'azure' ? onAddAzure?.(fix.cli ? 'az' : undefined) : onAddAws?.())}
-                disabled={retrying || (fix.kind === 'azure' ? !onAddAzure : !onAddAws)}
+                onClick={() => (fix.kind === 'azure' ? signIn.handler?.(fix.cli ? 'az' : undefined) : signIn.handler?.())}
+                disabled={retrying || !signIn.handler}
               >
-                <Icon name={fix.kind === 'azure' ? 'azure' : 'aws'} size={15} />
-                Sign in to {fix.kind === 'azure' ? 'Azure' : 'AWS'}
+                <Icon name={signIn.icon} size={15} />
+                Sign in to {signIn.label}
               </button>
             )}
             {fix.command && (
@@ -207,6 +221,7 @@ export default function AuthErrorModal({ auth, onRetry, onChangeConfig, retrying
               onChange={onSwitchContext}
               onAddAzure={onAddAzure}
               onAddAws={onAddAws}
+              onAddGke={onAddGke}
             />
           </div>
         )}
@@ -239,6 +254,11 @@ export default function AuthErrorModal({ auth, onRetry, onChangeConfig, retrying
                   {onAddAzure && (
                     <button className="auth-add-item" role="menuitem" onClick={() => { setAddOpen(false); onAddAzure(); }}>
                       <Icon name="azure" size={16} /> Azure AKS
+                    </button>
+                  )}
+                  {onAddGke && (
+                    <button className="auth-add-item" role="menuitem" onClick={() => { setAddOpen(false); onAddGke(); }}>
+                      <Icon name="gcp" size={16} /> Google GKE
                     </button>
                   )}
                   {onChangeConfig && (

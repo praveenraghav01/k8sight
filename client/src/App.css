@@ -891,6 +891,7 @@ body {
   background: var(--green-tint); color: var(--green);
 }
 .azure-failed { font-size: 12px; color: var(--red); text-align: left; max-width: 460px; }
+.azure-warn { font-size: 12px; color: var(--yellow); text-align: left; max-width: 460px; }
 .azure-toolbar { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
 .azure-search {
   flex: 1; padding: 8px 11px; border-radius: 7px; border: 1px solid var(--border);
@@ -3688,6 +3689,23 @@ button.sec-tr.row.sel { background: var(--accent-tint); }
 
 .sec-empty { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 60px 0; color: var(--text-muted); }
 .sec-empty svg { color: var(--green); }
+.sec-install-cmd {
+  margin-top: 6px;
+  max-width: 560px;
+  width: 100%;
+  padding: 12px 14px;
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+  background: var(--bg-base);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  white-space: pre-wrap;
+  overflow-x: auto;
+  text-align: left;
+  user-select: all;
+}
 
 /* Drawer */
 .sec-drawer { width: 480px; max-width: 46vw; flex: none; border-left: 1px solid var(--border-strong); background: var(--bg-surface); display: flex; flex-direction: column; animation: drawer-in .16s ease; }

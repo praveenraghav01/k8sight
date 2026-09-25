@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import Icon from './Icons';
 import Loader from './Loader';
@@ -22,7 +22,7 @@ const TABS = [
   { key: 'clusterRoleBindings', label: 'Cluster Role Bindings', kind: 'ClusterRoleBinding', rt: 'clusterRoleBinding', cols: ['Name', 'Role', 'Subjects', 'Age'] }
 ];
 
-export default function AccessControl({ onNavigate }) {
+export default function AccessControl({ onNavigate, refreshSignal = 0 }) {
   const [data, setData] = useState({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -31,18 +31,22 @@ export default function AccessControl({ onNavigate }) {
   const [selected, setSelected] = useState(null); // { name, namespace, kind, resourceType }
   const [yamlTarget, setYamlTarget] = useState(null);
 
+  // Later refreshes reload in place, so the active tab, search and open drawer
+  // survive and the table isn't replaced by a loader.
+  const didMount = useRef(false);
   useEffect(() => {
-    fetchRbac();
-  }, []);
+    fetchRbac({ silent: didMount.current });
+    didMount.current = true;
+  }, [refreshSignal]);
 
-  const fetchRbac = async () => {
-    setLoading(true);
+  const fetchRbac = async ({ silent = false } = {}) => {
+    if (!silent) setLoading(true);
     try {
       const res = await axios.get('/api/rbac');
       setData(res.data || {});
       setError(null);
     } catch (err) {
-      setError(`Failed to load RBAC: ${err.response?.data?.error || err.message}`);
+      if (!silent) setError(`Failed to load RBAC: ${err.response?.data?.error || err.message}`);
     } finally {
       setLoading(false);
     }

@@ -12,6 +12,7 @@ import CustomResourceDetail from './components/CustomResourceDetail';
 import Topology from './components/Topology';
 import AzureIntegration from './components/AzureIntegration';
 import AwsIntegration from './components/AwsIntegration';
+import GkeIntegration from './components/GkeIntegration';
 import Loader from './components/Loader';
 import Namespaces from './components/Namespaces';
 import KubeConfigModal from './components/KubeConfigModal';
@@ -70,6 +71,7 @@ function App() {
   const [refreshInterval, setRefreshInterval] = useState(() => localStorage.getItem('refreshInterval') || 'auto');
   const [argocdInstalled, setArgocdInstalled] = useState(false);
   const handleRefreshRef = useRef(() => {});
+  const refreshInFlight = useRef(false);
 
   useEffect(() => { localStorage.setItem('refreshInterval', refreshInterval); }, [refreshInterval]);
 
@@ -107,6 +109,7 @@ function App() {
   const [azureMode, setAzureMode] = useState(null); // null | 'az'
   const openAzure = (mode) => { setAzureMode(mode === 'az' ? 'az' : null); setShowAzure(true); };
   const [showAws, setShowAws] = useState(false);
+  const [showGke, setShowGke] = useState(false);
   const [prefSection, setPrefSection] = useState('general');
   const [prefReturn, setPrefReturn] = useState('overview');
   const [agentOpen, setAgentOpen] = useState(false);
@@ -252,20 +255,27 @@ function App() {
 
   // Global refresh for the active page. App-managed views (Overview + resource
   // lists) reload via the shared fetch; self-fetching views (Cluster, Nodes,
-  // Topology, Helm, Namespaces, Custom Resources, Access Control) are remounted
-  // by bumping the nonce, which re-runs their mount-time data loads.
-  const handleRefresh = async () => {
-    if (refreshing) return;
-    setRefreshing(true);
+  // Topology, Helm, Namespaces, Custom Resources, Access Control, …) watch
+  // `refreshNonce` and re-fetch in place — no remount, so their selection, tab,
+  // scroll and pan/zoom survive a refresh and no loader flashes over the data.
+  // `silent: true` (auto-refresh) also skips the spinning refresh icon, so a
+  // background reload is invisible: the values just change.
+  const handleRefresh = async ({ silent = false } = {}) => {
+    // A silent refresh doesn't set `refreshing`, so guard overlapping reloads
+    // (a slow fetch + a short cadence) with a ref as well.
+    if (refreshing || refreshInFlight.current) return;
+    refreshInFlight.current = true;
+    if (!silent) setRefreshing(true);
     try {
       if (!STANDALONE_RESOURCE_TYPES.includes(resourceType)) {
         await fetchNamespaces();
-        await fetchResources();
+        await fetchResources({ silent });
       }
       setRefreshNonce(n => n + 1);
     } finally {
+      refreshInFlight.current = false;
       // brief spin so the action is perceptible even when the fetch is instant
-      setTimeout(() => setRefreshing(false), 400);
+      if (!silent) setTimeout(() => setRefreshing(false), 400);
     }
   };
   handleRefreshRef.current = handleRefresh;
@@ -307,7 +317,7 @@ function App() {
   useEffect(() => {
     const ms = REFRESH_OPTIONS.find(o => o.key === refreshInterval)?.ms || 0;
     if (!ms || !authOk) return;
-    const id = setInterval(() => { handleRefreshRef.current?.(); }, ms);
+    const id = setInterval(() => { handleRefreshRef.current?.({ silent: true }); }, ms);
     return () => clearInterval(id);
   }, [refreshInterval, authOk]);
 
@@ -340,9 +350,11 @@ function App() {
     return selectedNamespaces;
   };
 
-  const fetchResources = async () => {
+  const fetchResources = async ({ silent = false } = {}) => {
     const fetchId = ++fetchIdRef.current;
-    setLoading(true);
+    // A silent (background) fetch keeps whatever is already on screen — the list
+    // is replaced once the data is in, so there's no "Loading pods…" flash.
+    if (!silent) setLoading(true);
     try {
       // Cluster-scoped types (PersistentVolumes, StorageClasses) are a single call
       if (CLUSTER_SCOPED.includes(resourceType)) {
@@ -508,6 +520,7 @@ function App() {
           onSwitchContext={switchContext}
           onAddAzure={(mode) => openAzure(mode)}
           onAddAws={() => setShowAws(true)}
+          onAddGke={() => setShowGke(true)}
           onDemo={startDemo}
         />
       )}
@@ -539,6 +552,13 @@ function App() {
         />
       )}
 
+      {showGke && (
+        <GkeIntegration
+          onClose={() => setShowGke(false)}
+          onImported={async () => { await fetchConfigStatus(); retryAuth(); }}
+        />
+      )}
+
 
       {authOk ? (
         <div className="layout-main">
@@ -564,6 +584,7 @@ function App() {
             onSelectSecurityView={(v) => { setSecurityView(v); setResourceType('security'); }}
             onAddAzure={() => openAzure()}
             onAddAws={() => setShowAws(true)}
+            onAddGke={() => setShowGke(true)}
             onAddLocal={() => setForceConfigModal(true)}
             onOpenPreferences={() => openPreferences('general')}
           />
@@ -579,21 +600,21 @@ function App() {
               onResourceTypeChange={setResourceType}
             />
           ) : resourceType === 'cluster' ? (
-            <Cluster key={`cluster-${refreshNonce}`} configStatus={configStatus} />
+            <Cluster configStatus={configStatus} refreshSignal={refreshNonce} />
           ) : resourceType === 'nodes' ? (
-            <Nodes key={`nodes-${refreshNonce}`} focusNode={focusNode} onFocusHandled={() => setFocusNode(null)} onNavigate={nav} />
+            <Nodes focusNode={focusNode} onFocusHandled={() => setFocusNode(null)} onNavigate={nav} refreshSignal={refreshNonce} />
           ) : resourceType === 'namespaces' ? (
-            <Namespaces key={`namespaces-${refreshNonce}`} onNavigate={nav} />
+            <Namespaces onNavigate={nav} refreshSignal={refreshNonce} />
           ) : resourceType === 'topology' ? (
             <Topology namespaces={namespaces} refreshSignal={refreshNonce} />
           ) : resourceType === 'helm' ? (
-            <Helm key={`helm-${refreshNonce}`} />
+            <Helm refreshSignal={refreshNonce} />
           ) : resourceType === 'customResources' ? (
-            <CustomResourceDetail key={`cr-${refreshNonce}`} selection={crSelection} onSelect={setCrSelection} />
+            <CustomResourceDetail selection={crSelection} onSelect={setCrSelection} refreshSignal={refreshNonce} />
           ) : resourceType === 'accessControl' ? (
-            <AccessControl key={`ac-${refreshNonce}`} onNavigate={nav} />
+            <AccessControl onNavigate={nav} refreshSignal={refreshNonce} />
           ) : resourceType === 'security' ? (
-            <SecurityCenter key={`sec-${refreshNonce}`} namespaces={namespaces} onNavigate={nav} view={securityView} onViewChange={setSecurityView} />
+            <SecurityCenter namespaces={namespaces} onNavigate={nav} view={securityView} onViewChange={setSecurityView} refreshSignal={refreshNonce} />
           ) : resourceType === 'argocd' ? (
             <ArgoCD onNavigate={nav} refreshSignal={refreshNonce} view={argoView} onViewChange={setArgoView} />
           ) : resourceType === 'preferences' ? (
@@ -604,6 +625,7 @@ function App() {
               onChangeConfig={() => setForceConfigModal(true)}
               onAddAzure={() => openAzure()}
               onAddAws={() => setShowAws(true)}
+              onAddGke={() => setShowGke(true)}
               initialSection={prefSection}
               onClose={() => setResourceType(prefReturn || 'overview')}
             />
@@ -623,6 +645,7 @@ function App() {
               onResourceTypeChange={setResourceType}
               onNavigate={nav}
               onRefresh={handleRefresh}
+              refreshSignal={refreshNonce}
             />
           )}
           <AgentPanel context={{ currentContext: configStatus.currentContext }} onOpenChange={setAgentOpen} />

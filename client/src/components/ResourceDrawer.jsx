@@ -152,7 +152,7 @@ function Annotations({ obj }) {
   );
 }
 
-export default function ResourceDrawer({ resource, namespace, resourceType, onClose, onOpenTab, onNavigate, onAction, canScale, canRestart }) {
+export default function ResourceDrawer({ resource, namespace, resourceType, onClose, onOpenTab, onNavigate, onAction, canScale, canRestart, refreshSignal = 0 }) {
   const [obj, setObj] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -169,6 +169,15 @@ export default function ResourceDrawer({ resource, namespace, resourceType, onCl
   useEffect(() => {
     if (resource) fetchDetail();
   }, [resource]);
+
+  // A global/auto refresh updates the open drawer in place: the panel keeps its
+  // content, tab and scroll while the new object is fetched underneath.
+  const didMount = useRef(false);
+  useEffect(() => {
+    if (!didMount.current) { didMount.current = true; return; }
+    if (resource) fetchDetail({ silent: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refreshSignal]);
 
   // Live metrics polling for pods
   useEffect(() => {
@@ -200,10 +209,12 @@ export default function ResourceDrawer({ resource, namespace, resourceType, onCl
     return () => { active = false; clearInterval(iv); };
   }, [resource, isPodKind]);
 
-  const fetchDetail = async () => {
-    setLoading(true);
-    setObj(null);
-    setRevealSecrets(false);
+  const fetchDetail = async ({ silent = false } = {}) => {
+    if (!silent) {
+      setLoading(true);
+      setObj(null);
+      setRevealSecrets(false);
+    }
     try {
       const ns = resource.namespace || namespace;
       const kind = resource.kind || 'Pod';
@@ -211,7 +222,7 @@ export default function ResourceDrawer({ resource, namespace, resourceType, onCl
       setObj(res.data);
       setError(null);
     } catch (err) {
-      setError(`Failed to load details: ${err.response?.data?.error || err.message}`);
+      if (!silent) setError(`Failed to load details: ${err.response?.data?.error || err.message}`);
     } finally {
       setLoading(false);
     }

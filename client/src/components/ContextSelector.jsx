@@ -5,13 +5,13 @@ const PROVIDERS = {
   demo: { label: 'Demo', icon: 'sparkles', color: '#af52de' },
   aws: { label: 'AWS EKS', icon: 'aws', color: '#ff9900' },
   azure: { label: 'Azure AKS', icon: 'azure', color: '#3b96f0' },
-  gcp: { label: 'Google GKE', icon: 'cluster', color: '#4285f4' },
+  gcp: { label: 'Google GKE', icon: 'gcp', color: '#4285f4' },
   local: { label: 'Local', icon: 'box', color: '#8b949e' },
   other: { label: 'Other clusters', icon: 'cluster', color: '#8b8fa3' },
 };
 const ORDER = ['demo', 'aws', 'azure', 'gcp', 'local', 'other'];
 
-export default function ContextSelector({ contexts = [], contextsInfo, currentContext, onChange, onAddAzure, onAddAws, onAddLocal }) {
+export default function ContextSelector({ contexts = [], contextsInfo, currentContext, onChange, onAddAzure, onAddAws, onAddGke, onAddLocal }) {
   const [open, setOpen] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
   const [query, setQuery] = useState('');
@@ -81,7 +81,7 @@ export default function ContextSelector({ contexts = [], contextsInfo, currentCo
               </div>
             ))}
           </div>
-          {(onAddAzure || onAddAws || onAddLocal) && (
+          {(onAddAzure || onAddAws || onAddGke || onAddLocal) && (
             <div className="ctx-add-row">
               <button className={`ctx-add-cluster ${addOpen ? 'open' : ''}`} onClick={() => setAddOpen((o) => !o)}>
                 <Icon name="plus" size={14} /> <span>Add cluster</span>
@@ -97,6 +97,11 @@ export default function ContextSelector({ contexts = [], contextsInfo, currentCo
                   {onAddAzure && (
                     <button className="ctx-add-item" onClick={() => { setOpen(false); onAddAzure(); }}>
                       <Icon name="azure" size={15} style={{ color: PROVIDERS.azure.color }} /> Azure AKS
+                    </button>
+                  )}
+                  {onAddGke && (
+                    <button className="ctx-add-item" onClick={() => { setOpen(false); onAddGke(); }}>
+                      <Icon name="gcp" size={15} style={{ color: PROVIDERS.gcp.color }} /> Google GKE
                     </button>
                   )}
                   {onAddLocal && (

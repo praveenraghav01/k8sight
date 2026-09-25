@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import Icon from './Icons';
 import Loader from './Loader';
@@ -67,23 +67,29 @@ function CapacityBar({ label, icon, used, total, unit, color }) {
   );
 }
 
-export default function Cluster() {
+export default function Cluster({ refreshSignal = 0 }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
+  // First load shows the loader; every later refresh re-fetches in place, so the
+  // numbers just change instead of the page blanking out.
+  const didMount = useRef(false);
   useEffect(() => {
-    fetchSummary();
-  }, []);
+    fetchSummary({ silent: didMount.current });
+    didMount.current = true;
+  }, [refreshSignal]);
 
-  const fetchSummary = async () => {
-    setLoading(true);
+  const fetchSummary = async ({ silent = false } = {}) => {
+    if (!silent) setLoading(true);
     try {
       const res = await axios.get('/api/cluster/summary');
       setData(res.data);
       setError(res.data?.error || null);
     } catch (err) {
-      setError(`Failed to load cluster summary: ${err.response?.data?.error || err.message}`);
+      // A background reload keeps the last good data on screen rather than
+      // replacing it with an error the user didn't ask for.
+      if (!silent) setError(`Failed to load cluster summary: ${err.response?.data?.error || err.message}`);
     } finally {
       setLoading(false);
     }

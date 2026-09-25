@@ -67,8 +67,8 @@ export default function ArgoCD({ refreshSignal = 0, view, onViewChange }) {
   const [confirmDel, setConfirmDel] = useState(null); // { app, cascade, busy }
   const [busy, setBusy] = useState(false);
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const load = useCallback(async ({ silent = false } = {}) => {
+    if (!silent) setLoading(true);
     try {
       const [a, p, s, r, c, st] = await Promise.all([
         axios.get('/api/argocd/applications'),
@@ -87,18 +87,19 @@ export default function ArgoCD({ refreshSignal = 0, view, onViewChange }) {
       setClusters(c.data.clusters || []);
       setArgoUrl(st.data.url || '');
     } catch (e) {
-      setError(e.response?.data?.error || e.message);
+      if (!silent) setError(e.response?.data?.error || e.message);
     } finally {
       setLoading(false);
     }
   }, []);
   useEffect(() => { load(); }, [load]);
 
-  // Global refresh re-fetches in place (no remount → drawer/tab/selection kept).
+  // Global refresh re-fetches in place (no remount → drawer/tab/selection kept)
+  // and silently: no loader over the app list, the rows just get new values.
   const didMount = React.useRef(false);
   useEffect(() => {
     if (!didMount.current) { didMount.current = true; return; }
-    load();
+    load({ silent: true });
   }, [refreshSignal, load]);
 
   useEffect(() => {
@@ -158,7 +159,7 @@ export default function ArgoCD({ refreshSignal = 0, view, onViewChange }) {
     try {
       const { data } = await axios.post(`/api/argocd/application/${encodeURIComponent(app.namespace)}/${encodeURIComponent(app.name)}/sync`, options);
       toast.success(data.message || 'Sync triggered', { title: app.name });
-      setTimeout(load, 1000);
+      setTimeout(() => load({ silent: true }), 1000);
     } catch (e) { toast.error(e.response?.data?.error || e.message, { title: 'Sync' }); }
     finally { setBusy(false); }
   };
@@ -167,7 +168,7 @@ export default function ArgoCD({ refreshSignal = 0, view, onViewChange }) {
     try {
       const { data } = await axios.post(`/api/argocd/application/${encodeURIComponent(app.namespace)}/${encodeURIComponent(app.name)}/refresh`, { hard });
       toast.success(data.message || `${hard ? 'Hard refresh' : 'Refresh'} requested`, { title: app.name });
-      setTimeout(load, 1000);
+      setTimeout(() => load({ silent: true }), 1000);
     } catch (e) { toast.error(e.response?.data?.error || e.message, { title: 'Refresh' }); }
     finally { setBusy(false); }
   };
@@ -201,7 +202,7 @@ export default function ArgoCD({ refreshSignal = 0, view, onViewChange }) {
     const verb = bulk.type === 'sync' ? 'Synced' : 'Refreshed';
     if (!failed) toast.success(`${verb} ${ok} application${ok === 1 ? '' : 's'}`, { title: 'ArgoCD' });
     else toast.error(`${verb} ${ok}, ${failed} failed — ${lastErr}`, { title: 'ArgoCD' });
-    setBulk(null); setSelRows(new Set()); setTimeout(load, 1000);
+    setBulk(null); setSelRows(new Set()); setTimeout(() => load({ silent: true }), 1000);
   };
   const doDelete = async () => {
     if (!confirmDel) return;
@@ -212,7 +213,7 @@ export default function ArgoCD({ refreshSignal = 0, view, onViewChange }) {
       toast.success(data.message || `${app.name} deleted`, { title: 'Delete' });
       setConfirmDel(null);
       if (isSel(app)) setSelected(null);
-      setTimeout(load, 800);
+      setTimeout(() => load({ silent: true }), 800);
     } catch (e) { toast.error(e.response?.data?.error || e.message, { title: 'Delete' }); setConfirmDel((c) => ({ ...c, busy: false })); }
   };
 
