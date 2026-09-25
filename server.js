@@ -26,6 +26,7 @@ import * as gke from './gke.js';
 import * as trivyScan from './trivy-scan.js';
 import * as demo from './demo.js';
 import { ensurePtyHelperExecutable } from './lib/pty-helper.mjs';
+import { detectForeignTrivy } from './lib/trivy-detect.mjs';
 
 // node-pty powers the pod terminal (a real PTY bridged to `kubectl exec`). Load
 // it defensively so a missing/unbuildable native module never crashes the whole
@@ -2151,6 +2152,11 @@ app.get('/api/security/status', async (req, res) => {
         rbac: has('rbacassessmentreports') || has('clusterrbacassessmentreports'),
         exposedSecret: has('exposedsecretreports'),
       },
+      // When the official operator is absent, look for a *different* Trivy
+      // operator (e.g. devopstales/trivy-operator, group trivy-operator.
+      // devopstales.io) so the UI can explain the mismatch instead of just
+      // saying "not installed" when the user clearly did install one.
+      foreignOperator: installed ? null : detectForeignTrivy(names, TRIVY_GROUP),
     });
   } catch (e) {
     res.json({ installed: false, error: firstLine(e.message) });
