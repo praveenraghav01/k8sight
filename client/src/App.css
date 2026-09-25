@@ -1275,6 +1275,25 @@ body {
 .chart-values { font-family: var(--mono); font-size: 12.5px; line-height: 1.5; resize: vertical; min-height: 120px; }
 .chart-install-actions { display: flex; justify-content: space-between; gap: 10px; margin-top: 16px; }
 .chart-install-actions .modal-btn { display: inline-flex; align-items: center; gap: 6px; }
+.chart-ver-hint { font-weight: 400; color: var(--text-muted); text-transform: none; letter-spacing: 0; }
+
+/* "Upgrade / downgrade" action in the Helm release bottom panel. */
+.helm-upgrade-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-right: 4px;
+  padding: 6px 12px;
+  font-size: 12.5px;
+  font-weight: 550;
+  color: var(--accent);
+  background: var(--accent-tint);
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-out);
+}
+.helm-upgrade-btn:hover { background: var(--accent-tint-strong); }
 
 @media (max-width: 620px) {
   .chart-form-grid { grid-template-columns: 1fr; }

@@ -2022,10 +2022,14 @@ app.get('/api/helm/charts/versions', async (req, res) => {
   }
 });
 
-// Install (or upgrade) a chart into the current cluster.
-app.post('/api/helm/install', async (req, res) => {
+// Shared driver for `helm upgrade [--install]`. Installing a fresh release and
+// upgrading/downgrading an existing one differ only in a couple of flags:
+//   install → `upgrade --install … --create-namespace`
+//   upgrade → `upgrade …` (optionally `--reuse-values` to keep current values)
+// `verb` is used only in error text ("Install failed" / "Upgrade failed").
+async function runHelmDeploy(req, res, { install, verb }) {
   if (!kubeConfig) return res.status(400).json({ error: 'No kubeconfig loaded' });
-  const { repoName, repoUrl, chart, version, releaseName, namespace = 'default', values } = req.body || {};
+  const { repoName, repoUrl, chart, version, releaseName, namespace = 'default', values, reuseValues } = req.body || {};
 
   // Validate everything we splice into the helm argv (execFile → no shell, but
   // we still reject malformed names so helm gets clean input).
@@ -2052,28 +2056,39 @@ app.post('/api/helm/install', async (req, res) => {
     // 2. Refresh the repo index so the requested version resolves.
     await execFileAsync(bin, ['repo', 'update', repoName], { encoding: 'utf-8', timeout: 60000 });
 
-    // 3. Optional user values → temp file passed with -f.
-    const args = helmCtx('upgrade', '--install', releaseName, `${repoName}/${chart}`,
-      '--namespace', namespace, '--create-namespace');
+    const args = helmCtx('upgrade', ...(install ? ['--install'] : []), releaseName, `${repoName}/${chart}`,
+      '--namespace', namespace, ...(install ? ['--create-namespace'] : []));
     if (version) args.push('--version', version);
-    if (typeof values === 'string' && values.trim()) {
-      // Validate it parses as YAML before handing it to helm.
+
+    // 3. Values handling. If the caller supplied values, validate + pass with -f.
+    // Otherwise, a plain `helm upgrade` resets values to chart defaults — so for
+    // an upgrade with no new values we reuse the release's current values.
+    if (typeof values === 'string' && values.trim() && values.trim() !== '{}') {
       try { yaml.load(values); } catch (e) { return res.status(400).json({ error: `Values are not valid YAML: ${e.message}` }); }
       valuesFile = path.join(os.tmpdir(), `km-helm-values-${randomUUID()}.yaml`);
       fs.writeFileSync(valuesFile, values, { mode: 0o600 });
       args.push('-f', valuesFile);
+    } else if (!install && reuseValues) {
+      args.push('--reuse-values');
     }
 
     const { stdout } = await execFileAsync(bin, args, { encoding: 'utf-8', maxBuffer: 16 * 1024 * 1024, timeout: 300000 });
-    cache.delete('helm-releases'); // surface the new release on the next list.
+    cache.delete('helm-releases'); // surface the change on the next list.
     res.json({ ok: true, output: stdout, release: releaseName, namespace });
   } catch (error) {
     const detail = (error.stderr || error.message || '').toString().trim();
-    res.status(500).json({ error: `Install failed: ${detail}` });
+    res.status(500).json({ error: `${verb} failed: ${detail}` });
   } finally {
     if (valuesFile) { try { fs.unlinkSync(valuesFile); } catch { /* best effort */ } }
   }
-});
+}
+
+// Install a chart into the current cluster (creates the namespace if missing).
+app.post('/api/helm/install', (req, res) => runHelmDeploy(req, res, { install: true, verb: 'Install' }));
+
+// Upgrade or downgrade an existing release to a different chart version and/or
+// values. Same chart/repo, new --version; values are reused unless overridden.
+app.post('/api/helm/upgrade', (req, res) => runHelmDeploy(req, res, { install: false, verb: 'Upgrade' }));
 
 const CRD_JSONPATH = '{range .items[*]}{.metadata.name}{"\\t"}{.spec.group}{"\\t"}{.spec.names.kind}{"\\t"}{.spec.names.plural}{"\\t"}{.spec.names.singular}{"\\t"}{.spec.scope}{"\\t"}{.metadata.creationTimestamp}{"\\t"}{.spec.versions[?(@.storage==true)].name}{"\\n"}{end}';
 

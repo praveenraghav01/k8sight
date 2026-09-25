@@ -28,6 +28,7 @@ export default function Helm({ refreshSignal = 0 }) {
   const [yamlLoading, setYamlLoading] = useState(false);
   const [yamlError, setYamlError] = useState(null);
   const [showSearch, setShowSearch] = useState(false);
+  const [upgradeTarget, setUpgradeTarget] = useState(null);
 
   useEffect(() => {
     fetchReleases();
@@ -127,6 +128,14 @@ export default function Helm({ refreshSignal = 0 }) {
         />
       )}
 
+      {upgradeTarget && (
+        <HelmChartSearch
+          upgradeRelease={upgradeTarget}
+          onClose={() => setUpgradeTarget(null)}
+          onInstalled={() => { fetchReleases(); if (selectedRelease) fetchYaml(selectedRelease, activeTab); }}
+        />
+      )}
+
       <div className="resource-table-wrapper">
         {loading ? (
           <Loader label="Loading Helm releases…" />
@@ -199,7 +208,15 @@ export default function Helm({ refreshSignal = 0 }) {
             >
               <Icon name="manifest" size={15} /> Manifest
             </button>
-            <button className="bottom-panel-toggle" onClick={() => setSelectedRelease(null)} title="Close">
+            <button
+              className="helm-upgrade-btn"
+              style={{ marginLeft: 'auto' }}
+              onClick={() => setUpgradeTarget(selectedRelease)}
+              title="Upgrade or downgrade this release"
+            >
+              <Icon name="download" size={14} /> Upgrade / downgrade
+            </button>
+            <button className="bottom-panel-toggle" style={{ marginLeft: 0 }} onClick={() => setSelectedRelease(null)} title="Close">
               <Icon name="close" size={16} />
             </button>
           </div>

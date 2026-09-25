@@ -1307,6 +1307,18 @@ export function handle(req, res) {
       }));
       return json({ ok: true, release: releaseName, namespace, output: `NAME: ${releaseName}\nNAMESPACE: ${namespace}\nSTATUS: deployed\nREVISION: 1\n(demo — no cluster changes were made)` });
     }
+    if (method === 'POST' && p === '/api/helm/upgrade') {
+      const { releaseName, namespace = 'default', version } = req.body || {};
+      const rel = cluster.helm.find((r) => r.name === releaseName && r.namespace === namespace);
+      if (!rel) return json({ error: `Release ${releaseName} not found in ${namespace}` }, 404);
+      // Bump the revision and swap the chart version to mirror a real up/downgrade.
+      rel.version = (rel.version || 1) + 1;
+      if (rel.info) rel.info.status = 'deployed';
+      if (version && rel.chart?.metadata) rel.chart.metadata.version = version;
+      const merged = (() => { try { return req.body?.values ? { ...(rel.config || {}), ...(yaml.load(req.body.values) || {}) } : rel.config; } catch { return rel.config; } })();
+      rel.config = merged;
+      return json({ ok: true, release: releaseName, namespace, output: `Release "${releaseName}" has been upgraded.\nNAMESPACE: ${namespace}\nSTATUS: deployed\nREVISION: ${rel.version}\n(demo — no cluster changes were made)` });
+    }
 
     // ---------- custom resources ----------
     if (method === 'GET' && p === '/api/customresources') return json({ crds: cluster.crds });
