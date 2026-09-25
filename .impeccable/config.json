@@ -1,0 +1,17 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "icon-tile-stack",
+        "value": "*",
+        "files": [
+          "website/index.html"
+        ],
+        "createdAt": "2026-09-25T07:08:36.081Z",
+        "reason": "user confirmed: cloud-card + dl-card badges hold real EKS/AKS/GKE and OS-installer logos, not generic feature-icon tiles; feature-grid tiles were removed"
+      }
+    ]
+  }
+}

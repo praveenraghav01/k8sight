@@ -142,7 +142,7 @@
   .brand { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 15px; letter-spacing: -0.01em; color: var(--text); }
   .brand:hover { text-decoration: none; }
   .brand .logo { width: 26px; height: 26px; border-radius: 7px; }
-  .brand small { display: block; font-size: 9px; letter-spacing: .14em; color: var(--text-mute); font-weight: 500; }
+  .brand small { display: block; font-size: 11px; letter-spacing: .12em; color: var(--text-mute); font-weight: 500; }
   .nav-right { display: flex; align-items: center; gap: 22px; }
   .nav-links { display: flex; align-items: center; gap: 26px; }
   .nav-links a { color: var(--text); opacity: .82; font-size: 12px; font-weight: 400; letter-spacing: -0.01em; transition: opacity .15s, color .15s; }
@@ -792,7 +792,7 @@
           <li><span class="ck"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke-width="3"><path d="M20 6L9 17l-5-5"/></svg></span> <span><b>Secrets redacted</b>: secret values are stripped from tool output before anything reaches the API.</span></li>
           <li><span class="ck"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke-width="3"><path d="M20 6L9 17l-5-5"/></svg></span> <span><b>Provider-agnostic</b>: connects to any OpenAI-compatible endpoint (TrueFoundry, OpenAI, Azure, LiteLLM…) and stays aware of your current view.</span></li>
         </ul>
-        <div class="ai-note" style="margin-top:24px; display:flex; gap:12px; align-items:flex-start; padding:16px 18px; border:1px solid var(--border-2); border-left:3px solid var(--amber); border-radius:12px; background:var(--panel-2);">
+        <div class="ai-note" style="margin-top:24px; display:flex; gap:12px; align-items:flex-start; padding:16px 18px; border:1px solid var(--border-2); border-radius:12px; background:var(--panel-2);">
           <svg aria-hidden="true" focusable="false" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--amber)" stroke-width="2" style="flex:0 0 auto; margin-top:1px;"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><path d="M12 9v4M12 17h.01"/></svg>
           <span style="color:var(--text-dim); font-size:14.5px; line-height:1.6;"><b style="color:var(--text);">Needs your own LLM subscription.</b> The assistant ships with no built-in model. You connect an OpenAI-compatible API (TrueFoundry, OpenAI, Azure OpenAI, LiteLLM, …), which usually requires a paid account and API key. Your key is stored locally in <code style="font-family:var(--mono); font-size:12.5px;">~/.config/k8s-manager/config.json</code>. Everything else in the app works without it.</span>
         </div>
