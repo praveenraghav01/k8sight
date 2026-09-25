@@ -373,12 +373,17 @@ app.get('/api/config/status', (req, res) => {
   // URL) so the UI can group and icon them.
   const providerOf = (server = '', name = '') => {
     const s = server.toLowerCase();
-    if (s.includes('.azmk8s.io') || s.includes('azure')) return 'azure';
-    if (s.includes('.eks.amazonaws.com') || s.includes('eks.') ) return 'aws';
-    // GKE is reached on a bare public IP, so the server URL says nothing. Both
+    // Match on the parsed hostname (not a substring of the whole URL) so a URL
+    // like https://evil.com/.eks.amazonaws.com can't be misclassified.
+    let host = '';
+    try { host = new URL(server).hostname.toLowerCase(); } catch { /* not a URL */ }
+    const hostEndsWith = (suffix) => host === suffix.replace(/^\./, '') || host.endsWith(suffix);
+    if (hostEndsWith('.azmk8s.io')) return 'azure';
+    if (hostEndsWith('.eks.amazonaws.com')) return 'aws';
+    // GKE is reached on a bare public IP, so the server URL rarely helps. Both
     // gcloud and this app name their contexts gke_<project>_<location>_<cluster>,
-    // which is the only reliable signal.
-    if (s.includes('.gke.') || s.includes('container.googleapis.com') || name.toLowerCase().startsWith('gke_')) return 'gcp';
+    // which is the most reliable signal.
+    if (hostEndsWith('.googleapis.com') || hostEndsWith('.gke.goog') || name.toLowerCase().startsWith('gke_')) return 'gcp';
     if (/(127\.0\.0\.1|localhost|:6443|:8443|host\.docker|kubernetes\.docker|minikube|kind|orbstack|rancher)/.test(s)) return 'local';
     return 'other';
   };
