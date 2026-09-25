@@ -850,6 +850,15 @@ export GOOGLE_CLIENT_SECRET='GOCSPX-...'</code></pre>
       <h2>Release notes</h2>
       <div class="tagline">What's new in each version. Installers for every release are on the <a href="https://github.com/praveenraghav01/k8sight/releases" target="_blank" rel="noopener">Releases</a> page.</div>
 
+      <h3>v1.5.3 <span class="rel-date">Sep 25, 2026</span> — Leaner installs &amp; a fully-notarized macOS download</h3>
+      <p>Packaging and trust improvements across every platform.</p>
+      <ul>
+        <li><strong>Fully-notarized macOS download</strong> — the <code>.dmg</code> itself is now notarized and stapled (not just the app inside), so a freshly-downloaded image opens with no Gatekeeper prompt and no right-click → <strong>Open</strong> workaround.</li>
+        <li><strong>Smaller, faster installs</strong> — the app is packed into a single <code>app.asar</code> and ships English-only Electron locales, cutting the packaged file count from ~5,600 to ~200 — a much quicker Windows install (far less Defender per-file scanning) and faster macOS signing. Cloud token helpers (EKS/AKS/GKE) are bundled so they keep working under the new packaging.</li>
+        <li><strong>Security Center</strong> — clearer messaging when a non-Aqua Trivy operator is installed, so scan results are easier to interpret.</li>
+      </ul>
+      <p><a href="https://github.com/praveenraghav01/k8sight/releases/tag/v1.5.3" target="_blank" rel="noopener">Release on GitHub ↗</a></p>
+
       <h3>v1.5.2 <span class="rel-date">Sep 25, 2026</span> — Google GKE &amp; signed macOS builds</h3>
       <p>CLI-free Google GKE, signed &amp; notarized macOS builds, sortable tables and a smoother auto-refresh.</p>
       <ul>
