@@ -4,6 +4,7 @@ import hljs from 'highlight.js';
 import 'highlight.js/styles/atom-one-dark.css';
 import Icon from './Icons';
 import Loader from './Loader';
+import HelmChartSearch from './HelmChartSearch';
 
 const formatAge = (dateStr) => {
   if (!dateStr) return '-';
@@ -26,6 +27,7 @@ export default function Helm({ refreshSignal = 0 }) {
   const [yamlContent, setYamlContent] = useState('');
   const [yamlLoading, setYamlLoading] = useState(false);
   const [yamlError, setYamlError] = useState(null);
+  const [showSearch, setShowSearch] = useState(false);
 
   useEffect(() => {
     fetchReleases();
@@ -111,8 +113,19 @@ export default function Helm({ refreshSignal = 0 }) {
           </h3>
           <span className="resource-count">{releases.length} items</span>
         </div>
-        <div className="resource-controls" />
+        <div className="resource-controls">
+          <button className="resource-btn primary" onClick={() => setShowSearch(true)}>
+            <Icon name="plus" size={15} /> Install chart
+          </button>
+        </div>
       </div>
+
+      {showSearch && (
+        <HelmChartSearch
+          onClose={() => setShowSearch(false)}
+          onInstalled={() => fetchReleases()}
+        />
+      )}
 
       <div className="resource-table-wrapper">
         {loading ? (

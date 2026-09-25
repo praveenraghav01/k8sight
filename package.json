@@ -16,14 +16,15 @@
     "client": "cd client && npm run dev",
     "version:sync": "node scripts/sync-version.mjs",
     "fetch:trivy": "node scripts/fetch-trivy.mjs",
+    "fetch:helm": "node scripts/fetch-helm.mjs",
     "postinstall": "node scripts/fix-pty-helper.mjs",
     "test": "node --test \"test/**/*.test.mjs\"",
     "build": "node scripts/write-gke-oauth.mjs && npm run version:sync && cd client && npm run build",
     "start": "node server.js",
     "app": "electron .",
-    "app:pack": "npm run fetch:trivy && npm run build && electron-builder --dir --mac",
-    "app:dist": "npm run fetch:trivy && npm run build && electron-builder --mac",
-    "dist": "npm run fetch:trivy && npm run build && electron-builder --publish never",
+    "app:pack": "npm run fetch:trivy && npm run fetch:helm && npm run build && electron-builder --dir --mac",
+    "app:dist": "npm run fetch:trivy && npm run fetch:helm && npm run build && electron-builder --mac",
+    "dist": "npm run fetch:trivy && npm run fetch:helm && npm run build && electron-builder --publish never",
     "mcp": "node mcp-stdio.js"
   },
   "overrides": {
@@ -85,7 +86,8 @@
         "from": "bin",
         "to": "bin",
         "filter": [
-          "trivy*"
+          "trivy*",
+          "helm*"
         ]
       }
     ],
