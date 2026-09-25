@@ -6,7 +6,7 @@
 <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
 <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)" />
 <title>k8sight: a beautiful desktop UI for Kubernetes</title>
-<meta name="description" content="k8sight is a native desktop app for browsing and operating any Kubernetes cluster from your local kubeconfig. Live dashboards, pod logs, interactive shells, topology, Helm, Argo CD, cloud clusters (EKS/AKS), a built-in Security Center (image CVEs, config & RBAC audit), an AI assistant and docked coding agents. Download for macOS, Windows and Linux." />
+<meta name="description" content="k8sight is a native desktop app for browsing and operating any Kubernetes cluster from your local kubeconfig. Live dashboards, pod logs, interactive shells, topology, Helm, Argo CD, cloud clusters (EKS/AKS/GKE), a built-in Security Center (image CVEs, config & RBAC audit), an AI assistant and docked coding agents. Download for macOS, Windows and Linux." />
 <link rel="canonical" href="https://k8sight.in/" />
 <!-- Open Graph -->
 <meta property="og:type" content="website" />
@@ -514,7 +514,7 @@
       "applicationCategory": "DeveloperApplication",
       "applicationSubCategory": "Kubernetes IDE / cluster management UI",
       "operatingSystem": "macOS, Windows, Linux",
-      "description": "k8sight is a native desktop app for browsing and operating any Kubernetes cluster from your local kubeconfig. Live dashboards, pod logs, an in-pod shell, interactive topology, Helm, Argo CD, one-click AWS EKS and Azure AKS onboarding, a built-in Security Center (image CVEs, config and RBAC audit via bundled Trivy), a bring-your-own-model AI assistant, and a demo mode that needs no cluster.",
+      "description": "k8sight is a native desktop app for browsing and operating any Kubernetes cluster from your local kubeconfig. Live dashboards, pod logs, an in-pod shell, interactive topology, Helm, Argo CD, one-click AWS EKS, Azure AKS and Google GKE onboarding, a built-in Security Center (image CVEs, config and RBAC audit via bundled Trivy), a bring-your-own-model AI assistant, and a demo mode that needs no cluster.",
       "downloadUrl": "https://github.com/praveenraghav01/k8sight/releases/latest",
       "softwareVersion": "1.5.1",
       "license": "https://github.com/praveenraghav01/k8sight/blob/main/LICENSE",
@@ -535,7 +535,7 @@
         "Helm releases with values and rendered manifests",
         "First-class Argo CD GitOps dashboard with sync/refresh/rollback",
         "Built-in Security Center: image CVEs, config and RBAC audit, exposed secrets (bundled Trivy)",
-        "One-click AWS EKS and Azure AKS onboarding without the aws/az CLI",
+        "One-click AWS EKS, Azure AKS and Google GKE onboarding without the aws/az/gcloud CLI",
         "Bring-your-own-model AI assistant grounded in live cluster data",
         "MCP server so external AI agents can inspect the cluster",
         "Demo mode: try every feature against a synthetic cluster with no kubeconfig"
@@ -582,7 +582,7 @@
           "name": "Do I need kubectl or the AWS/Azure CLI to use k8sight?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "k8sight needs kubectl on your PATH and a working kubeconfig. It does not need the aws, az or kubelogin CLIs: bundled token helpers authenticate imported EKS and AKS clusters at runtime, and Helm releases are read through the API without the helm CLI."
+            "text": "k8sight needs kubectl on your PATH and a working kubeconfig. It does not need the aws, az or kubelogin CLIs: bundled token helpers authenticate imported EKS, AKS and GKE clusters at runtime, and Helm releases are read through the API without the helm CLI."
           }
         },
         {
@@ -606,7 +606,7 @@
           "name": "Does k8sight work with EKS, AKS and GKE?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "Yes. k8sight has one-click onboarding for AWS EKS and Azure AKS that discovers clusters across your accounts and subscriptions and merges them into your kubeconfig. GKE, on-prem, kind and minikube and any other context work straight from your existing kubeconfig."
+            "text": "Yes. k8sight has one-click onboarding for AWS EKS, Azure AKS and Google GKE that discovers clusters across your accounts, subscriptions and projects and merges them into your kubeconfig. On-prem, kind, minikube and any other context work straight from your existing kubeconfig."
           }
         }
       ]
@@ -653,7 +653,7 @@
 <section class="hero tile-canvas" id="top">
   <div class="wrap">
     <h1>See your whole cluster in <span class="grad">one beautiful</span> window</h1>
-    <p class="sub">k8sight is a native desktop app for browsing and operating any Kubernetes cluster from your local <code>kubeconfig</code>: live metrics, pod logs, interactive shells, topology, Helm, Argo CD, one-click EKS &amp; AKS clusters, a built-in security scanner, an AI assistant and docked coding agents.</p>
+    <p class="sub">k8sight is a native desktop app for browsing and operating any Kubernetes cluster from your local <code>kubeconfig</code>: live metrics, pod logs, interactive shells, topology, Helm, Argo CD, one-click EKS, AKS &amp; GKE clusters, a built-in security scanner, an AI assistant and docked coding agents.</p>
     <div class="cta-row">
       <a class="btn btn-primary" href="#download">
         <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg>
@@ -682,7 +682,7 @@
     <div class="stat"><b>Native</b><span>macOS · Windows · Linux</span></div>
     <div class="stat"><b>15+</b><span>resource views</span></div>
     <div class="stat"><b>Live</b><span>CPU / memory metrics</span></div>
-    <div class="stat"><b>EKS · AKS</b><span>cloud clusters, no CLI</span></div>
+    <div class="stat"><b>EKS · AKS · GKE</b><span>cloud clusters, no CLI</span></div>
     <div class="stat"><b>⌘K</b><span>command palette</span></div>
   </div>
 </div>
@@ -847,7 +847,7 @@
     <div class="sec-head reveal">
       <span class="kicker">Managed Kubernetes</span>
       <h2>Add cloud clusters without wrestling the CLI</h2>
-      <p>Bring your Amazon EKS and Azure AKS clusters into k8sight and it writes them straight into your kubeconfig. For Azure you can sign in through your <b>system browser</b> (no <code>az</code> install, and it works with device Conditional Access) or use the classic Azure CLI if you prefer.</p>
+      <p>Bring your Amazon EKS, Azure AKS and Google GKE clusters into k8sight and it writes them straight into your kubeconfig — no cloud CLI to install. Sign in the way each cloud expects: AWS credentials, an Azure <b>system browser</b> flow (works with device Conditional Access), or your existing <code>gcloud</code> login. Any other kubeconfig context works too.</p>
     </div>
     <div class="cloud-grid">
       <div class="cloud-card reveal">
@@ -863,16 +863,17 @@
         <div class="tags"><span>Browser login</span><span>or az CLI</span><span>CA-compliant</span></div>
       </div>
       <div class="cloud-card reveal">
-        <div class="logo-badge"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="var(--brand-light)" stroke-width="1.8"><path d="M4 7h16M4 12h16M4 17h16"/><circle cx="7" cy="7" r="0"/></svg></div>
-        <h3>Any kubeconfig</h3>
-        <p>Already have contexts for GKE, on-prem or a local kind/minikube? k8sight reads them all straight from <code>~/.kube/config</code>, nothing to configure.</p>
-        <div class="tags"><span>GKE</span><span>kind / minikube</span><span>on-prem</span></div>
+        <div class="logo-badge"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path fill="#4285F4" d="M23.06 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h6.19a5.3 5.3 0 0 1-2.3 3.48v2.89h3.72c2.18-2 3.45-4.96 3.45-8.38z"/><path fill="#34A853" d="M12 24c3.24 0 5.96-1.08 7.94-2.91l-3.72-2.89c-1.03.69-2.35 1.1-4.22 1.1-3.24 0-5.99-2.19-6.97-5.13H1.19v2.98A12 12 0 0 0 12 24z"/><path fill="#FBBC05" d="M5.03 14.27a7.18 7.18 0 0 1 0-4.54V6.75H1.19a12 12 0 0 0 0 10.5z"/><path fill="#EA4335" d="M12 4.77c1.76 0 3.34.61 4.59 1.8l3.3-3.3C17.95 1.2 15.24 0 12 0A12 12 0 0 0 1.19 6.75l3.84 2.98C6.01 6.96 8.76 4.77 12 4.77z"/></svg></div>
+        <h3>Google GKE</h3>
+        <p>Sign in with your existing <code>gcloud</code> login (Application Default Credentials), a browser OAuth flow, or a service-account key, then discover clusters across your projects.</p>
+        <div class="tags"><span>gcloud ADC</span><span>or browser OAuth</span><span>no gke-auth-plugin</span></div>
       </div>
     </div>
     <div class="prereq reveal">
       <span class="tag"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15" style="flex:none"><path d="M17.5 19a4.5 4.5 0 0 0 0-9 6 6 0 0 0-11.7 1.5A4 4 0 0 0 6 19z"/></svg> EKS uses the AWS SDK, no <code>aws</code> CLI required</span>
       <span class="tag"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15" style="flex:none"><path d="M12 3l7 3v6c0 4-3 7-7 8-4-1-7-4-7-8V6z"/><path d="M9 12l2 2 4-4"/></svg> Azure browser login satisfies device compliance policies</span>
-      <span class="tag"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15" style="flex:none"><path d="M6 2h8l5 5v14a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1z"/><path d="M14 2v6h5"/></svg> Credentials merged into your existing kubeconfig</span>
+      <span class="tag"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15" style="flex:none"><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2z"/><path d="M2 12h20"/></svg> GKE via your <code>gcloud</code> login, browser OAuth or a service-account key</span>
+      <span class="tag"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15" style="flex:none"><path d="M6 2h8l5 5v14a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1z"/><path d="M14 2v6h5"/></svg> Credentials merged into your existing kubeconfig — kind, minikube &amp; on-prem contexts work too</span>
     </div>
   </div>
 </section>
@@ -1029,7 +1030,7 @@
         </a>
         <ol class="steps">
           <li>Open the <code>.dmg</code> and drag k8sight to Applications.</li>
-          <li>First launch: right-click → <b>Open</b> (ad-hoc signed).</li>
+          <li>Signed &amp; notarized (Developer ID) — drag to Applications and open.</li>
           <li>Requires <code>kubectl</code> installed locally.</li>
         </ol>
       </div>
@@ -1129,7 +1130,7 @@
       </details>
       <details class="faq-item">
         <summary>Does k8sight work with EKS, AKS and GKE?</summary>
-        <p class="faq-a">Yes. k8sight has one-click onboarding for AWS EKS and Azure AKS that discovers clusters across your accounts and subscriptions and merges them into your kubeconfig. GKE, on-prem, kind/minikube and any other context work straight from your existing kubeconfig.</p>
+        <p class="faq-a">Yes. k8sight has one-click onboarding for AWS EKS, Azure AKS and Google GKE that discovers clusters across your accounts, subscriptions and projects and merges them into your kubeconfig. On-prem, kind/minikube and any other context work straight from your existing kubeconfig.</p>
       </details>
     </div>
   </div>
