@@ -107,7 +107,9 @@ jobs:
             release/*.exe
             release/*.AppImage
             release/*.deb
+            release/*.zip
             release/latest*.yml
+            release/*.blockmap
 
   release:
     name: Publish GitHub Release
@@ -158,3 +160,6 @@ jobs:
             dist/*.exe
             dist/*.AppImage
             dist/*.deb
+            dist/*.zip
+            dist/latest*.yml
+            dist/*.blockmap
