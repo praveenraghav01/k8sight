@@ -16,6 +16,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { createHash } from 'crypto';
 
 const execFileAsync = promisify(execFile);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -97,6 +98,18 @@ async function latestVersion() {
   } catch { return TRIVY_FALLBACK_VERSION; }
 }
 
+// Verify a downloaded release asset against the checksums file trivy publishes
+// alongside it, so a compromised repo/CDN or a MITM can't smuggle in a binary.
+async function verifyChecksum(version, asset, data) {
+  const r = await fetch(`https://github.com/aquasecurity/trivy/releases/download/v${version}/trivy_${version}_checksums.txt`, { redirect: 'follow', signal: AbortSignal.timeout(30000) });
+  if (!r.ok) throw new Error(`Downloading trivy checksums failed (${r.status}).`);
+  const line = (await r.text()).split('\n').find((l) => l.trim().endsWith(asset));
+  const expected = (line || '').trim().split(/\s+/)[0];
+  if (!expected) throw new Error(`No checksum found for ${asset}.`);
+  const actual = createHash('sha256').update(data).digest('hex');
+  if (actual !== expected) throw new Error('trivy download failed checksum verification.');
+}
+
 // Return a usable trivy path — downloading + caching the binary if none exists.
 export async function ensureTrivy(onPhase) {
   if ((await trivyAvailable()).available) return trivyBin();
@@ -110,7 +123,9 @@ export async function ensureTrivy(onPhase) {
   const tgz = path.join(CACHE_DIR, asset);
   const r = await fetch(`https://github.com/aquasecurity/trivy/releases/download/v${version}/${asset}`, { redirect: 'follow', signal: AbortSignal.timeout(180000) });
   if (!r.ok) throw new Error(`Downloading trivy failed (${r.status}).`);
-  fs.writeFileSync(tgz, Buffer.from(await r.arrayBuffer()));
+  const data = Buffer.from(await r.arrayBuffer());
+  await verifyChecksum(version, asset, data);
+  fs.writeFileSync(tgz, data);
   await execFileAsync('tar', ['-xzf', tgz, '-C', CACHE_DIR, 'trivy'], { timeout: 60000 });
   fs.chmodSync(CACHED_TRIVY, 0o755);
   try { fs.unlinkSync(tgz); } catch { /* ignore */ }
