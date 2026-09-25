@@ -1,6 +1,6 @@
 {
   "name": "k8sight",
-  "version": "1.5.2",
+  "version": "1.5.3",
   "description": "A native desktop UI for browsing and operating Kubernetes clusters",
   "author": {
     "name": "Praveen Kumar",
