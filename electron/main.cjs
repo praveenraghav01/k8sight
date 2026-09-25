@@ -14,10 +14,36 @@ const { app, BrowserWindow, shell, dialog, Menu, utilityProcess } = require('ele
 const path = require('path');
 const os = require('os');
 const http = require('http');
+const net = require('net');
 const { spawn, execFileSync } = require('child_process');
 
-const BACKEND_PORT = 3001;
-const SERVER_URL = `http://127.0.0.1:${BACKEND_PORT}`;
+const DEFAULT_PORT = 3001;
+// The port the backend actually binds. We prefer 3001, but fall back to a free
+// port if a stale/older instance (or anything else) is squatting it — so a fresh
+// launch or an upgrade never dies with "port in use".
+let backendPort = DEFAULT_PORT;
+const serverUrl = (port = backendPort) => `http://127.0.0.1:${port}`;
+
+// Return the first free port at/after `preferred` (scanning a small range so the
+// port stays predictable), falling back to an OS-assigned one as a last resort.
+function findFreePort(preferred) {
+  const isFree = (port) => new Promise((resolve) => {
+    const tester = net.createServer();
+    tester.once('error', () => resolve(false));
+    tester.once('listening', () => tester.close(() => resolve(true)));
+    tester.listen(port, '127.0.0.1');
+  });
+  const anyFree = () => new Promise((resolve) => {
+    const s = net.createServer();
+    s.listen(0, '127.0.0.1', () => { const { port } = s.address(); s.close(() => resolve(port)); });
+  });
+  return (async () => {
+    for (let p = preferred; p < preferred + 20; p++) {
+      if (await isFree(p)) return p;
+    }
+    return anyFree();
+  })();
+}
 
 let serverProcess = null;
 let mainWindow = null;
@@ -85,6 +111,7 @@ function startServer(fixedPath) {
         ...process.env,
         PATH: fixedPath,
         NODE_ENV: 'production',
+        PORT: String(backendPort),
       },
       stdio: ['ignore', 'pipe', 'pipe'],
     });
@@ -107,7 +134,7 @@ function startServer(fixedPath) {
     if (!app.isQuitting && code !== 0 && code !== null) {
       const portTaken = /EADDRINUSE|already in use/i.test(stderrTail);
       const detail = portTaken
-        ? `Port ${BACKEND_PORT} is already in use — another copy of the app or a process on that port is running. Quit it and relaunch.`
+        ? `Port ${backendPort} is already in use — another copy of the app or a process on that port is running. Quit it and relaunch.`
         : `The backend exited unexpectedly (code ${code}).` +
           (stderrTail.trim() ? `\n\n${stderrTail.trim().split('\n').slice(-4).join('\n')}` : '');
       dialog.showErrorBox('k8sight', detail);
@@ -126,9 +153,9 @@ function stopServer() {
 }
 
 // --- 3. Wait for readiness, then show the window --------------------------
-function pingServer() {
+function pingServer(port = backendPort) {
   return new Promise((resolve) => {
-    const req = http.get(SERVER_URL, (res) => {
+    const req = http.get(serverUrl(port), (res) => {
       res.resume();
       resolve(true);
     });
@@ -195,26 +222,23 @@ function createWindow() {
 async function boot() {
   createWindow();
 
-  // If a backend is already serving on the port (e.g. `npm run dev`, or a
-  // second launch), reuse it instead of spawning a duplicate that would fail
-  // to bind the port and exit.
-  if (await pingServer()) {
-    if (mainWindow) mainWindow.loadURL(SERVER_URL);
-    return;
-  }
-
+  // Always start our own backend on a free port — preferring 3001, but falling
+  // back if a stale/older instance (or anything else) is squatting it. This way
+  // a fresh launch or an upgrade never dies with "port in use", and the app
+  // always runs THIS version's backend rather than reusing a leaked old one.
+  backendPort = await findFreePort(DEFAULT_PORT);
   startServer(resolveUserPath());
 
   const ready = await waitForServer();
   if (!mainWindow) return; // window closed while we waited
 
   if (ready) {
-    mainWindow.loadURL(SERVER_URL);
+    mainWindow.loadURL(serverUrl());
   } else {
     dialog.showErrorBox(
       'k8sight',
-      `The backend did not become ready on port ${BACKEND_PORT} within 30s.\n` +
-        `Something else may be using the port. Free it and relaunch.`
+      `The backend did not become ready on port ${backendPort} within 30s.\n` +
+        `Something else may be blocking it. Free it and relaunch.`
     );
     app.quit();
   }

@@ -317,8 +317,11 @@ function CopyField({ label, hint, value }) {
 }
 
 function McpSection() {
-  const host = (typeof window !== 'undefined' && window.location.hostname) || 'localhost';
-  const endpoint = `http://${host}:3001/mcp`;
+  // Derive the MCP endpoint from where the app is actually served. The desktop
+  // app picks a free port (not always 3001), and Docker maps its own port, so
+  // the origin is the source of truth. Only Vite dev (:3000) hits the API on 3001.
+  const loc = typeof window !== 'undefined' ? window.location : { origin: 'http://localhost:3001', hostname: 'localhost', port: '' };
+  const endpoint = loc.port === '3000' ? `http://${loc.hostname}:3001/mcp` : `${loc.origin}/mcp`;
   const [info, setInfo] = useState(null);
   const [test, setTest] = useState({ state: 'idle' }); // idle | testing | ok | fail
 

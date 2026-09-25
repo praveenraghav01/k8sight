@@ -42,10 +42,11 @@ try {
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
-// Fixed backend port. In dev, Vite (3000) proxies /api and /ws here; in the
-// Docker image this same server also serves the built UI. Map it at runtime
-// with `docker run -p <host>:3001`.
-const PORT = 3001;
+// Backend port. Defaults to 3001 (dev Vite proxies /api and /ws here; the Docker
+// image serves the built UI here too — map it with `docker run -p <host>:3001`).
+// The desktop app sets PORT to a free port it picked, so a stale/older instance
+// squatting 3001 never blocks a new launch.
+const PORT = Number(process.env.PORT) || 3001;
 const CLIENT_DIST = path.join(__dirname, 'client', 'dist');
 // CLI-free AKS token helper — app-imported AAD clusters exec this instead of
 // kubelogin, so neither `az` nor `kubelogin` is needed at runtime.
