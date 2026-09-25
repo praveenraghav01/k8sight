@@ -41,10 +41,11 @@
     --hairline: #e5e5e7;
     --text: #1d1d1f;
     --text-dim: #6e6e73;
-    --text-mute: #86868b;
+    --text-mute: #6b6b70;        /* darkened for WCAG AA on white (was #86868b, 3.6:1) */
+    --cta-bg: #0066cc;           /* accent fill that keeps white label ≥4.5:1 in both themes */
     --brand-light: #1d1d1f;
     --brand-dark: #6e6e73;
-    --accent: #0066cc;            /* Action Blue — the single interactive color */
+    --accent: #0066cc;            /* Action Blue - the single interactive color */
     --accent-hover: #0077ed;
     --accent-focus: #0071e3;      /* keyboard focus ring */
     --accent-on-dark: #2997ff;    /* Sky link, used inside dark tiles */
@@ -76,11 +77,12 @@
     --hairline: rgba(255,255,255,.09);
     --text: #f5f5f7;
     --text-dim: #a1a1a6;
-    --text-mute: #86868b;
+    --text-mute: #98989d;        /* lighter mute is fine on dark surfaces */
     --brand-light: #f5f5f7;
     --brand-dark: #a1a1a6;
     --accent: #2997ff;
     --accent-hover: #47a5ff;
+    --cta-bg: #0066cc;           /* keep CTA fill dark enough for white label AA on dark bg */
   }
 
   * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -100,7 +102,7 @@
   a:hover { text-decoration: underline; }
   img { max-width: 100%; display: block; }
   section { position: relative; }
-  /* Anchor jumps must rest flush under the 48px sticky nav — a larger value
+  /* Anchor jumps must rest flush under the 48px sticky nav - a larger value
      leaves a gap that exposes the previous section (a dark band when jumping
      from a dark section to a light one). */
   section[id] { scroll-margin-top: 48px; }
@@ -111,13 +113,13 @@
   h1, h2, .sec-head p { text-wrap: balance; }
   /* Consistent keyboard focus ring on every interactive element */
   a:focus-visible, button:focus-visible { outline: 2px solid var(--accent-focus); outline-offset: 3px; border-radius: 4px; }
-  /* Skip link — visible only on keyboard focus */
+  /* Skip link - visible only on keyboard focus */
   .skip-link { position: absolute; left: 12px; top: -60px; z-index: 9999; background: var(--accent); color: #fff; padding: 9px 15px; border-radius: 8px; font-size: 14px; font-weight: 500; transition: top .18s var(--ease-out); }
   .skip-link:focus { top: 10px; text-decoration: none; }
 
   .wrap { max-width: var(--maxw); margin: 0 auto; padding: 0 22px; }
 
-  /* Apple keeps backgrounds clean — a whisper of a glow only */
+  /* Apple keeps backgrounds clean - a whisper of a glow only */
   .bg-glow {
     position: fixed; inset: 0; z-index: -1; pointer-events: none;
     background: radial-gradient(1200px 700px at 50% -10%, rgba(0,113,227,.05), transparent 60%);
@@ -146,11 +148,11 @@
   .nav-links a { color: var(--text); opacity: .82; font-size: 12px; font-weight: 400; letter-spacing: -0.01em; transition: opacity .15s, color .15s; }
   .nav-links a:hover { opacity: 1; color: var(--accent); text-decoration: none; }
   .nav-cta {
-    background: var(--accent); color: #fff !important; opacity: 1;
-    padding: 5px 13px; border-radius: 980px; font-weight: 400; font-size: 12px;
-    transition: background .15s;
+    background: var(--cta-bg); color: #fff !important; opacity: 1;
+    padding: 5px 13px; border-radius: 980px; font-weight: 500; font-size: 12px;
+    transition: background .15s, filter .15s;
   }
-  .nav-cta:hover { background: var(--accent-hover); color: #fff !important; text-decoration: none; }
+  .nav-cta:hover { filter: brightness(1.1); color: #fff !important; text-decoration: none; }
   .menu-btn { display: none; background: none; border: 0; color: var(--text); cursor: pointer; }
   .theme-btn {
     display: grid; place-items: center; width: 30px; height: 30px; border-radius: 50%;
@@ -189,8 +191,8 @@
     transition: background .2s var(--ease-out), color .2s, border-color .2s, opacity .2s;
   }
   .btn svg { width: 18px; height: 18px; }
-  .btn-primary { background: var(--accent); color: #fff; }
-  .btn-primary:hover { background: var(--accent-hover); color: #fff; text-decoration: none; }
+  .btn-primary { background: var(--cta-bg); color: #fff; }
+  .btn-primary:hover { background: var(--cta-bg); filter: brightness(1.1); color: #fff; text-decoration: none; }
   /* System-wide press micro-interaction */
   .btn:active { transform: scale(0.95); }
   .btn:focus-visible { outline: 2px solid var(--accent-focus); outline-offset: 2px; }
@@ -204,14 +206,14 @@
   .shot-wrap { margin-top: 48px; position: relative; }
   .shot-frame {
     border-radius: 22px; overflow: hidden; border: 1px solid rgba(0,0,0,.06);
-    /* The one drop-shadow in the system — reserved for product imagery */
+    /* The one drop-shadow in the system - reserved for product imagery */
     box-shadow: 3px 5px 30px rgba(0,0,0,.22);
     background: var(--panel);
   }
   :root[data-theme="dark"] .shot-frame { border-color: rgba(255,255,255,.08); box-shadow: 3px 5px 40px rgba(0,0,0,.55); }
   .shot-frame img { width: 100%; height: auto; display: block; }
   .shot-glow { display: none; }
-  /* Theme-aware screenshots — light shown by default, dark in dark theme */
+  /* Theme-aware screenshots - light shown by default, dark in dark theme */
   .shot-frame .shot-dark { display: none; }
   :root[data-theme="dark"] .shot-frame .shot-light { display: none; }
   :root[data-theme="dark"] .shot-frame .shot-dark { display: block; }
@@ -228,8 +230,8 @@
   .strip .stat b .grad { color: var(--accent); }
 
   /* ---------- Section head ---------- */
-  .sec { padding: 72px 0; }
-  .sec-head { text-align: center; max-width: 44ch; margin: 0 auto 42px; }
+  .sec { padding: 96px 0; }
+  .sec-head { text-align: center; max-width: 44ch; margin: 0 auto 52px; }
   .sec-head .kicker { color: var(--accent); font-weight: 600; font-size: 17px; letter-spacing: -0.01em; }
   .sec-head h2 { font-size: clamp(30px, 4.2vw, 48px); letter-spacing: -0.015em; font-weight: 700; margin: 6px 0 16px; line-height: 1.08; color: var(--text); }
   .sec-head p { color: var(--text-dim); font-size: clamp(17px, 2vw, 21px); line-height: 1.4; }
@@ -240,15 +242,15 @@
     background: var(--bg-2); border: 1px solid var(--hairline); border-radius: var(--radius); padding: 30px 28px;
     transition: transform .3s var(--ease-out), border-color .2s;
   }
-  /* No card shadow — elevation comes from the hairline + a quiet lift */
+  /* No card shadow - elevation comes from the hairline + a quiet lift */
   .card:hover { transform: translateY(-2px); border-color: var(--border-2); }
   :root[data-theme="dark"] .card { background: #161617; }
+  /* Icon sits in flow as a lead glyph, not a rounded-square tile above the heading */
   .card .ico {
-    width: 44px; height: 44px; border-radius: 12px; display: grid; place-items: center; margin-bottom: 18px;
-    background: var(--panel); border: 1px solid var(--hairline);
+    width: 28px; height: 28px; display: flex; align-items: center; margin-bottom: 14px;
+    background: none; border: 0;
   }
-  :root[data-theme="dark"] .card .ico { background: #1d1d1f; box-shadow: none; }
-  .card .ico svg { width: 22px; height: 22px; stroke: var(--text); }
+  .card .ico svg { width: 26px; height: 26px; stroke: var(--text); }
   .card h3 { font-size: 19px; font-weight: 600; margin-bottom: 7px; letter-spacing: -0.01em; color: var(--text); }
   .card p { color: var(--text-dim); font-size: 15px; line-height: 1.47; }
   .card p code, .sec-head code, .split code { font-family: var(--mono); font-size: .86em; color: var(--accent); }
@@ -655,7 +657,7 @@
 <section class="hero tile-canvas" id="top">
   <div class="wrap">
     <h1>See your whole cluster in <span class="grad">one beautiful</span> window</h1>
-    <p class="sub">k8sight is a native desktop app for browsing and operating any Kubernetes cluster from your local <code>kubeconfig</code>: live metrics, pod logs, interactive shells, topology, Helm, Argo CD, one-click EKS, AKS &amp; GKE clusters, a built-in security scanner, an AI assistant and docked coding agents.</p>
+    <p class="sub">A native desktop app for every cluster in your <code>kubeconfig</code>: live metrics, logs, shells, topology, Helm and Argo CD.</p>
     <div class="cta-row">
       <a class="btn btn-primary" href="#download">
         <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg>
@@ -849,7 +851,7 @@
     <div class="sec-head reveal">
       <span class="kicker">Managed Kubernetes</span>
       <h2>Add cloud clusters without wrestling the CLI</h2>
-      <p>Bring your Amazon EKS, Azure AKS and Google GKE clusters into k8sight and it writes them straight into your kubeconfig — no cloud CLI to install. Sign in the way each cloud expects: AWS credentials, an Azure <b>system browser</b> flow (works with device Conditional Access), or your existing <code>gcloud</code> login. Any other kubeconfig context works too.</p>
+      <p>Bring your Amazon EKS, Azure AKS and Google GKE clusters into k8sight and it writes them straight into your kubeconfig, with no cloud CLI to install. Sign in the way each cloud expects: AWS credentials, an Azure <b>system browser</b> flow (works with device Conditional Access), or your existing <code>gcloud</code> login. Any other kubeconfig context works too.</p>
     </div>
     <div class="cloud-grid">
       <div class="cloud-card reveal">
@@ -875,7 +877,7 @@
       <span class="tag"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15" style="flex:none"><path d="M17.5 19a4.5 4.5 0 0 0 0-9 6 6 0 0 0-11.7 1.5A4 4 0 0 0 6 19z"/></svg> EKS uses the AWS SDK, no <code>aws</code> CLI required</span>
       <span class="tag"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15" style="flex:none"><path d="M12 3l7 3v6c0 4-3 7-7 8-4-1-7-4-7-8V6z"/><path d="M9 12l2 2 4-4"/></svg> Azure browser login satisfies device compliance policies</span>
       <span class="tag"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15" style="flex:none"><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2z"/><path d="M2 12h20"/></svg> GKE via your <code>gcloud</code> login, browser OAuth or a service-account key</span>
-      <span class="tag"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15" style="flex:none"><path d="M6 2h8l5 5v14a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1z"/><path d="M14 2v6h5"/></svg> Credentials merged into your existing kubeconfig — kind, minikube &amp; on-prem contexts work too</span>
+      <span class="tag"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15" style="flex:none"><path d="M6 2h8l5 5v14a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1z"/><path d="M14 2v6h5"/></svg> Credentials merged into your existing kubeconfig; kind, minikube &amp; on-prem contexts work too</span>
     </div>
   </div>
 </section>
@@ -1032,7 +1034,7 @@
         </a>
         <ol class="steps">
           <li>Open the <code>.dmg</code> and drag k8sight to Applications.</li>
-          <li>Signed &amp; notarized (Developer ID) — drag to Applications and open.</li>
+          <li>Signed &amp; notarized (Developer ID). Drag to Applications and open.</li>
           <li>Requires <code>kubectl</code> installed locally.</li>
         </ol>
       </div>
@@ -1104,7 +1106,7 @@
     <div class="faq-list reveal">
       <details class="faq-item">
         <summary>What is k8sight?</summary>
-        <p class="faq-a">k8sight is a native desktop app (macOS, Windows and Linux) for browsing and operating any Kubernetes cluster from your local kubeconfig. It gives you a live dashboard, pod logs, an in-pod shell, interactive topology, Helm, Argo CD, a built-in Security Center and an AI assistant — without a wall of kubectl commands.</p>
+        <p class="faq-a">k8sight is a native desktop app (macOS, Windows and Linux) for browsing and operating any Kubernetes cluster from your local kubeconfig. It gives you a live dashboard, pod logs, an in-pod shell, interactive topology, Helm, Argo CD, a built-in Security Center and an AI assistant, without a wall of kubectl commands.</p>
       </details>
       <details class="faq-item">
         <summary>Is k8sight free and open-source?</summary>
@@ -1112,7 +1114,7 @@
       </details>
       <details class="faq-item">
         <summary>How is k8sight different from Lens, k9s and Rancher?</summary>
-        <p class="faq-a">k8sight is a desktop UI for clusters you already have, closest in spirit to Lens and k9s. Unlike Rancher — a multi-cluster platform you deploy inside your clusters to provision and govern a fleet — k8sight runs on your laptop, reads your kubeconfig and needs nothing installed in-cluster. Compared with Lens and k9s, it adds a built-in security scanner (bundled Trivy), an AI assistant and a no-cluster demo mode. See the <a href="docs.html#compare">full comparison</a>.</p>
+        <p class="faq-a">k8sight is a desktop UI for clusters you already have, closest in spirit to Lens and k9s. Unlike Rancher, a multi-cluster platform you deploy inside your clusters to provision and govern a fleet, k8sight runs on your laptop, reads your kubeconfig and needs nothing installed in-cluster. Compared with Lens and k9s, it adds a built-in security scanner (bundled Trivy), an AI assistant and a no-cluster demo mode. See the <a href="docs.html#compare">full comparison</a>.</p>
       </details>
       <details class="faq-item">
         <summary>Which platforms does k8sight support?</summary>
@@ -1124,7 +1126,7 @@
       </details>
       <details class="faq-item">
         <summary>Can I try k8sight without a Kubernetes cluster?</summary>
-        <p class="faq-a">Yes. k8sight includes a demo mode. Click <b>Explore the demo</b> (or pick the <b>demo</b> context) to browse and operate a realistic synthetic cluster — sample workloads, live metrics, logs, topology, Helm, Argo CD, a Security Center scan, a pod shell and the AI assistant — with no kubeconfig required.</p>
+        <p class="faq-a">Yes. k8sight includes a demo mode. Click <b>Explore the demo</b> (or pick the <b>demo</b> context) to browse and operate a realistic synthetic cluster (sample workloads, live metrics, logs, topology, Helm, Argo CD, a Security Center scan, a pod shell and the AI assistant), with no kubeconfig required.</p>
       </details>
       <details class="faq-item">
         <summary>Does k8sight send my cluster data anywhere?</summary>
@@ -1232,14 +1234,14 @@
         start(a.getAttribute('href'), a.dataset.os);
       });
     });
-    // "Download now" is a real anchor — just stop the timer and let it navigate.
+    // "Download now" is a real anchor - just stop the timer and let it navigate.
     nowLink.addEventListener('click', () => clearInterval(timer));
     closeBtn.addEventListener('click', close);
     scrim.addEventListener('click', (e) => { if (e.target === scrim) close(); });
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !scrim.hidden) close(); });
   })();
 
-  // Theme toggle (light / dark) — persisted, defaults to system preference.
+  // Theme toggle (light / dark) - persisted, defaults to system preference.
   // Which icon shows is handled entirely in CSS via [data-theme].
   (function () {
     const root = document.documentElement;
