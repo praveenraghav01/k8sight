@@ -100,8 +100,10 @@
   a:hover { text-decoration: underline; }
   img { max-width: 100%; display: block; }
   section { position: relative; }
-  /* Sticky 48px nav must not obscure anchored sections */
-  section[id] { scroll-margin-top: 60px; }
+  /* Anchor jumps must rest flush under the 48px sticky nav — a larger value
+     leaves a gap that exposes the previous section (a dark band when jumping
+     from a dark section to a light one). */
+  section[id] { scroll-margin-top: 48px; }
   code { font-family: var(--mono); font-size: 0.88em; }
   /* Kill the 300ms double-tap delay + set an intentional tap highlight */
   a, button { touch-action: manipulation; -webkit-tap-highlight-color: rgba(0,0,0,0); }
