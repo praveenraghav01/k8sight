@@ -11,6 +11,15 @@
         ],
         "createdAt": "2026-09-25T07:08:36.081Z",
         "reason": "user confirmed: cloud-card + dl-card badges hold real EKS/AKS/GKE and OS-installer logos, not generic feature-icon tiles; feature-grid tiles were removed"
+      },
+      {
+        "rule": "wide-tracking",
+        "value": "*",
+        "files": [
+          "website/index.html"
+        ],
+        "createdAt": "2026-09-25T07:09:54.157Z",
+        "reason": "the only wide-tracked text is the KUBERNETES, IN SIGHT brand sublabel — a short uppercase label, the sanctioned use for wide tracking"
       }
     ]
   }
