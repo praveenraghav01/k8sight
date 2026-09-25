@@ -12,9 +12,10 @@ import http from 'http';
 import crypto from 'crypto';
 import yaml from 'js-yaml';
 import { fileURLToPath } from 'url';
+import { tokenHelperPath } from './lib/resource-path.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-export const GKE_TOKEN_HELPER = path.join(__dirname, 'gke-token.js');
+export const GKE_TOKEN_HELPER = tokenHelperPath(import.meta.url, 'gke-token');
 
 const CONFIG_DIR = path.join(process.env.HOME || os.homedir(), '.config', 'k8s-manager', 'gke');
 const CREDS_FILE = path.join(CONFIG_DIR, 'credentials.json');

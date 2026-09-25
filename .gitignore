@@ -79,3 +79,9 @@ coverage/
 
 # Fetched trivy binary (scripts/fetch-trivy.mjs) — not committed
 /bin/
+
+# Bundled token helpers (scripts/bundle-token-helpers.mjs) — generated per build
+/dist-helpers/
+
+# /brag skill video output — not part of the app
+/brag-output/
