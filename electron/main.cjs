@@ -10,7 +10,7 @@
 //   4. Tear the server down on quit (which triggers its port-forward cleanup).
 'use strict';
 
-const { app, BrowserWindow, shell, dialog, Menu, utilityProcess } = require('electron');
+const { app, BrowserWindow, shell, dialog, Menu, utilityProcess, ipcMain } = require('electron');
 const path = require('path');
 const os = require('os');
 const fs = require('fs');
@@ -170,6 +170,7 @@ function createWindow() {
     trafficLightPosition: { x: 18, y: 15 },
     show: false,
     webPreferences: {
+      preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
       nodeIntegration: false,
     },
@@ -279,9 +280,26 @@ function autoCheckEnabled() {
 function setAutoCheck(on) {
   try { fs.writeFileSync(updaterPrefsPath(), JSON.stringify({ autoCheck: !!on })); } catch { /* ignore */ }
 }
-function canAutoUpdate() {
-  return !!autoUpdater && app.isPackaged;
+function updatesConfigured() {
+  // electron-updater needs app-update.yml, which is written only into published
+  // builds. A local `--dir` / unsigned build doesn't have it, so treat updates as
+  // unavailable there rather than letting checkForUpdates throw ENOENT.
+  try { return fs.existsSync(path.join(process.resourcesPath, 'app-update.yml')); } catch { return false; }
 }
+function canAutoUpdate() {
+  return !!autoUpdater && app.isPackaged && updatesConfigured();
+}
+
+// IPC bridge for the Preferences UI (see electron/preload.cjs). Lets the renderer
+// read and change the auto-update preference the menu checkbox also drives.
+ipcMain.handle('updater:get', () => ({ autoCheck: autoCheckEnabled(), supported: canAutoUpdate() }));
+ipcMain.handle('updater:set', (_e, on) => {
+  setAutoCheck(on);
+  try { Menu.setApplicationMenu(buildMenu()); } catch { /* menu keeps its old checked state */ }
+  if (on) checkForUpdates(false); // start checking immediately when re-enabled
+  return { autoCheck: autoCheckEnabled(), supported: canAutoUpdate() };
+});
+ipcMain.handle('updater:check', () => { checkForUpdates(true); return true; });
 
 let updaterWired = false;
 let manualCheck = false;
@@ -295,10 +313,14 @@ function wireUpdater() {
     manualCheck = false;
     dialog.showMessageBox({ type: 'info', title: 'k8sight', message: "You're up to date", detail: `k8sight ${app.getVersion()} is the latest version.` });
   });
-  autoUpdater.on('error', (err) => {
+  autoUpdater.on('error', () => {
     if (!manualCheck) return;
     manualCheck = false;
-    dialog.showErrorBox('Update check failed', String(err && err.message ? err.message : err));
+    dialog.showMessageBox({
+      type: 'warning', title: 'k8sight', message: "Couldn't check for updates",
+      detail: 'Please try again later, or download the latest version from the Releases page.',
+      buttons: ['Open Releases', 'OK'], defaultId: 1, cancelId: 1,
+    }).then(({ response }) => { if (response === 0) shell.openExternal(RELEASES_URL); });
   });
   autoUpdater.on('update-downloaded', async (info) => {
     manualCheck = false;
@@ -313,17 +335,27 @@ function wireUpdater() {
 
 function checkForUpdates(manual) {
   if (!canAutoUpdate()) {
-    // Unsupported (macOS ad-hoc, or a dev/unpacked run): open the Releases page
-    // so a manual check still does something useful.
-    if (manual) shell.openExternal(RELEASES_URL);
+    // Unsupported (a dev / unsigned --dir run with no update metadata): a manual
+    // check offers the Releases page instead of erroring; auto checks stay silent.
+    if (manual) {
+      dialog.showMessageBox({
+        type: 'info', title: 'k8sight', message: 'Updates are delivered to release builds',
+        detail: "This build doesn't self-update. You can download the latest version from the Releases page.",
+        buttons: ['Open Releases', 'Cancel'], defaultId: 0, cancelId: 1,
+      }).then(({ response }) => { if (response === 0) shell.openExternal(RELEASES_URL); });
+    }
     return;
   }
   wireUpdater();
   manualCheck = !!manual;
-  autoUpdater.checkForUpdates().catch((err) => {
+  autoUpdater.checkForUpdates().catch(() => {
     if (!manual) return;
     manualCheck = false;
-    dialog.showErrorBox('Update check failed', String(err && err.message ? err.message : err));
+    dialog.showMessageBox({
+      type: 'warning', title: 'k8sight', message: "Couldn't check for updates",
+      detail: 'Please try again later, or download the latest version from the Releases page.',
+      buttons: ['Open Releases', 'OK'], defaultId: 1, cancelId: 1,
+    }).then(({ response }) => { if (response === 0) shell.openExternal(RELEASES_URL); });
   });
 }
 
