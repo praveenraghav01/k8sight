@@ -3261,34 +3261,47 @@ const normalizeCostAllocation = (payload) => {
 // Cost over time: keep each time bucket separate (accumulate=false) instead of
 // summing them like normalizeCostAllocation. Returns one point per step with its
 // window and total cost (idle bucket included, matching the Overview total).
+// Idle / unallocated buckets aren't real namespaces — keep them out of the
+// per-namespace breakdown (idle is surfaced separately as a KPI).
+const isSyntheticCostName = (name) => /^__(idle|unallocated|unmounted)__/.test(String(name || ''));
+
 const normalizeCostSeries = (payload) => {
   const sets = Array.isArray(payload?.data) ? payload.data : payload?.data ? [payload.data] : [];
   const costFields = ['cpuCost', 'gpuCost', 'ramCost', 'memoryCost', 'pvCost', 'storageCost', 'networkCost', 'loadBalancerCost', 'sharedCost', 'externalCost'];
   const points = [];
+  const totals = new Map(); // namespace -> total cost across the whole window
   for (const set of sets) {
     const allocations = set?.allocations && typeof set.allocations === 'object' ? set.allocations : set;
     if (!allocations || typeof allocations !== 'object' || Array.isArray(allocations)) continue;
+    const costs = {}; // namespace -> cost in this bucket
     let total = 0;
     let start = null;
     let end = null;
-    for (const allocation of Object.values(allocations)) {
-      if (!allocation || typeof allocation !== 'object') continue;
+    for (const [name, allocation] of Object.entries(allocations)) {
+      if (!allocation || typeof allocation !== 'object' || isSyntheticCostName(name)) continue;
       const provided = allocation.totalCost;
-      total += provided == null
+      const cost = provided == null
         ? costFields.reduce((sum, f) => sum + costNumber(allocation[f]), 0)
         : costNumber(provided);
+      costs[name] = (costs[name] || 0) + cost;
+      total += cost;
+      totals.set(name, (totals.get(name) || 0) + cost);
       const w = allocation.window || {};
       if (w.start && (!start || w.start < start)) start = w.start;
       if (w.end && (!end || w.end > end)) end = w.end;
     }
     // Skip padding buckets that carry neither a window nor any cost.
     if (!start && total === 0) continue;
-    points.push({ start, end, totalCost: total });
+    points.push({ start, end, total, costs });
   }
   points.sort((a, b) => new Date(a.start || 0) - new Date(b.start || 0));
+  const namespaces = [...totals.entries()]
+    .map(([name, totalCost]) => ({ name, totalCost }))
+    .sort((a, b) => b.totalCost - a.totalCost);
   return {
     series: points,
-    totalCost: points.reduce((sum, p) => sum + p.totalCost, 0),
+    namespaces,
+    totalCost: namespaces.reduce((sum, n) => sum + n.totalCost, 0),
     currency: 'USD'
   };
 };
@@ -3646,8 +3659,9 @@ app.get('/api/costs/timeseries', async (req, res) => {
       return res.json(cached);
     }
 
-    const queryParams = { window, aggregate: 'cluster', accumulate: 'false', step };
-    if (service.provider === 'opencost') queryParams.includeIdle = 'true';
+    // Break the cost down per namespace so the chart can stack it; idle/unallocated
+    // is filtered out in normalizeCostSeries (it's shown separately as a KPI).
+    const queryParams = { window, aggregate: 'namespace', accumulate: 'false', step };
     const query = new URLSearchParams(queryParams).toString();
     const { stdout, transport } = await fetchCostApi(service, `/${service.apiPath}?${query}`);
     const payload = JSON.parse(stdout);
