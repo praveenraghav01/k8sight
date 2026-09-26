@@ -638,6 +638,7 @@
           <a href="#cloud">Cloud</a>
           <a href="#argocd">Argo CD</a>
           <a href="#security">Security</a>
+          <a href="#costs">Costs</a>
           <a href="docs.html">Docs</a>
           <a class="nav-cta" href="#download">Download</a>
         </div>
@@ -1005,6 +1006,48 @@
       <span class="tag"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15" style="flex:none"><path d="M12 3l7 3v5c0 4.4-3 7.6-7 9-4-1.4-7-4.6-7-9V6z"/></svg> Works with your existing Trivy&nbsp;Operator reports</span>
       <span class="tag"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15" style="flex:none"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5M12 15V3"/></svg> Or a bundled scanner, nothing to install in-cluster</span>
       <span class="tag"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15" style="flex:none"><path d="M5 12h14M12 5v14"/></svg> Scans run in the background; keep working while they finish</span>
+    </div>
+  </div>
+</section>
+
+<section class="sec tile-canvas" id="costs">
+  <div class="wrap">
+    <div class="sec-head reveal">
+      <span class="kicker">Cost visibility</span>
+      <h2>See what every namespace costs</h2>
+      <p>The Costs view reads <b>OpenCost</b> or <b>Kubecost</b> straight from your cluster and turns it into a clear picture of spend: totals and idle cost up top, a stacked <b>cost over time</b> chart broken down by namespace, and a per-resource breakdown underneath. Hover any bar to see exactly who spent what in that hour or day.</p>
+    </div>
+
+    <div class="shot-wrap reveal" style="margin-bottom:52px;">
+      <div class="shot-glow"></div>
+      <div class="shot-frame">
+        <img class="shot-dark" src="assets/screenshot-costs-dark.webp" width="2000" height="1232" decoding="async" loading="lazy" alt="k8sight Costs view showing total, idle cost, allocations and largest allocation, above a stacked cost-over-time bar chart by namespace with a legend of each namespace's share" />
+        <img class="shot-light" src="assets/screenshot-costs-light.webp" width="2000" height="1230" decoding="async" loading="lazy" alt="k8sight Costs view in light theme showing total, idle cost, allocations and largest allocation, above a stacked cost-over-time bar chart by namespace with a legend of each namespace's share" />
+      </div>
+    </div>
+
+    <div class="grid">
+      <div class="card i-green reveal">
+        <div class="ico"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M3 3v18h18"/><path d="M7 16v-4M11 16V8M15 16v-6M19 16V5"/></svg></div>
+        <h3>Cost over time</h3>
+        <p>Hourly or daily stacked bars split by namespace, with the top spenders called out and the long tail grouped as Other. Hover a bar for its exact breakdown.</p>
+      </div>
+      <div class="card i-cyan reveal">
+        <div class="ico"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v10M15 9.5c0-1.4-1.3-2.5-3-2.5s-3 1-3 2.3c0 3.2 6 1.7 6 5 0 1.4-1.3 2.7-3 2.7s-3-1.1-3-2.5"/></svg></div>
+        <h3>Totals &amp; idle cost</h3>
+        <p>Allocated spend, the idle capacity you're paying for, how many namespaces are allocated, and which one costs the most, for the last 24 hours, 7 or 30 days, or month to date.</p>
+      </div>
+      <div class="card i-purple reveal">
+        <div class="ico"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18M9 10v10"/></svg></div>
+        <h3>Namespace, workload &amp; node</h3>
+        <p>Switch between namespaces, workloads and nodes to see CPU, memory, storage, network and shared cost for each, sorted by what matters.</p>
+      </div>
+    </div>
+
+    <div class="prereq reveal">
+      <span class="tag"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15" style="flex:none"><path d="M20 6 9 17l-5-5"/></svg> Auto-detects an OpenCost or Kubecost service</span>
+      <span class="tag"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15" style="flex:none"><path d="M12 5v14M5 12h14"/></svg> Not installed? It suggests a lightweight OpenCost setup</span>
+      <span class="tag"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15" style="flex:none"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg> Try it with no cluster in demo mode</span>
     </div>
   </div>
 </section>
