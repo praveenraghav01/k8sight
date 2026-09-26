@@ -3364,14 +3364,17 @@ const fetchCostApiThroughPortForward = (service, requestPath) => new Promise((re
   startTimer = setTimeout(() => finish(reject, new Error('Timed out starting cost API port-forward.')), 10000);
 });
 
-const fetchCostApi = async (service, requestPath) => {
+const fetchCostApi = async (service, requestPath, { proxyOnly = false, timeout = 6000 } = {}) => {
   const proxyPath = `/api/v1/namespaces/${service.namespace}/services/${service.service}:${service.port}/proxy${requestPath}`;
   try {
     const { stdout } = await execFileAsync('kubectl', kctl('get', '--raw', proxyPath), {
-      encoding: 'utf-8', maxBuffer: 30 * 1024 * 1024, timeout: 6000
+      encoding: 'utf-8', maxBuffer: 30 * 1024 * 1024, timeout
     });
     return { stdout, transport: 'service-proxy' };
   } catch (proxyError) {
+    // `proxyOnly` skips the (slow) port-forward fallback — used for best-effort
+    // calls that must fail fast rather than block the request.
+    if (proxyOnly) throw proxyError;
     try {
       const stdout = await fetchCostApiThroughPortForward(service, requestPath);
       return { stdout, transport: 'port-forward' };
@@ -3591,44 +3594,46 @@ app.get('/api/costs/allocation', async (req, res) => {
       return res.json(cached);
     }
 
-    // Step the window into buckets and sum them (normalizeCostAllocation already
-    // accumulates across buckets). Without a step, the provider treats a multi-day
-    // window as one contiguous block and returns EMPTY ($0) when it doesn't have
-    // that many continuous days of data (young collector / short retention) — which
-    // silently under-reported 7d/30d costs to $0.
+    // Break the window into buckets and sum them (normalizeCostAllocation already
+    // accumulates). Without a step the provider treats a multi-day window as one
+    // contiguous block and returns EMPTY ($0) when it lacks that many continuous
+    // days of data. Crucially we DON'T ask for idle here: computing idle for each
+    // bucket is very expensive and would hang the request — idle is fetched
+    // separately, best-effort, below.
     const step = (window === '24h' || window === 'today') ? '1h' : '1d';
-    const queryParams = { window, aggregate, accumulate: 'false', step };
-    if (service.provider === 'opencost') {
-      queryParams.includeIdle = 'true';
-      if (aggregate === 'node') queryParams.idleByNode = 'true';
-    }
-    const query = new URLSearchParams(queryParams).toString();
-    const { stdout, transport } = await fetchCostApi(service, `/${service.apiPath}?${query}`);
+    const breakdownParams = new URLSearchParams({ window, aggregate, accumulate: 'false', step }).toString();
+    const { stdout, transport } = await fetchCostApi(service, `/${service.apiPath}?${breakdownParams}`);
     const payload = JSON.parse(stdout);
     if (Number(payload?.code) >= 400) throw new Error(payload.status || payload.message || `Cost API returned ${payload.code}`);
     const normalized = normalizeCostAllocation(payload);
-    const idleCost = normalized.allocations
-      .filter((allocation) => allocation.name === '__idle__' || allocation.name.startsWith('__idle__/'))
-      .reduce((sum, allocation) => sum + allocation.totalCost, 0);
-    let idleCostUnavailable = null;
+
+    // Idle cost — best-effort and non-blocking. Idle-per-bucket is slow, so we ask
+    // via the service proxy only (no port-forward fallback) with a short timeout;
+    // if it doesn't come back quickly the page still renders with allocated cost.
+    let idleCost = 0;
+    let idleIncluded = false;
     if (service.provider === 'opencost') {
       try {
-        const assetsQuery = new URLSearchParams({ window }).toString();
-        const { stdout: assetsStdout } = await fetchCostApi(service, `/assets?${assetsQuery}`);
-        const assetPayload = JSON.parse(assetsStdout);
-        const assets = Array.isArray(assetPayload?.data)
-          ? assetPayload.data
-          : Object.values(assetPayload?.data || {});
-        idleCostUnavailable = !assets.some((asset) => String(asset?.type || '').toLowerCase() === 'node');
-      } catch {
-        // Keep allocation results available if the optional assets check fails.
-      }
+        const idleQuery = new URLSearchParams({ window, aggregate: 'cluster', accumulate: 'false', step, includeIdle: 'true' }).toString();
+        const { stdout: idleOut } = await fetchCostApi(service, `/${service.apiPath}?${idleQuery}`, { proxyOnly: true, timeout: 3500 });
+        const idlePayload = JSON.parse(idleOut);
+        const sets = Array.isArray(idlePayload?.data) ? idlePayload.data : (idlePayload?.data ? [idlePayload.data] : []);
+        for (const set of sets) {
+          const allocs = set?.allocations && typeof set.allocations === 'object' ? set.allocations : set;
+          for (const [name, a] of Object.entries(allocs || {})) {
+            if (a && typeof a === 'object' && /^__idle__/.test(name)) idleCost += costNumber(a.totalCost);
+          }
+        }
+        idleIncluded = idleCost > 0;
+      } catch { /* idle unavailable — allocation still renders */ }
     }
+
     const result = {
       ...normalized,
-      idleIncluded: service.provider === 'opencost',
+      totalCost: normalized.totalCost + (idleIncluded ? idleCost : 0),
+      idleIncluded,
       idleCost,
-      idleCostUnavailable,
+      idleCostUnavailable: null,
       provider: service.provider,
       source: { namespace: service.namespace, service: service.service },
       window,
