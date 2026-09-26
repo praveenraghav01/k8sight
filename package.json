@@ -22,9 +22,9 @@
     "build": "node scripts/write-gke-oauth.mjs && npm run version:sync && cd client && npm run build",
     "start": "node server.js",
     "app": "electron .",
-    "app:pack": "npm run fetch:trivy && npm run build && npm run bundle:helpers && electron-builder --dir --mac",
-    "app:dist": "npm run fetch:trivy && npm run build && npm run bundle:helpers && electron-builder --mac",
-    "dist": "npm run fetch:trivy && npm run build && npm run bundle:helpers && electron-builder --publish never",
+    "app:pack": "npm run fetch:trivy && npm run fetch:helm && npm run build && npm run bundle:helpers && electron-builder --dir --mac",
+    "app:dist": "npm run fetch:trivy && npm run fetch:helm && npm run build && npm run bundle:helpers && electron-builder --mac",
+    "dist": "npm run fetch:trivy && npm run fetch:helm && npm run build && npm run bundle:helpers && electron-builder --publish never",
     "mcp": "node mcp-stdio.js",
     "bundle:helpers": "node scripts/bundle-token-helpers.mjs"
   },
