@@ -60,11 +60,13 @@ export default function Assistant({ context }) {
       });
       const data = await resp.json().catch(() => ({}));
       if (!resp.ok) throw new Error(data.error || `Failed (${resp.status})`);
-      setKeyInput('');
       await refreshStatus();
     } catch (err) {
       setKeyError(err.message || 'Could not save the connection');
     } finally {
+      // Clear the key from React state/memory as soon as the request settles,
+      // whether it succeeded or failed, to minimize the time it lingers in the browser.
+      setKeyInput('');
       setSavingKey(false);
     }
   };
