@@ -1197,6 +1197,49 @@ export function handle(req, res) {
         currency: 'USD', allocations,
       });
     }
+    if (method === 'GET' && p === '/api/costs/timeseries') {
+      // Per-namespace cost split into time buckets so the Cost-over-time chart
+      // has data in demo mode. Totals match the allocation KPIs (sum = $12.13/7d).
+      const baseNs = [
+        { name: 'shop', total: 6.81 },
+        { name: 'monitoring', total: 2.86 },
+        { name: 'kube-system', total: 1.66 },
+        { name: 'argocd', total: 0.80 },
+      ];
+      const win = q.window || '7d';
+      const factor = ['24h', 'today'].includes(win) ? 1 / 7 : win === '30d' ? 30 / 7 : win === 'month' ? 17 / 7 : 1;
+      const hourly = ['24h', 'today'].includes(win);
+      const count = hourly ? 24 : win === '30d' ? 30 : win === 'month' ? 17 : 7;
+      const stepMs = hourly ? 3600e3 : 86400e3;
+      // Deterministic per-bucket weights so bars vary but the demo stays stable.
+      const weights = baseNs.map((_, k) => Array.from({ length: count }, (__, i) => 1 + 0.28 * Math.sin(i * 0.7 + k * 1.3) + 0.12 * Math.sin(i * 0.31 + k)));
+      const wsum = weights.map((w) => w.reduce((a, b) => a + b, 0));
+      const anchor = Math.floor(Date.now() / stepMs) * stepMs; // align to step boundary
+      const series = [];
+      for (let i = 0; i < count; i++) {
+        const costs = {};
+        let total = 0;
+        baseNs.forEach((ns, k) => {
+          const c = Number((ns.total * factor * (weights[k][i] / wsum[k])).toFixed(4));
+          costs[ns.name] = c;
+          total += c;
+        });
+        series.push({
+          start: new Date(anchor - (count - i) * stepMs).toISOString(),
+          end: new Date(anchor - (count - 1 - i) * stepMs).toISOString(),
+          total: Number(total.toFixed(4)),
+          costs,
+        });
+      }
+      const namespaces = baseNs
+        .map((ns) => ({ name: ns.name, totalCost: Number((ns.total * factor).toFixed(4)) }))
+        .sort((a, b) => b.totalCost - a.totalCost);
+      return json({
+        series, namespaces,
+        totalCost: namespaces.reduce((s, n) => s + n.totalCost, 0),
+        currency: 'USD', provider: 'opencost', window: win, step: hourly ? '1h' : '1d',
+      });
+    }
 
     // ---------- resources list ----------
     if (method === 'GET' && seg[1] === 'resources' && seg[2]) {

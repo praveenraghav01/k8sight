@@ -111,47 +111,115 @@ function AllocationTable({ rows, limit }) {
 
 // Cost-over-time area chart. Uniform-scaling SVG (fixed viewBox) so it fills the
 // panel width without distorting. Needs at least two points to draw a trend.
+// Categorical palette for the per-namespace stacked bars; "Other" is grey.
+const COST_COLORS = ['#3b82f6', '#f97316', '#22c55e', '#eab308', '#ec4899', '#a855f7'];
+const COST_OTHER_COLOR = '#8e8e93';
+
+const niceCeil = (m) => {
+  if (!(m > 0)) return 0.1;
+  const pow = Math.pow(10, Math.floor(Math.log10(m)));
+  for (const s of [1, 2, 2.5, 5, 10]) if (pow * s >= m) return pow * s;
+  return pow * 10;
+};
+
+// Cost over time, stacked per namespace (top 6 + Other), with a legend showing
+// each namespace's window total and share. Uniform-scaling SVG fills the panel.
 function CostTrend({ series, window }) {
-  const points = Array.isArray(series?.series)
-    ? series.series.filter((p) => p && Number.isFinite(p.totalCost) && p.start)
-    : [];
-  if (points.length < 2) {
-    return <div className="cost-empty">Not enough history yet for a trend — this fills in once the cost provider has collected a couple of days of data.</div>;
+  const wrapRef = useRef(null);
+  const [hover, setHover] = useState(null); // { i, mx, my }
+  const points = Array.isArray(series?.series) ? series.series.filter((p) => p && p.start && p.costs) : [];
+  const namespaces = Array.isArray(series?.namespaces) ? series.namespaces.filter((n) => n.totalCost > 0) : [];
+  if (!points.length || !namespaces.length) {
+    return <div className="cost-empty">Not enough data yet for a breakdown — this fills in once the cost provider has collected some history.</div>;
   }
-  const W = 720;
-  const H = 180;
-  const PADX = 6;
-  const PADT = 14;
-  const PADB = 24;
+  const TOP = 6;
+  const top = namespaces.slice(0, TOP);
+  const rest = namespaces.slice(TOP);
+  const grand = series.totalCost || namespaces.reduce((s, n) => s + n.totalCost, 0) || 1;
+  const legend = [
+    ...top.map((n, i) => ({ name: n.name, total: n.totalCost, color: COST_COLORS[i % COST_COLORS.length] })),
+    ...(rest.length ? [{ name: `Other (${rest.length})`, total: rest.reduce((s, n) => s + n.totalCost, 0), color: COST_OTHER_COLOR }] : []),
+  ];
+  const topNames = top.map((n) => n.name);
+  const stacks = points.map((p) => {
+    const vals = topNames.map((nm) => p.costs[nm] || 0);
+    return rest.length ? [...vals, rest.reduce((s, n) => s + (p.costs[n.name] || 0), 0)] : vals;
+  });
+  const yMax = niceCeil(Math.max(...stacks.map((v) => v.reduce((a, b) => a + b, 0)), 0) * 1.05);
+
+  const W = 900, H = 300, ML = 52, MR = 10, MT = 12, MB = 28;
+  const plotH = H - MT - MB;
   const n = points.length;
-  const max = Math.max(...points.map((p) => p.totalCost), 0) * 1.15 || 1;
-  const x = (i) => PADX + (i / (n - 1)) * (W - PADX * 2);
-  const y = (v) => H - PADB - (v / max) * (H - PADT - PADB);
-  const line = points.map((p, i) => `${i ? 'L' : 'M'} ${x(i).toFixed(1)} ${y(p.totalCost).toFixed(1)}`).join(' ');
-  const area = `${line} L ${x(n - 1).toFixed(1)} ${(H - PADB).toFixed(1)} L ${x(0).toFixed(1)} ${(H - PADB).toFixed(1)} Z`;
-  const last = points[n - 1];
-  const peak = points.reduce((m, p) => (p.totalCost > m.totalCost ? p : m), points[0]);
-  const fmtDay = (s) => { try { return new Date(s).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }); } catch { return ''; } };
-  const tickIdx = [...new Set([0, Math.floor((n - 1) / 2), n - 1])];
+  const slot = (W - ML - MR) / n;
+  const barW = Math.min(slot * 0.72, 46);
+  const yTo = (v) => MT + plotH - (v / yMax) * plotH;
+  const yTicks = Array.from({ length: 6 }, (_, i) => (yMax / 5) * i);
+  const fmtT = (s) => { try { const d = new Date(s); return (window === '24h' || window === 'today') ? d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }); } catch { return ''; } };
+  const fmtFull = (s) => { try { return new Date(s).toLocaleString(undefined, { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }); } catch { return ''; } };
+  const fmtFine = (v) => (v >= 1 ? formatMoney(v) : `$${v.toFixed(4).replace(/0+$/, '').replace(/\.$/, '') || '0'}`);
+  const xEvery = Math.max(1, Math.ceil(n / 8));
+  const onMove = (e, i) => {
+    const r = wrapRef.current?.getBoundingClientRect();
+    if (r) setHover({ i, mx: e.clientX - r.left, my: e.clientY - r.top });
+  };
+
   return (
-    <div className="cost-trend">
-      <div className="cost-trend-head" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}>
-        <strong style={{ fontSize: 22 }}>{formatMoney(last.totalCost)}</strong>
-        <span style={{ fontSize: 12.5, color: 'var(--text-mute, #86868b)' }}>latest {window === '24h' || window === 'today' ? 'hour' : 'day'} · peak {formatMoney(peak.totalCost)}</span>
-      </div>
-      <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: 'auto', display: 'block' }} role="img" aria-label="Cost over time">
-        <defs>
-          <linearGradient id="costTrendFill" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0" stopColor="var(--accent, #2997ff)" stopOpacity="0.30" />
-            <stop offset="1" stopColor="var(--accent, #2997ff)" stopOpacity="0" />
-          </linearGradient>
-        </defs>
-        <path d={area} fill="url(#costTrendFill)" />
-        <path d={line} fill="none" stroke="var(--accent, #2997ff)" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
-        <circle cx={x(n - 1)} cy={y(last.totalCost)} r="3" fill="var(--accent, #2997ff)" />
+    <div className="cost-trend" ref={wrapRef} style={{ position: 'relative' }} onMouseLeave={() => setHover(null)}>
+      <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: 'auto', display: 'block' }} role="img" aria-label="Cost over time by namespace">
+        {yTicks.map((t, i) => (
+          <g key={`y${i}`}>
+            <line x1={ML} y1={yTo(t)} x2={W - MR} y2={yTo(t)} stroke="var(--border, #333336)" strokeOpacity="0.55" strokeWidth="1" />
+            <text x={ML - 6} y={yTo(t) + 3.5} textAnchor="end" fontSize="11" fill="var(--text-mute, #86868b)">{formatMoney(t)}</text>
+          </g>
+        ))}
+        {hover && <rect x={ML + hover.i * slot} y={MT} width={slot} height={plotH} fill="var(--text, #f5f5f7)" opacity="0.06" />}
+        {points.map((p, i) => {
+          const x0 = ML + i * slot + (slot - barW) / 2;
+          let acc = 0;
+          return (
+            <g key={`b${i}`}>
+              {stacks[i].map((v, si) => {
+                if (v <= 0) return null;
+                const y1 = yTo(acc + v); const y0 = yTo(acc); acc += v;
+                return <rect key={si} x={x0} y={y1} width={barW} height={Math.max(0, y0 - y1)} fill={legend[si].color} />;
+              })}
+            </g>
+          );
+        })}
+        {/* transparent full-height hit areas for hover */}
+        {points.map((p, i) => (
+          <rect key={`hit${i}`} x={ML + i * slot} y={MT} width={slot} height={plotH} fill="transparent"
+            onMouseEnter={(e) => onMove(e, i)} onMouseMove={(e) => onMove(e, i)} style={{ cursor: 'pointer' }} />
+        ))}
+        {points.map((p, i) => (i % xEvery === 0
+          ? <text key={`x${i}`} x={ML + i * slot + slot / 2} y={H - 9} textAnchor="middle" fontSize="11" fill="var(--text-mute, #86868b)">{fmtT(p.start)}</text>
+          : null))}
       </svg>
-      <div className="cost-trend-axis" style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4, fontSize: 11.5, color: 'var(--text-mute, #86868b)' }}>
-        {tickIdx.map((i) => <span key={i}>{fmtDay(points[i].start)}</span>)}
+      {hover && points[hover.i] && (() => {
+        const rows = legend.map((l, si) => ({ ...l, v: stacks[hover.i][si] })).filter((r) => r.v > 0);
+        const cw = wrapRef.current?.clientWidth || W;
+        const left = Math.max(0, Math.min(hover.mx + 14, cw - 210));
+        return (
+          <div style={{ position: 'absolute', left, top: Math.max(0, hover.my - 12), pointerEvents: 'none', background: 'var(--panel, #1d1d1f)', border: '1px solid var(--border, #333336)', borderRadius: 8, padding: '10px 12px', boxShadow: '0 8px 24px rgba(0,0,0,0.5)', zIndex: 5, minWidth: 190 }}>
+            <div style={{ fontSize: 12.5, fontWeight: 700, marginBottom: 6 }}>{fmtFull(points[hover.i].start)}</div>
+            {rows.map((r) => (
+              <div key={r.name} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, lineHeight: 1.75 }}>
+                <i style={{ width: 10, height: 10, borderRadius: 2, background: r.color, flex: 'none' }} />
+                <span style={{ flex: 1, whiteSpace: 'nowrap' }}>{r.name}</span>
+                <b>{fmtFine(r.v)}</b>
+              </div>
+            ))}
+          </div>
+        );
+      })()}
+      <div className="cost-trend-legend" style={{ display: 'flex', flexWrap: 'wrap', gap: '10px 22px', marginTop: 14, paddingLeft: 12, paddingBottom: 10 }}>
+        {legend.map((l) => (
+          <span key={l.name} style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: 13 }}>
+            <i style={{ width: 11, height: 11, borderRadius: 3, background: l.color, display: 'inline-block', flex: 'none' }} />
+            <b style={{ fontWeight: 600 }}>{l.name}</b>
+            <span style={{ color: 'var(--text-mute, #86868b)' }}>{formatMoney(l.total)} · {Math.round((l.total / grand) * 100)}%</span>
+          </span>
+        ))}
       </div>
     </div>
   );
