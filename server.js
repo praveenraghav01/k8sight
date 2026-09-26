@@ -3578,7 +3578,13 @@ app.get('/api/costs/allocation', async (req, res) => {
       return res.json(cached);
     }
 
-    const queryParams = { window, aggregate };
+    // Step the window into buckets and sum them (normalizeCostAllocation already
+    // accumulates across buckets). Without a step, the provider treats a multi-day
+    // window as one contiguous block and returns EMPTY ($0) when it doesn't have
+    // that many continuous days of data (young collector / short retention) — which
+    // silently under-reported 7d/30d costs to $0.
+    const step = (window === '24h' || window === 'today') ? '1h' : '1d';
+    const queryParams = { window, aggregate, accumulate: 'false', step };
     if (service.provider === 'opencost') {
       queryParams.includeIdle = 'true';
       if (aggregate === 'node') queryParams.idleByNode = 'true';
