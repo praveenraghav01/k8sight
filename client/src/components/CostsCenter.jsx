@@ -125,6 +125,8 @@ const niceCeil = (m) => {
 // Cost over time, stacked per namespace (top 6 + Other), with a legend showing
 // each namespace's window total and share. Uniform-scaling SVG fills the panel.
 function CostTrend({ series, window }) {
+  const wrapRef = useRef(null);
+  const [hover, setHover] = useState(null); // { i, mx, my }
   const points = Array.isArray(series?.series) ? series.series.filter((p) => p && p.start && p.costs) : [];
   const namespaces = Array.isArray(series?.namespaces) ? series.namespaces.filter((n) => n.totalCost > 0) : [];
   if (!points.length || !namespaces.length) {
@@ -153,10 +155,16 @@ function CostTrend({ series, window }) {
   const yTo = (v) => MT + plotH - (v / yMax) * plotH;
   const yTicks = Array.from({ length: 6 }, (_, i) => (yMax / 5) * i);
   const fmtT = (s) => { try { const d = new Date(s); return (window === '24h' || window === 'today') ? d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }); } catch { return ''; } };
+  const fmtFull = (s) => { try { return new Date(s).toLocaleString(undefined, { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }); } catch { return ''; } };
+  const fmtFine = (v) => (v >= 1 ? formatMoney(v) : `$${v.toFixed(4).replace(/0+$/, '').replace(/\.$/, '') || '0'}`);
   const xEvery = Math.max(1, Math.ceil(n / 8));
+  const onMove = (e, i) => {
+    const r = wrapRef.current?.getBoundingClientRect();
+    if (r) setHover({ i, mx: e.clientX - r.left, my: e.clientY - r.top });
+  };
 
   return (
-    <div className="cost-trend">
+    <div className="cost-trend" ref={wrapRef} style={{ position: 'relative' }} onMouseLeave={() => setHover(null)}>
       <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: 'auto', display: 'block' }} role="img" aria-label="Cost over time by namespace">
         {yTicks.map((t, i) => (
           <g key={`y${i}`}>
@@ -164,6 +172,7 @@ function CostTrend({ series, window }) {
             <text x={ML - 6} y={yTo(t) + 3.5} textAnchor="end" fontSize="11" fill="var(--text-mute, #86868b)">{formatMoney(t)}</text>
           </g>
         ))}
+        {hover && <rect x={ML + hover.i * slot} y={MT} width={slot} height={plotH} fill="var(--text, #f5f5f7)" opacity="0.06" />}
         {points.map((p, i) => {
           const x0 = ML + i * slot + (slot - barW) / 2;
           let acc = 0;
@@ -172,19 +181,37 @@ function CostTrend({ series, window }) {
               {stacks[i].map((v, si) => {
                 if (v <= 0) return null;
                 const y1 = yTo(acc + v); const y0 = yTo(acc); acc += v;
-                return (
-                  <rect key={si} x={x0} y={y1} width={barW} height={Math.max(0, y0 - y1)} fill={legend[si].color}>
-                    <title>{`${legend[si].name}: ${formatMoney(v)}`}</title>
-                  </rect>
-                );
+                return <rect key={si} x={x0} y={y1} width={barW} height={Math.max(0, y0 - y1)} fill={legend[si].color} />;
               })}
             </g>
           );
         })}
+        {/* transparent full-height hit areas for hover */}
+        {points.map((p, i) => (
+          <rect key={`hit${i}`} x={ML + i * slot} y={MT} width={slot} height={plotH} fill="transparent"
+            onMouseEnter={(e) => onMove(e, i)} onMouseMove={(e) => onMove(e, i)} style={{ cursor: 'pointer' }} />
+        ))}
         {points.map((p, i) => (i % xEvery === 0
           ? <text key={`x${i}`} x={ML + i * slot + slot / 2} y={H - 9} textAnchor="middle" fontSize="11" fill="var(--text-mute, #86868b)">{fmtT(p.start)}</text>
           : null))}
       </svg>
+      {hover && points[hover.i] && (() => {
+        const rows = legend.map((l, si) => ({ ...l, v: stacks[hover.i][si] })).filter((r) => r.v > 0);
+        const cw = wrapRef.current?.clientWidth || W;
+        const left = Math.max(0, Math.min(hover.mx + 14, cw - 210));
+        return (
+          <div style={{ position: 'absolute', left, top: Math.max(0, hover.my - 12), pointerEvents: 'none', background: 'var(--panel, #1d1d1f)', border: '1px solid var(--border, #333336)', borderRadius: 8, padding: '10px 12px', boxShadow: '0 8px 24px rgba(0,0,0,0.5)', zIndex: 5, minWidth: 190 }}>
+            <div style={{ fontSize: 12.5, fontWeight: 700, marginBottom: 6 }}>{fmtFull(points[hover.i].start)}</div>
+            {rows.map((r) => (
+              <div key={r.name} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, lineHeight: 1.75 }}>
+                <i style={{ width: 10, height: 10, borderRadius: 2, background: r.color, flex: 'none' }} />
+                <span style={{ flex: 1, whiteSpace: 'nowrap' }}>{r.name}</span>
+                <b>{fmtFine(r.v)}</b>
+              </div>
+            ))}
+          </div>
+        );
+      })()}
       <div className="cost-trend-legend" style={{ display: 'flex', flexWrap: 'wrap', gap: '8px 20px', marginTop: 12 }}>
         {legend.map((l) => (
           <span key={l.name} style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: 13 }}>
