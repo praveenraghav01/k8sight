@@ -169,7 +169,7 @@ function CostTrend({ series, window }) {
         {yTicks.map((t, i) => (
           <g key={`y${i}`}>
             <line x1={ML} y1={yTo(t)} x2={W - MR} y2={yTo(t)} stroke="var(--border, #333336)" strokeOpacity="0.55" strokeWidth="1" />
-            <text x={ML - 6} y={yTo(t) + 3.5} textAnchor="end" fontSize="11" fill="var(--text-mute, #86868b)">{formatMoney(t)}</text>
+            <text x={ML - 6} y={yTo(t) + 3.5} textAnchor="end" fontSize="11" fill="var(--text-muted)">{formatMoney(t)}</text>
           </g>
         ))}
         {hover && <rect x={ML + hover.i * slot} y={MT} width={slot} height={plotH} fill="var(--text, #f5f5f7)" opacity="0.06" />}
@@ -192,7 +192,7 @@ function CostTrend({ series, window }) {
             onMouseEnter={(e) => onMove(e, i)} onMouseMove={(e) => onMove(e, i)} style={{ cursor: 'pointer' }} />
         ))}
         {points.map((p, i) => (i % xEvery === 0
-          ? <text key={`x${i}`} x={ML + i * slot + slot / 2} y={H - 9} textAnchor="middle" fontSize="11" fill="var(--text-mute, #86868b)">{fmtT(p.start)}</text>
+          ? <text key={`x${i}`} x={ML + i * slot + slot / 2} y={H - 9} textAnchor="middle" fontSize="11" fill="var(--text-muted)">{fmtT(p.start)}</text>
           : null))}
       </svg>
       {hover && points[hover.i] && (() => {
@@ -200,7 +200,7 @@ function CostTrend({ series, window }) {
         const cw = wrapRef.current?.clientWidth || W;
         const left = Math.max(0, Math.min(hover.mx + 14, cw - 210));
         return (
-          <div style={{ position: 'absolute', left, top: Math.max(0, hover.my - 12), pointerEvents: 'none', background: 'var(--panel, #1d1d1f)', border: '1px solid var(--border, #333336)', borderRadius: 8, padding: '10px 12px', boxShadow: '0 8px 24px rgba(0,0,0,0.5)', zIndex: 5, minWidth: 190 }}>
+          <div style={{ position: 'absolute', left, top: Math.max(0, hover.my - 12), pointerEvents: 'none', background: 'var(--bg-elevated)', color: 'var(--text)', border: '1px solid var(--border-strong)', borderRadius: 8, padding: '10px 12px', boxShadow: '0 8px 24px rgba(0,0,0,0.25)', zIndex: 5, minWidth: 190 }}>
             <div style={{ fontSize: 12.5, fontWeight: 700, marginBottom: 6 }}>{fmtFull(points[hover.i].start)}</div>
             {rows.map((r) => (
               <div key={r.name} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, lineHeight: 1.75 }}>
@@ -217,7 +217,7 @@ function CostTrend({ series, window }) {
           <span key={l.name} style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: 13 }}>
             <i style={{ width: 11, height: 11, borderRadius: 3, background: l.color, display: 'inline-block', flex: 'none' }} />
             <b style={{ fontWeight: 600 }}>{l.name}</b>
-            <span style={{ color: 'var(--text-mute, #86868b)' }}>{formatMoney(l.total)} · {Math.round((l.total / grand) * 100)}%</span>
+            <span style={{ color: 'var(--text-muted)' }}>{formatMoney(l.total)} · {Math.round((l.total / grand) * 100)}%</span>
           </span>
         ))}
       </div>
