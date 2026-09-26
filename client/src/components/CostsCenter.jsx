@@ -412,9 +412,6 @@ export default function CostsCenter({ view, onViewChange, refreshSignal = 0, con
           <select aria-label="Cost period" className="cost-window" value={window} onChange={(e) => setWindow(e.target.value)}>
             {WINDOWS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
           </select>
-          <button className="cost-refresh" onClick={() => setRefreshCount((n) => n + 1)} disabled={statusLoading || loading} title="Refresh costs">
-            <Icon name="refresh" size={14} /> Refresh
-          </button>
         </div>
       </div>
 
