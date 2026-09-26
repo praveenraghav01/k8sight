@@ -66,10 +66,11 @@ function GeneralSection({ theme, onSetTheme }) {
   // preload bridge (window.k8sight). Absent in the browser / Docker build.
   const updater = (typeof window !== 'undefined' && window.k8sight?.getAutoUpdate) ? window.k8sight : null;
   const [autoUpdate, setAutoUpdate] = useState(null); // null until loaded
+  const [updSupported, setUpdSupported] = useState(true);
   const [updBusy, setUpdBusy] = useState(false);
   useEffect(() => {
     if (!updater) return;
-    updater.getAutoUpdate().then((r) => setAutoUpdate(r?.autoCheck !== false)).catch(() => {});
+    updater.getAutoUpdate().then((r) => { setAutoUpdate(r?.autoCheck !== false); setUpdSupported(r?.supported !== false); }).catch(() => {});
   }, []);
   const changeAutoUpdate = async (on) => {
     if (!updater || updBusy) return;
@@ -92,18 +93,23 @@ function GeneralSection({ theme, onSetTheme }) {
       </Field>
       {updater && (
         <Field label="Automatic updates" hint="Check for a new version on launch and install it in the background, then prompt to restart.">
-          <div className="prefs-seg">
-            {[{ k: true, label: 'On' }, { k: false, label: 'Off' }].map((o) => (
-              <button key={String(o.k)} className={`prefs-seg-btn ${autoUpdate === o.k ? 'active' : ''}`}
-                disabled={updBusy || autoUpdate === null} onClick={() => changeAutoUpdate(o.k)}>
-                {o.label}
-              </button>
-            ))}
+          <div className="prefs-inline" style={{ gap: 12 }}>
+            <div className="prefs-seg">
+              {[{ k: true, label: 'On' }, { k: false, label: 'Off' }].map((o) => (
+                <button key={String(o.k)} className={`prefs-seg-btn ${autoUpdate === o.k ? 'active' : ''}`}
+                  disabled={updBusy || autoUpdate === null} onClick={() => changeAutoUpdate(o.k)}>
+                  {o.label}
+                </button>
+              ))}
+            </div>
+            {updater.checkForUpdates && (
+              <button className="prefs-btn" onClick={() => updater.checkForUpdates()}>Check now</button>
+            )}
           </div>
-          {updater.checkForUpdates && (
-            <button className="prefs-btn" style={{ marginTop: 10 }} onClick={() => updater.checkForUpdates()}>
-              Check for updates now
-            </button>
+          {!updSupported && (
+            <div className="prefs-note" style={{ marginTop: 8, fontSize: 12.5, color: 'var(--text-mute, #86868b)' }}>
+              This build can’t self-update — “Check now” opens the Releases page. Updates apply to signed release builds installed in Applications.
+            </div>
           )}
         </Field>
       )}
