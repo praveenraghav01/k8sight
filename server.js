@@ -3258,6 +3258,41 @@ const normalizeCostAllocation = (payload) => {
   };
 };
 
+// Cost over time: keep each time bucket separate (accumulate=false) instead of
+// summing them like normalizeCostAllocation. Returns one point per step with its
+// window and total cost (idle bucket included, matching the Overview total).
+const normalizeCostSeries = (payload) => {
+  const sets = Array.isArray(payload?.data) ? payload.data : payload?.data ? [payload.data] : [];
+  const costFields = ['cpuCost', 'gpuCost', 'ramCost', 'memoryCost', 'pvCost', 'storageCost', 'networkCost', 'loadBalancerCost', 'sharedCost', 'externalCost'];
+  const points = [];
+  for (const set of sets) {
+    const allocations = set?.allocations && typeof set.allocations === 'object' ? set.allocations : set;
+    if (!allocations || typeof allocations !== 'object' || Array.isArray(allocations)) continue;
+    let total = 0;
+    let start = null;
+    let end = null;
+    for (const allocation of Object.values(allocations)) {
+      if (!allocation || typeof allocation !== 'object') continue;
+      const provided = allocation.totalCost;
+      total += provided == null
+        ? costFields.reduce((sum, f) => sum + costNumber(allocation[f]), 0)
+        : costNumber(provided);
+      const w = allocation.window || {};
+      if (w.start && (!start || w.start < start)) start = w.start;
+      if (w.end && (!end || w.end > end)) end = w.end;
+    }
+    // Skip padding buckets that carry neither a window nor any cost.
+    if (!start && total === 0) continue;
+    points.push({ start, end, totalCost: total });
+  }
+  points.sort((a, b) => new Date(a.start || 0) - new Date(b.start || 0));
+  return {
+    series: points,
+    totalCost: points.reduce((sum, p) => sum + p.totalCost, 0),
+    currency: 'USD'
+  };
+};
+
 const fetchCostApiThroughPortForward = (service, requestPath) => new Promise((resolve, reject) => {
   const proc = spawn('kubectl', kctl(
     'port-forward', '-n', service.namespace, `svc/${service.service}`, `:${service.port}`
@@ -3586,6 +3621,44 @@ app.get('/api/costs/allocation', async (req, res) => {
     res.json(result);
   } catch (error) {
     const detail = String(error.stderr || error.message || 'Cost allocation request failed').trim().slice(0, 700);
+    res.status(502).json({ error: detail });
+  }
+});
+
+// Cost over time — one point per step (daily, or hourly for a 24h window) for the
+// trend chart. Same service/provider resolution as /allocation, but accumulate=false
+// so each time bucket stays separate. Total per bucket includes the idle bucket.
+app.get('/api/costs/timeseries', async (req, res) => {
+  try {
+    if (!kubeConfig) return res.status(400).json({ error: 'No kubeconfig loaded' });
+    const window = COST_WINDOWS.has(req.query.window) ? req.query.window : '7d';
+    const step = (window === '24h' || window === 'today') ? '1h' : '1d';
+    const service = await resolveCostService(req.query);
+    if (!service.installed) return res.status(503).json({ error: 'OpenCost or Kubecost was not detected in this cluster.' });
+
+    const cacheKey = getCacheKey('cost-timeseries', {
+      context: currentContext || '', provider: service.provider, namespace: service.namespace,
+      service: service.service, port: service.port, window, step
+    });
+    const cached = getCache(cacheKey);
+    if (cached) {
+      res.set('X-Cache', 'HIT');
+      return res.json(cached);
+    }
+
+    const queryParams = { window, aggregate: 'cluster', accumulate: 'false', step };
+    if (service.provider === 'opencost') queryParams.includeIdle = 'true';
+    const query = new URLSearchParams(queryParams).toString();
+    const { stdout, transport } = await fetchCostApi(service, `/${service.apiPath}?${query}`);
+    const payload = JSON.parse(stdout);
+    if (Number(payload?.code) >= 400) throw new Error(payload.status || payload.message || `Cost API returned ${payload.code}`);
+    const normalized = normalizeCostSeries(payload);
+    const result = { ...normalized, provider: service.provider, window, step, transport };
+    setCache(cacheKey, result, 30_000);
+    res.set('X-Cache', 'MISS');
+    res.json(result);
+  } catch (error) {
+    const detail = String(error.stderr || error.message || 'Cost timeseries request failed').trim().slice(0, 700);
     res.status(502).json({ error: detail });
   }
 });
