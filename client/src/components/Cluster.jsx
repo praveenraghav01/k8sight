@@ -17,6 +17,13 @@ const fmtBytes = (bytes) => {
   return `${gib.toFixed(1)} GiB`;
 };
 
+const fmtCpuUsage = (milli) => {
+  if (milli == null) return '—';
+  return milli < 1000 ? `${Math.round(milli)}m` : `${(milli / 1000).toFixed(2)} cores`;
+};
+
+const fmtMemoryUsage = (bytes) => bytes == null ? '—' : fmtBytes(bytes);
+
 function Donut({ segments, centerNum, centerLabel }) {
   const r = 54;
   const c = 2 * Math.PI * r;
@@ -112,12 +119,21 @@ export default function Cluster({ refreshSignal = 0 }) {
   const nodeReadyPct = nodeTotal ? Math.round(((data?.nodes?.ready || 0) / nodeTotal) * 100) : 0;
 
   const cap = data?.capacity || {};
+  const resources = data?.resourceUsage || {};
   const roleEntries = Object.entries(data?.roles || {});
 
   const kpis = data ? [
     { label: 'Nodes', value: `${data.nodes.ready}/${data.nodes.total}`, sub: 'ready', icon: 'nodes', tone: 'blue' },
-    { label: 'CPU Cores', value: cap.cpuCapacity, sub: `${cap.cpuAllocatable} allocatable`, icon: 'cpu', tone: 'green' },
-    { label: 'Memory', value: fmtBytes(cap.memCapacityBytes), sub: `${fmtBytes(cap.memAllocatableBytes)} alloc`, icon: 'memory', tone: 'purple' },
+    {
+      label: 'CPU Cores', value: cap.cpuCapacity, sub: `${cap.cpuAllocatable} allocatable`, icon: 'cpu', tone: 'green',
+      resourceLine: `Usage ${fmtCpuUsage(resources.cpuMilli)} · Request ${fmtCpuUsage(resources.cpuRequestsMilli)} · Limit ${fmtCpuUsage(resources.cpuLimitsMilli)}`,
+      resourceSource: resources.cpuSource
+    },
+    {
+      label: 'Memory', value: fmtBytes(cap.memCapacityBytes), sub: `${fmtBytes(cap.memAllocatableBytes)} alloc`, icon: 'memory', tone: 'purple',
+      resourceLine: `Usage ${fmtMemoryUsage(resources.memBytes)} · Request ${fmtMemoryUsage(resources.memRequestsBytes)} · Limit ${fmtMemoryUsage(resources.memLimitsBytes)}`,
+      resourceSource: resources.memorySource
+    },
     { label: 'Pods', value: podTotal, sub: `${healthSegments[0].value} running`, icon: 'pod', tone: 'cyan' },
     { label: 'Namespaces', value: data.namespaceCount, sub: 'total', icon: 'apps', tone: 'yellow' }
   ] : [];
@@ -147,6 +163,14 @@ export default function Cluster({ refreshSignal = 0 }) {
                   <div className="kpi-value">{k.value}</div>
                   <div className="kpi-label">{k.label}</div>
                   <div className="kpi-sub">{k.sub}</div>
+                  {k.resourceLine && (
+                    <>
+                      <div className="kpi-resource-line">{k.resourceLine}</div>
+                      <div className="kpi-resource-source">
+                        Usage source: {k.resourceSource || 'unavailable'}
+                      </div>
+                    </>
+                  )}
                 </div>
               </div>
             ))}

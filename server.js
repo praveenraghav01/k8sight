@@ -26,6 +26,7 @@ import * as gke from './gke.js';
 import * as trivyScan from './trivy-scan.js';
 import * as demo from './demo.js';
 import { ensurePtyHelperExecutable } from './lib/pty-helper.mjs';
+import { createMetricResponseCache } from './lib/metric-response-cache.mjs';
 import { searchCharts, chartVersions } from './lib/artifacthub.mjs';
 import { detectForeignTrivy } from './lib/trivy-detect.mjs';
 import { tokenHelperPath } from './lib/resource-path.mjs';
@@ -57,6 +58,14 @@ const AZURE_TOKEN_HELPER = tokenHelperPath(import.meta.url, 'azure-token');
 
 // Response caching with TTL
 const cache = new Map();
+const inFlight = new Map();
+const metricResponseCache = createMetricResponseCache({
+  refreshAfterMs: 2_000,
+  staleAfterMs: 8_000,
+  retryBaseMs: 1_000,
+  retryMaxMs: 4_000,
+  maxEntries: 300
+});
 const CACHE_TTL = {
   resources: 30000, // 30 seconds
   events: 15000,    // 15 seconds
@@ -77,6 +86,16 @@ const getCache = (key) => {
   }
   return item.value;
 };
+const runSingleFlight = (key, operation) => {
+  const pending = inFlight.get(key);
+  if (pending) return pending;
+  const promise = Promise.resolve().then(operation).finally(() => {
+    if (inFlight.get(key) === promise) inFlight.delete(key);
+  });
+  inFlight.set(key, promise);
+  return promise;
+};
+const getMetricResponse = (key, loader) => metricResponseCache.get(key, loader);
 
 app.use(compression());
 
@@ -2916,6 +2935,18 @@ app.get('/api/cluster/summary', async (req, res) => {
       if (n.os) osImages.add(n.os);
     }
 
+    const resourceUsage = await getClusterResourceUsage().catch(() => ({
+      source: null,
+      cpuSource: null,
+      memorySource: null,
+      cpuMilli: null,
+      memBytes: null,
+      cpuRequestsMilli: null,
+      cpuLimitsMilli: null,
+      memRequestsBytes: null,
+      memLimitsBytes: null
+    }));
+
     // Pod phases
     const podPhases = { Running: 0, Pending: 0, Succeeded: 0, Failed: 0, Unknown: 0 };
     let podTotal = 0;
@@ -2956,6 +2987,7 @@ app.get('/api/cluster/summary', async (req, res) => {
         memCapacityBytes: memCapacity,
         memAllocatableBytes: memAllocatable
       },
+      resourceUsage,
       versions: Array.from(versions),
       osImages: Array.from(osImages),
       pods: { total: podTotal, phases: podPhases },
@@ -2987,6 +3019,576 @@ const fetchMetricsRaw = (path) => {
   });
   return JSON.parse(out);
 };
+
+const fetchMetricsRawAsync = async (path) => {
+  const { stdout } = await execFileAsync('kubectl', kctl('get', '--raw', path), {
+    encoding: 'utf-8',
+    maxBuffer: 30 * 1024 * 1024,
+    timeout: 10000
+  });
+  return JSON.parse(stdout);
+};
+
+// Optional cost integrations are discovered in the active kube context. The
+// app only reads from their HTTP APIs; it never installs or changes either
+// OpenCost or Kubecost.
+const COST_WINDOWS = new Set(['24h', '7d', '30d', 'today', 'lastweek', 'month']);
+const COST_AGGREGATES = new Set(['cluster', 'namespace', 'controller', 'node']);
+const K8S_DNS_LABEL = /^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?$/;
+
+const detectCostService = async ({ force = false } = {}) => {
+  const cacheKey = getCacheKey('cost-service', { context: currentContext || '' });
+  const cached = force ? null : getCache(cacheKey);
+  if (cached) return cached;
+  if (!kubeConfig) return { installed: false };
+
+  const { stdout } = await execFileAsync('kubectl', kctl('get', 'services', '--all-namespaces', '-o', 'json'), {
+    encoding: 'utf-8', maxBuffer: 16 * 1024 * 1024, timeout: 15000
+  });
+  const services = JSON.parse(stdout).items || [];
+  const matches = [];
+  for (const svc of services) {
+    const metadata = svc.metadata || {};
+    const labels = metadata.labels || {};
+    const serviceName = String(metadata.name || '').toLowerCase();
+    if (/prometheus|grafana|exporter|operator|node-exporter/.test(serviceName)) continue;
+    const identity = [metadata.name, labels['app.kubernetes.io/name'], labels.app, labels['app.kubernetes.io/instance']]
+      .filter(Boolean).join(' ').toLowerCase();
+    const provider = /opencost/.test(identity) ? 'opencost' : /kubecost|cost-analyzer/.test(identity) ? 'kubecost' : null;
+    if (!provider) continue;
+
+    const ports = svc.spec?.ports || [];
+    const preferredPort = provider === 'opencost' ? 9003 : 9090;
+    const port = ports.find((p) => Number(p.port) === preferredPort)
+      || ports.find((p) => Number(p.targetPort) === preferredPort)
+      || ports.find((p) => Number(p.port) === 9003)
+      || ports.find((p) => Number(p.targetPort) === 9003);
+    if (!port?.port) continue;
+    const useKubecostFrontend = provider === 'kubecost' && (Number(port.port) === 9090 || Number(port.targetPort) === 9090);
+    matches.push({
+      installed: true,
+      provider,
+      namespace: metadata.namespace,
+      service: metadata.name,
+      port: Number(port.port),
+      apiPath: useKubecostFrontend ? 'model/allocation' : 'allocation'
+    });
+  }
+
+  // Prefer an explicit OpenCost service, then the canonical Kubecost analyzer.
+  matches.sort((a, b) => {
+    const rank = (x) => x.provider === 'opencost'
+      ? (x.service === 'opencost' ? 0 : 1)
+      : /cost-analyzer/.test(x.service) ? 2 : /kubecost-frontend/.test(x.service) ? 3 : 4;
+    return rank(a) - rank(b);
+  });
+  const result = matches[0] || { installed: false };
+  setCache(cacheKey, result, 60_000);
+  return result;
+};
+
+const detectPrometheusService = async ({ force = false } = {}) => {
+  const cacheKey = getCacheKey('prometheus-service', { context: currentContext || '' });
+  const cached = force ? null : getCache(cacheKey);
+  if (cached) return cached;
+  if (!kubeConfig) return { installed: false };
+
+  return runSingleFlight(`prometheus-service:${cacheKey}`, async () => {
+  const refreshedCache = force ? null : getCache(cacheKey);
+  if (refreshedCache) return refreshedCache;
+
+  const [servicesResult, endpointResult] = await Promise.all([
+    execFileAsync('kubectl', kctl('get', 'services', '--all-namespaces', '-o', 'json'), {
+      encoding: 'utf-8', maxBuffer: 16 * 1024 * 1024, timeout: 15000
+    }),
+    execFileAsync('kubectl', kctl('get', 'endpointslices', '--all-namespaces', '-o', 'json'), {
+      encoding: 'utf-8', maxBuffer: 16 * 1024 * 1024, timeout: 15000
+    }).catch(() => execFileAsync('kubectl', kctl('get', 'endpoints', '--all-namespaces', '-o', 'json'), {
+      encoding: 'utf-8', maxBuffer: 16 * 1024 * 1024, timeout: 15000
+    }))
+  ]);
+  const services = JSON.parse(servicesResult.stdout).items || [];
+  let endpointItems = JSON.parse(endpointResult.stdout).items || [];
+  if (!endpointItems.length) {
+    try {
+      const { stdout } = await execFileAsync('kubectl', kctl('get', 'endpoints', '--all-namespaces', '-o', 'json'), {
+        encoding: 'utf-8', maxBuffer: 16 * 1024 * 1024, timeout: 15000
+      });
+      endpointItems = JSON.parse(stdout).items || [];
+    } catch { /* EndpointSlices are preferred; a cluster may not expose legacy Endpoints */ }
+  }
+  const readyServices = new Set();
+  for (const item of endpointItems) {
+    const metadata = item.metadata || {};
+    const serviceName = item.kind === 'EndpointSlice'
+      ? metadata.labels?.['kubernetes.io/service-name']
+      : metadata.name;
+    if (!serviceName || !metadata.namespace) continue;
+    const hasReadyAddress = item.kind === 'EndpointSlice'
+      ? (item.endpoints || []).some((endpoint) => endpoint.conditions?.ready !== false && endpoint.addresses?.length)
+      : (item.subsets || []).some((subset) => subset.addresses?.length);
+    if (hasReadyAddress) readyServices.add(`${metadata.namespace}/${serviceName}`);
+  }
+
+  const matches = [];
+  for (const svc of services) {
+    const metadata = svc.metadata || {};
+    const labels = metadata.labels || {};
+    const identity = [metadata.name, labels['app.kubernetes.io/name'], labels.app, labels['app.kubernetes.io/instance']]
+      .filter(Boolean).join(' ').toLowerCase();
+    if (!/prometheus/.test(identity) || /blackbox|exporter|operator|alertmanager|grafana|node-exporter/.test(identity)) continue;
+    if (!readyServices.has(`${metadata.namespace}/${metadata.name}`)) continue;
+
+    const ports = svc.spec?.ports || [];
+    const port = ports.find((candidate) => Number(candidate.port) === 9090)
+      || ports.find((candidate) => Number(candidate.port) === 80);
+    if (!port?.port) continue;
+    matches.push({
+      installed: true,
+      ready: true,
+      namespace: metadata.namespace,
+      service: metadata.name,
+      port: Number(port.port),
+      endpoint: `http://${metadata.name}.${metadata.namespace}.svc.cluster.local:${Number(port.port)}`,
+      headless: svc.spec?.clusterIP === 'None'
+    });
+  }
+
+  matches.sort((a, b) => Number(a.headless) - Number(b.headless)
+    || Number(b.port === 9090) - Number(a.port === 9090)
+    || a.service.localeCompare(b.service));
+  const result = matches[0] || { installed: false };
+  if (result.installed) {
+    try {
+      const probePath = `/api/v1/namespaces/${result.namespace}/services/${result.service}:${result.port}/proxy/api/v1/status/buildinfo`;
+      const { stdout } = await execFileAsync('kubectl', kctl('get', '--raw', probePath), {
+        encoding: 'utf-8', maxBuffer: 1024 * 1024, timeout: 8000
+      });
+      const buildInfo = JSON.parse(stdout);
+      result.apiReachable = buildInfo.status === 'success';
+      result.version = buildInfo.data?.version || null;
+    } catch {
+      result.apiReachable = false;
+    }
+    delete result.headless;
+  }
+  setCache(cacheKey, result, result.installed ? 120_000 : 30_000);
+  return result;
+  });
+};
+
+const inspectOpenCostDataSource = async (costService) => {
+  if (!costService?.installed || costService.provider !== 'opencost' || costService.manual) return null;
+  try {
+    const { stdout } = await execFileAsync('kubectl', kctl(
+      'get', 'deployment', costService.service, '-n', costService.namespace, '-o', 'json'
+    ), { encoding: 'utf-8', maxBuffer: 4 * 1024 * 1024, timeout: 10000 });
+    const deployment = JSON.parse(stdout);
+    const env = deployment.spec?.template?.spec?.containers?.flatMap((container) => container.env || []) || [];
+    const prometheusEndpoint = env.find((entry) => entry.name === 'PROMETHEUS_SERVER_ENDPOINT')?.value || '';
+    const collectorDataSourceEnabled = env.find((entry) => entry.name === 'COLLECTOR_DATA_SOURCE_ENABLED')?.value === 'true';
+    return { prometheusEndpoint, collectorDataSourceEnabled };
+  } catch {
+    return null;
+  }
+};
+
+const resolveCostService = async (query = {}) => {
+  const fields = ['provider', 'namespace', 'service', 'port'];
+  const supplied = fields.filter((field) => query[field] != null && query[field] !== '');
+  if (!supplied.length) return detectCostService({ force: query.refresh === '1' });
+  if (supplied.length !== fields.length) throw new Error('Manual setup needs provider, namespace, Service name, and port.');
+
+  const provider = String(query.provider).toLowerCase();
+  const namespace = String(query.namespace);
+  const service = String(query.service);
+  const port = Number(query.port);
+  if (!['opencost', 'kubecost'].includes(provider)) throw new Error('Provider must be OpenCost or Kubecost.');
+  if (!K8S_DNS_LABEL.test(namespace) || !K8S_DNS_LABEL.test(service)) throw new Error('Namespace and Service must be valid Kubernetes DNS names.');
+  if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('Service port must be an integer from 1 to 65535.');
+
+  return {
+    installed: true, provider, namespace, service, port,
+    apiPath: provider === 'kubecost' && port === 9090 ? 'model/allocation' : 'allocation',
+    manual: true
+  };
+};
+
+const costNumber = (value) => {
+  const n = typeof value === 'number' ? value : Number.parseFloat(value);
+  return Number.isFinite(n) ? n : 0;
+};
+
+const normalizeCostAllocation = (payload) => {
+  const sets = Array.isArray(payload?.data) ? payload.data : payload?.data ? [payload.data] : [];
+  const rows = new Map();
+  const costFields = ['cpuCost', 'gpuCost', 'memoryCost', 'pvCost', 'networkCost', 'loadBalancerCost', 'sharedCost', 'externalCost'];
+
+  for (const set of sets) {
+    const allocations = set?.allocations && typeof set.allocations === 'object' ? set.allocations : set;
+    if (!allocations || typeof allocations !== 'object' || Array.isArray(allocations)) continue;
+    for (const [name, allocation] of Object.entries(allocations)) {
+      if (!allocation || typeof allocation !== 'object') continue;
+      const row = rows.get(name) || { name, ...Object.fromEntries(costFields.map((field) => [field, 0])), totalCost: 0 };
+      row.cpuCost += costNumber(allocation.cpuCost);
+      row.gpuCost += costNumber(allocation.gpuCost);
+      row.memoryCost += costNumber(allocation.ramCost ?? allocation.memoryCost);
+      row.pvCost += costNumber(allocation.pvCost ?? allocation.storageCost);
+      row.networkCost += costNumber(allocation.networkCost);
+      row.loadBalancerCost += costNumber(allocation.loadBalancerCost);
+      row.sharedCost += costNumber(allocation.sharedCost);
+      row.externalCost += costNumber(allocation.externalCost);
+      const providedTotal = allocation.totalCost;
+      row.totalCost += providedTotal == null
+        ? costNumber(allocation.cpuCost) + costNumber(allocation.gpuCost)
+          + costNumber(allocation.ramCost ?? allocation.memoryCost)
+          + costNumber(allocation.pvCost ?? allocation.storageCost)
+          + costNumber(allocation.networkCost) + costNumber(allocation.loadBalancerCost)
+          + costNumber(allocation.sharedCost) + costNumber(allocation.externalCost)
+        : costNumber(providedTotal);
+      rows.set(name, row);
+    }
+  }
+
+  const allocations = [...rows.values()].sort((a, b) => b.totalCost - a.totalCost);
+  return {
+    allocations,
+    totalCost: allocations.reduce((sum, row) => sum + row.totalCost, 0),
+    currency: 'USD'
+  };
+};
+
+const fetchCostApiThroughPortForward = (service, requestPath) => new Promise((resolve, reject) => {
+  const proc = spawn('kubectl', kctl(
+    'port-forward', '-n', service.namespace, `svc/${service.service}`, `:${service.port}`
+  ), { stdio: ['ignore', 'pipe', 'pipe'] });
+  let output = '';
+  let localPort = null;
+  let settled = false;
+  let startTimer;
+  const cleanup = () => {
+    clearTimeout(startTimer);
+    try { proc.kill(); } catch { /* process may already have exited */ }
+  };
+  const finish = (fn, value) => {
+    if (settled) return;
+    settled = true;
+    cleanup();
+    fn(value);
+  };
+  const startRequest = () => {
+    if (localPort || settled) return;
+    const match = output.match(/Forwarding from 127\.0\.0\.1:(\d+)/);
+    if (!match) return;
+    localPort = Number(match[1]);
+    clearTimeout(startTimer);
+
+    const request = http.get({ hostname: '127.0.0.1', port: localPort, path: requestPath }, (response) => {
+      const chunks = [];
+      let bytes = 0;
+      response.on('data', (chunk) => {
+        bytes += chunk.length;
+        if (bytes > 30 * 1024 * 1024) {
+          request.destroy(new Error('Cost API response exceeded 30 MiB.'));
+          return;
+        }
+        chunks.push(chunk);
+      });
+      response.on('end', () => {
+        const body = Buffer.concat(chunks).toString('utf-8');
+        if (response.statusCode < 200 || response.statusCode >= 300) {
+          finish(reject, new Error(`Cost API returned HTTP ${response.statusCode}: ${body.slice(0, 300)}`));
+          return;
+        }
+        finish(resolve, body);
+      });
+    });
+    request.setTimeout(25000, () => request.destroy(new Error('Timed out waiting for the cost API response.')));
+    request.on('error', (error) => finish(reject, error));
+  };
+
+  proc.stdout.on('data', (data) => { output += data.toString(); startRequest(); });
+  proc.stderr.on('data', (data) => { output += data.toString(); startRequest(); });
+  proc.on('error', (error) => finish(reject, error));
+  proc.on('exit', (code) => {
+    if (!settled) finish(reject, new Error(output.trim() || `kubectl port-forward exited with code ${code}`));
+  });
+  startTimer = setTimeout(() => finish(reject, new Error('Timed out starting cost API port-forward.')), 10000);
+});
+
+const fetchCostApi = async (service, requestPath) => {
+  const proxyPath = `/api/v1/namespaces/${service.namespace}/services/${service.service}:${service.port}/proxy${requestPath}`;
+  try {
+    const { stdout } = await execFileAsync('kubectl', kctl('get', '--raw', proxyPath), {
+      encoding: 'utf-8', maxBuffer: 30 * 1024 * 1024, timeout: 6000
+    });
+    return { stdout, transport: 'service-proxy' };
+  } catch (proxyError) {
+    try {
+      const stdout = await fetchCostApiThroughPortForward(service, requestPath);
+      return { stdout, transport: 'port-forward' };
+    } catch (forwardError) {
+      throw new Error(`Service proxy failed (${proxyError.message}); port-forward fallback failed (${forwardError.message})`);
+    }
+  }
+};
+
+const prometheusString = (value) => JSON.stringify(String(value));
+
+const queryPrometheusInstant = async (expression) => {
+  const prometheus = await detectPrometheusService().catch(() => null);
+  if (!prometheus?.installed || !prometheus.apiReachable) return null;
+
+  const cacheKey = getCacheKey('prometheus-instant-query', {
+    context: currentContext || '', namespace: prometheus.namespace,
+    service: prometheus.service, port: prometheus.port, expression
+  });
+  const cached = getCache(cacheKey);
+  if (cached) return cached.result;
+
+  return runSingleFlight(cacheKey, async () => {
+  const refreshedCache = getCache(cacheKey);
+  if (refreshedCache) return refreshedCache.result;
+  try {
+    const query = new URLSearchParams({ query: expression }).toString();
+    const proxyPath = `/api/v1/namespaces/${prometheus.namespace}/services/${prometheus.service}:${prometheus.port}/proxy/api/v1/query?${query}`;
+    const { stdout } = await execFileAsync('kubectl', kctl('get', '--raw', proxyPath), {
+      encoding: 'utf-8', maxBuffer: 8 * 1024 * 1024, timeout: 6000
+    });
+    const payload = JSON.parse(stdout);
+    const result = payload.status === 'success' && Array.isArray(payload.data?.result)
+      ? payload.data.result
+      : null;
+    // The UI refreshes every few seconds. Reuse one fresh Prometheus sample
+    // across those polls instead of spawning another kubectl process each time.
+    setCache(cacheKey, { result }, result?.length ? 5000 : 8000);
+    return result;
+  } catch {
+    setCache(cacheKey, { result: null }, 5000);
+    return null;
+  }
+  });
+};
+
+const prometheusSampleValue = (sample) => {
+  const value = Number(sample?.value?.[1]);
+  return Number.isFinite(value) ? value : null;
+};
+
+// Try the preferred Prometheus query first, but avoid making the user wait on
+// a slow service proxy when the Kubernetes Metrics API can answer sooner.
+// The Prometheus request keeps running after an API response and fills its
+// query cache for the next poll.
+const raceMetricsSources = async ({ prometheusPromise, loadMetricsApi, isPrometheusComplete, isMetricsApiUsable }) => {
+  let metricsApiPromise;
+  const getMetricsApi = () => {
+    if (!metricsApiPromise) {
+      metricsApiPromise = Promise.resolve().then(loadMetricsApi).catch(() => null);
+    }
+    return metricsApiPromise;
+  };
+
+  let fallbackTimer;
+  const fastMetricsApi = new Promise((resolve) => {
+    fallbackTimer = setTimeout(async () => {
+      const metricsApi = await getMetricsApi();
+      if (isMetricsApiUsable(metricsApi)) resolve({ source: 'metrics-api', metricsApi });
+    }, 350);
+  });
+  const prometheusResult = Promise.resolve(prometheusPromise).catch(() => null).then(async (prometheus) => {
+    if (isPrometheusComplete(prometheus)) return { source: 'prometheus', prometheus, metricsApi: null };
+    return { source: 'combined', prometheus, metricsApi: await getMetricsApi() };
+  });
+
+  const result = await Promise.race([prometheusResult, fastMetricsApi]);
+  clearTimeout(fallbackTimer);
+  return result;
+};
+
+const getPrometheusPodUsage = async (namespace, pod) => {
+  const selector = `namespace=${prometheusString(namespace)},pod=${prometheusString(pod)},container!="",container!="POD"`;
+  const expression = [
+    `label_replace(max by (container) (rate(container_cpu_usage_seconds_total{${selector}}[5m])) * 1000, "resource", "cpu", "container", ".+")`,
+    `label_replace(max by (container) (container_memory_working_set_bytes{${selector}}), "resource", "memory", "container", ".+")`
+  ].join(' or ');
+  const samples = await queryPrometheusInstant(expression);
+  if (!samples) return null;
+
+  const byContainer = new Map();
+  for (const sample of samples) {
+    const container = sample.metric?.container;
+    const value = prometheusSampleValue(sample);
+    if (!container || value == null) continue;
+    const row = byContainer.get(container) || { name: container, cpuMilli: null, memBytes: null };
+    if (sample.metric?.resource === 'cpu') row.cpuMilli = value;
+    if (sample.metric?.resource === 'memory') row.memBytes = value;
+    byContainer.set(container, row);
+  }
+  const containers = [...byContainer.values()];
+  return {
+    containers,
+    hasCpu: containers.some((container) => container.cpuMilli != null),
+    hasMemory: containers.some((container) => container.memBytes != null)
+  };
+};
+
+const getPrometheusNodeUsage = async (node, name) => {
+  const addresses = (node?.status?.addresses || []).map((address) => address.address).filter(Boolean);
+  const targets = [...new Set([name, ...addresses])];
+  const instanceRegex = `^(${targets.map((value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})(:10250|:9100)?$`;
+  const selector = `instance=~${prometheusString(instanceRegex)}`;
+  const withResource = (query, resource) => `label_replace(${query}, "resource", "${resource}", "instance", ".+")`;
+  const expression = [
+    withResource(`sum by (instance) (rate(node_cpu_usage_seconds_total{${selector}}[5m])) * 1000`, 'cpuKubelet'),
+    withResource(`max by (instance) (node_memory_working_set_bytes{${selector}})`, 'memoryKubelet'),
+    withResource(`sum by (instance) (rate(node_cpu_seconds_total{${selector},mode!="idle",mode!="iowait"}[5m])) * 1000`, 'cpuNodeExporter'),
+    withResource(`max by (instance) (node_memory_MemTotal_bytes{${selector}} - node_memory_MemAvailable_bytes{${selector}})`, 'memoryNodeExporter')
+  ].join(' or ');
+  const samples = await queryPrometheusInstant(expression);
+  if (!samples) return null;
+
+  const values = new Map();
+  for (const sample of samples) {
+    const resource = sample.metric?.resource;
+    const value = prometheusSampleValue(sample);
+    if (!resource || value == null) continue;
+    const current = values.get(resource) || [];
+    current.push(value);
+    values.set(resource, current);
+  }
+  const best = (primary, fallback) => {
+    const candidates = values.get(primary)?.length ? values.get(primary) : values.get(fallback);
+    return candidates?.length ? Math.max(...candidates) : null;
+  };
+  const cpuMilli = best('cpuKubelet', 'cpuNodeExporter');
+  const memBytes = best('memoryKubelet', 'memoryNodeExporter');
+  return {
+    cpuMilli,
+    memBytes,
+    cpuSource: cpuMilli == null ? null : values.get('cpuKubelet')?.length ? 'Prometheus · kubelet' : 'Prometheus · node-exporter',
+    memorySource: memBytes == null ? null : values.get('memoryKubelet')?.length ? 'Prometheus · kubelet' : 'Prometheus · node-exporter'
+  };
+};
+
+const getPrometheusClusterUsage = async () => {
+  const expression = [
+    'label_replace(sum(rate(node_cpu_usage_seconds_total[5m])) * 1000, "resource", "cpuKubelet", "__name__", ".*")',
+    'label_replace(sum(node_memory_working_set_bytes), "resource", "memoryKubelet", "__name__", ".*")',
+    'label_replace(sum(rate(node_cpu_seconds_total{mode!="idle",mode!="iowait"}[5m])) * 1000, "resource", "cpuNodeExporter", "__name__", ".*")',
+    'label_replace(sum(node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes), "resource", "memoryNodeExporter", "__name__", ".*")'
+  ].join(' or ');
+  const samples = await queryPrometheusInstant(expression);
+  const byResource = new Map();
+  for (const sample of samples || []) {
+    const resource = sample.metric?.resource;
+    const value = prometheusSampleValue(sample);
+    if (resource && value != null) byResource.set(resource, value);
+  }
+  const cpuKubelet = byResource.get('cpuKubelet') ?? null;
+  const memKubelet = byResource.get('memoryKubelet') ?? null;
+  const cpuNodeExporter = byResource.get('cpuNodeExporter') ?? null;
+  const memNodeExporter = byResource.get('memoryNodeExporter') ?? null;
+  const cpuMilli = cpuKubelet ?? cpuNodeExporter;
+  const memBytes = memKubelet ?? memNodeExporter;
+  return {
+    cpuMilli,
+    memBytes,
+    cpuSource: cpuMilli == null ? null : cpuKubelet != null ? 'Prometheus · kubelet' : 'Prometheus · node-exporter',
+    memorySource: memBytes == null ? null : memKubelet != null ? 'Prometheus · kubelet' : 'Prometheus · node-exporter'
+  };
+};
+
+app.get('/api/costs/status', async (req, res) => {
+  try {
+    if (!kubeConfig) return res.status(400).json({ error: 'No kubeconfig loaded' });
+    const [costService, prometheus] = await Promise.all([
+      resolveCostService(req.query),
+      detectPrometheusService({ force: req.query.refresh === '1' }).catch((error) => ({
+        installed: false,
+        error: String(error.stderr || error.message || 'Unable to inspect Prometheus Services').trim().slice(0, 300)
+      }))
+    ]);
+    const openCostDataSource = await inspectOpenCostDataSource(costService);
+    const expectedPrometheusEndpoint = prometheus.installed
+      ? `${prometheus.service}.${prometheus.namespace}.svc.cluster.local:${prometheus.port}`.toLowerCase()
+      : '';
+    const currentPrometheusEndpoint = String(openCostDataSource?.prometheusEndpoint || '').toLowerCase();
+    const openCostUsesPrometheus = Boolean(costService.provider === 'opencost'
+      && !openCostDataSource?.collectorDataSourceEnabled
+      && expectedPrometheusEndpoint
+      && currentPrometheusEndpoint.includes(expectedPrometheusEndpoint));
+    res.json({ ...costService, prometheus, openCostDataSource, openCostUsesPrometheus });
+  } catch (error) {
+    const detail = String(error.stderr || error.message || 'Unable to inspect Kubernetes Services').trim().slice(0, 500);
+    res.status(500).json({ installed: false, error: detail });
+  }
+});
+
+app.get('/api/costs/allocation', async (req, res) => {
+  try {
+    if (!kubeConfig) return res.status(400).json({ error: 'No kubeconfig loaded' });
+    const window = COST_WINDOWS.has(req.query.window) ? req.query.window : '7d';
+    const aggregate = COST_AGGREGATES.has(req.query.aggregate) ? req.query.aggregate : 'namespace';
+    const service = await resolveCostService(req.query);
+    if (!service.installed) return res.status(503).json({ error: 'OpenCost or Kubecost was not detected in this cluster.' });
+
+    const cacheKey = getCacheKey('cost-allocation', {
+      context: currentContext || '', provider: service.provider, namespace: service.namespace,
+      service: service.service, port: service.port, window, aggregate,
+      includeIdle: service.provider === 'opencost'
+    });
+    const cached = getCache(cacheKey);
+    if (cached) {
+      res.set('X-Cache', 'HIT');
+      return res.json(cached);
+    }
+
+    const queryParams = { window, aggregate };
+    if (service.provider === 'opencost') {
+      queryParams.includeIdle = 'true';
+      if (aggregate === 'node') queryParams.idleByNode = 'true';
+    }
+    const query = new URLSearchParams(queryParams).toString();
+    const { stdout, transport } = await fetchCostApi(service, `/${service.apiPath}?${query}`);
+    const payload = JSON.parse(stdout);
+    if (Number(payload?.code) >= 400) throw new Error(payload.status || payload.message || `Cost API returned ${payload.code}`);
+    const normalized = normalizeCostAllocation(payload);
+    const idleCost = normalized.allocations
+      .filter((allocation) => allocation.name === '__idle__' || allocation.name.startsWith('__idle__/'))
+      .reduce((sum, allocation) => sum + allocation.totalCost, 0);
+    let idleCostUnavailable = null;
+    if (service.provider === 'opencost') {
+      try {
+        const assetsQuery = new URLSearchParams({ window }).toString();
+        const { stdout: assetsStdout } = await fetchCostApi(service, `/assets?${assetsQuery}`);
+        const assetPayload = JSON.parse(assetsStdout);
+        const assets = Array.isArray(assetPayload?.data)
+          ? assetPayload.data
+          : Object.values(assetPayload?.data || {});
+        idleCostUnavailable = !assets.some((asset) => String(asset?.type || '').toLowerCase() === 'node');
+      } catch {
+        // Keep allocation results available if the optional assets check fails.
+      }
+    }
+    const result = {
+      ...normalized,
+      idleIncluded: service.provider === 'opencost',
+      idleCost,
+      idleCostUnavailable,
+      provider: service.provider,
+      source: { namespace: service.namespace, service: service.service },
+      window,
+      aggregate,
+      transport
+    };
+    setCache(cacheKey, result, 30_000);
+    res.set('X-Cache', 'MISS');
+    res.json(result);
+  } catch (error) {
+    const detail = String(error.stderr || error.message || 'Cost allocation request failed').trim().slice(0, 700);
+    res.status(502).json({ error: detail });
+  }
+});
 
 const summarizePodMetrics = (item) => {
   let cpuMilli = 0;
@@ -3051,53 +3653,235 @@ app.get('/api/metrics/pod/:namespace/:pod', async (req, res) => {
   try {
     if (!kubeConfig) return res.status(400).json({ error: 'No kubeconfig loaded' });
     const { namespace, pod } = req.params;
+    const cacheKey = getCacheKey('metric-response-pod', { context: currentContext || '', namespace, pod });
+    const snapshot = await getMetricResponse(cacheKey, async () => {
+      const metricSources = await raceMetricsSources({
+        prometheusPromise: getPrometheusPodUsage(namespace, pod),
+        loadMetricsApi: async () => summarizePodMetrics(await fetchMetricsRawAsync(
+          `/apis/metrics.k8s.io/v1beta1/namespaces/${namespace}/pods/${pod}`
+        )),
+        isPrometheusComplete: (metrics) => Boolean(metrics?.hasCpu && metrics?.hasMemory),
+        isMetricsApiUsable: (metrics) => metrics?.cpuMilli != null || metrics?.memBytes != null
+      });
+      const prometheusMetrics = metricSources.prometheus;
+      const metricsApi = metricSources.metricsApi;
+      const promByContainer = new Map((prometheusMetrics?.containers || []).map((container) => [container.name, container]));
+      const apiByContainer = new Map((metricsApi?.containers || []).map((container) => [container.name, container]));
+      const names = new Set([...promByContainer.keys(), ...apiByContainer.keys()]);
+      const usedMetricsApi = { cpu: false, memory: false };
+      const containers = [...names].map((name) => {
+        const prom = promByContainer.get(name);
+        const api = apiByContainer.get(name);
+        const cpuMilli = prom?.cpuMilli ?? api?.cpuMilli ?? null;
+        const memBytes = prom?.memBytes ?? api?.memBytes ?? null;
+        if (prom?.cpuMilli == null && api?.cpuMilli != null) usedMetricsApi.cpu = true;
+        if (prom?.memBytes == null && api?.memBytes != null) usedMetricsApi.memory = true;
+        return { name, cpuMilli, memBytes };
+      });
+      const cpuMilli = containers.some((container) => container.cpuMilli != null)
+        ? containers.reduce((sum, container) => sum + (container.cpuMilli || 0), 0)
+        : null;
+      const memBytes = containers.some((container) => container.memBytes != null)
+        ? containers.reduce((sum, container) => sum + (container.memBytes || 0), 0)
+        : null;
+      const sources = new Set();
+      if (prometheusMetrics?.hasCpu || prometheusMetrics?.hasMemory) sources.add('Prometheus');
+      if (usedMetricsApi.cpu || usedMetricsApi.memory || (!prometheusMetrics && metricsApi)) sources.add('Metrics API');
 
-    let item;
-    try {
-      item = fetchMetricsRaw(`/apis/metrics.k8s.io/v1beta1/namespaces/${namespace}/pods/${pod}`);
-    } catch (err) {
-      return res.json({ available: false });
-    }
-
-    res.json({ available: true, ...summarizePodMetrics(item) });
+      return {
+        available: cpuMilli != null && memBytes != null,
+        cpuMilli,
+        memBytes,
+        containers,
+        source: [...sources].join(' + ') || null,
+        timestamp: metricsApi?.timestamp || new Date().toISOString(),
+        window: prometheusMetrics?.hasCpu || prometheusMetrics?.hasMemory ? '5m' : metricsApi?.window || null
+      };
+    });
+    res.set('X-Metrics-Cache', snapshot.state);
+    res.json(snapshot.data);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
+
+const parseResourceMemoryBytes = (quantity) => {
+  if (quantity == null || quantity === '') return 0;
+  const match = String(quantity).trim().match(/^([+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?)(Ei|Pi|Ti|Gi|Mi|Ki|E|P|T|G|M|K|m)?$/);
+  if (!match) return Number(quantity) || 0;
+  const multipliers = {
+    Ki: 1024, Mi: 1024 ** 2, Gi: 1024 ** 3, Ti: 1024 ** 4, Pi: 1024 ** 5, Ei: 1024 ** 6,
+    K: 1e3, M: 1e6, G: 1e9, T: 1e12, P: 1e15, E: 1e18, m: 1e-3
+  };
+  return Number(match[1]) * (multipliers[match[2]] || 1);
+};
+
+const effectivePodResource = (pod, field, resource, parse) => {
+  const spec = pod.spec || {};
+  const overhead = parse(spec.overhead?.[resource]);
+  const podLevel = spec.resources?.[field]?.[resource];
+  if (podLevel != null) return parse(podLevel) + overhead;
+
+  const regularContainers = spec.containers || [];
+  const initContainers = spec.initContainers || [];
+  const regularTotal = regularContainers.reduce((sum, container) => sum + parse(container.resources?.[field]?.[resource]), 0);
+  let restartableInitTotal = 0;
+  let initPeak = 0;
+  for (const container of initContainers) {
+    const amount = parse(container.resources?.[field]?.[resource]);
+    initPeak = Math.max(initPeak, restartableInitTotal + amount);
+    if (container.restartPolicy === 'Always') restartableInitTotal += amount;
+  }
+  return Math.max(regularTotal + restartableInitTotal, initPeak) + overhead;
+};
+
+const summarizeNodePodResources = (pods) => {
+  const scheduled = (pods || []).filter((pod) => !['Succeeded', 'Failed'].includes(pod.status?.phase));
+  return {
+    scheduledPods: scheduled.length,
+    cpuRequestsMilli: scheduled.reduce((sum, pod) => sum + effectivePodResource(pod, 'requests', 'cpu', parseCpuMilli), 0),
+    cpuLimitsMilli: scheduled.reduce((sum, pod) => sum + effectivePodResource(pod, 'limits', 'cpu', parseCpuMilli), 0),
+    memRequestsBytes: scheduled.reduce((sum, pod) => sum + effectivePodResource(pod, 'requests', 'memory', parseResourceMemoryBytes), 0),
+    memLimitsBytes: scheduled.reduce((sum, pod) => sum + effectivePodResource(pod, 'limits', 'memory', parseResourceMemoryBytes), 0)
+  };
+};
+
+const listAllClusterPods = async (coreApi) => {
+  const items = [];
+  let continuation = '';
+  do {
+    const page = await coreApi.listPodForAllNamespaces({
+      limit: 5000,
+      ...(continuation ? { _continue: continuation } : {})
+    });
+    items.push(...(page.items || []));
+    continuation = page.metadata?._continue || '';
+  } while (continuation);
+  return items;
+};
+
+const getClusterResourceUsage = async () => {
+  const cacheKey = getCacheKey('cluster-resource-usage', { context: currentContext || '' });
+  const cached = getCache(cacheKey);
+  if (cached) return cached;
+
+  const empty = {
+    source: null,
+    cpuSource: null,
+    memorySource: null,
+    cpuMilli: null,
+    memBytes: null,
+    cpuRequestsMilli: null,
+    cpuLimitsMilli: null,
+    memRequestsBytes: null,
+    memLimitsBytes: null
+  };
+  const coreApi = kubeConfig.makeApiClient(k8s.CoreV1Api);
+  const [podResult, prometheusResult] = await Promise.allSettled([
+    listAllClusterPods(coreApi),
+    getPrometheusClusterUsage()
+  ]);
+  const pods = podResult.status === 'fulfilled' ? podResult.value : null;
+  const prometheus = prometheusResult.status === 'fulfilled' ? prometheusResult.value : null;
+  const allocated = pods
+    ? summarizeNodePodResources(pods.filter((pod) => Boolean(pod.spec?.nodeName)))
+    : null;
+
+  let metricsApi = null;
+  if (prometheus?.cpuMilli == null || prometheus?.memBytes == null) {
+    try {
+      const metrics = fetchMetricsRaw('/apis/metrics.k8s.io/v1beta1/nodes');
+      metricsApi = (metrics.items || []).reduce((total, node) => ({
+        cpuMilli: total.cpuMilli + parseCpuMilli(node.usage?.cpu),
+        memBytes: total.memBytes + parseMemBytes(node.usage?.memory)
+      }), { cpuMilli: 0, memBytes: 0 });
+    } catch { /* Prometheus may still have one or both cluster metrics */ }
+  }
+
+  const cpuMilli = prometheus?.cpuMilli ?? metricsApi?.cpuMilli ?? null;
+  const memBytes = prometheus?.memBytes ?? metricsApi?.memBytes ?? null;
+  const cpuSource = prometheus?.cpuMilli != null ? prometheus.cpuSource : metricsApi ? 'Metrics API' : null;
+  const memorySource = prometheus?.memBytes != null ? prometheus.memorySource : metricsApi ? 'Metrics API' : null;
+  const sources = [...new Set([cpuSource, memorySource].filter(Boolean).map((source) => (
+    source.startsWith('Prometheus') ? 'Prometheus' : source
+  )))];
+  const result = {
+    ...empty,
+    source: sources.join(' + ') || null,
+    cpuSource,
+    memorySource,
+    cpuMilli: cpuMilli == null ? null : +cpuMilli.toFixed(1),
+    memBytes,
+    ...(allocated || {})
+  };
+  setCache(cacheKey, result, 10_000);
+  return result;
+};
 
 // Live metrics + capacity for a single node (for node detail graphs)
 app.get('/api/metrics/node/:name', async (req, res) => {
   try {
     if (!kubeConfig) return res.status(400).json({ error: 'No kubeconfig loaded' });
     const { name } = req.params;
+    const cacheKey = getCacheKey('metric-response-node', { context: currentContext || '', name });
+    const snapshot = await getMetricResponse(cacheKey, async () => {
+      const coreApi = kubeConfig.makeApiClient(k8s.CoreV1Api);
+      const allocationCacheKey = getCacheKey('node-resource-allocation', { context: currentContext || '', name });
+      const cachedAllocation = getCache(allocationCacheKey);
+      const nodePromise = coreApi.readNode({ name });
+      const allocationPromise = cachedAllocation
+        ? Promise.resolve(cachedAllocation)
+        : runSingleFlight(allocationCacheKey, async () => {
+          const podList = await coreApi.listPodForAllNamespaces({ fieldSelector: `spec.nodeName=${name}`, limit: 5000 });
+          const allocation = summarizeNodePodResources(podList.items);
+          setCache(allocationCacheKey, allocation, 30_000);
+          return allocation;
+        }).catch(() => null);
+      const metricSourcesPromise = raceMetricsSources({
+        prometheusPromise: nodePromise.then((node) => getPrometheusNodeUsage(node, name)),
+        loadMetricsApi: async () => {
+          const metrics = await fetchMetricsRawAsync(`/apis/metrics.k8s.io/v1beta1/nodes/${name}`);
+          return {
+            cpuMilli: parseCpuMilli(metrics.usage?.cpu),
+            memBytes: parseMemBytes(metrics.usage?.memory)
+          };
+        },
+        isPrometheusComplete: (metrics) => metrics?.cpuMilli != null && metrics?.memBytes != null,
+        isMetricsApiUsable: (metrics) => metrics?.cpuMilli != null || metrics?.memBytes != null
+      });
+      const [node, metricSources, loadedAllocation] = await Promise.all([
+        nodePromise, metricSourcesPromise, allocationPromise
+      ]);
+      const capacity = node.status?.capacity || {};
+      const allocatable = node.status?.allocatable || {};
+      const allocated = cachedAllocation || loadedAllocation || getCache(allocationCacheKey);
+      const prometheusUsage = metricSources.prometheus;
+      const metricsApiUsage = metricSources.metricsApi;
 
-    let usage;
-    try {
-      const m = fetchMetricsRaw(`/apis/metrics.k8s.io/v1beta1/nodes/${name}`);
-      usage = m.usage || {};
-    } catch (err) {
-      return res.json({ available: false });
-    }
-
-    let cpuCap = '0', memCap = '0', cpuAlloc = '0', memAlloc = '0';
-    try {
-      const out = execFileSync(
-        'kubectl',
-        ['get', 'node', name, '-o', 'jsonpath={.status.capacity.cpu}|{.status.capacity.memory}|{.status.allocatable.cpu}|{.status.allocatable.memory}'],
-        { encoding: 'utf-8', maxBuffer: 4 * 1024 * 1024, timeout: 8000 }
-      );
-      [cpuCap, memCap, cpuAlloc, memAlloc] = out.split('|');
-    } catch (e) { /* ignore */ }
-
-    res.json({
-      available: true,
-      cpuMilli: +parseCpuMilli(usage.cpu).toFixed(1),
-      memBytes: parseMemBytes(usage.memory),
-      cpuCapacityMilli: parseCpuMilli(cpuCap),
-      memCapacityBytes: parseMemBytes(memCap),
-      cpuAllocatableMilli: parseCpuMilli(cpuAlloc),
-      memAllocatableBytes: parseMemBytes(memAlloc)
+      const cpuMilli = prometheusUsage?.cpuMilli ?? metricsApiUsage?.cpuMilli ?? null;
+      const memBytes = prometheusUsage?.memBytes ?? metricsApiUsage?.memBytes ?? null;
+      const cpuSource = prometheusUsage?.cpuMilli != null ? prometheusUsage.cpuSource : metricsApiUsage?.cpuMilli != null ? 'Metrics API' : null;
+      const memorySource = prometheusUsage?.memBytes != null ? prometheusUsage.memorySource : metricsApiUsage?.memBytes != null ? 'Metrics API' : null;
+      const sources = new Set([cpuSource, memorySource].filter(Boolean).map((source) => source.startsWith('Prometheus') ? 'Prometheus' : source));
+      return {
+        available: cpuMilli != null && memBytes != null,
+        source: [...sources].join(' + ') || null,
+        cpuSource,
+        memorySource,
+        cpuMilli: cpuMilli == null ? null : +cpuMilli.toFixed(1),
+        memBytes,
+        cpuCapacityMilli: parseCpuMilli(capacity.cpu),
+        memCapacityBytes: parseResourceMemoryBytes(capacity.memory),
+        cpuAllocatableMilli: parseCpuMilli(allocatable.cpu),
+        memAllocatableBytes: parseResourceMemoryBytes(allocatable.memory),
+        ...(allocated || {
+          scheduledPods: null, cpuRequestsMilli: null, cpuLimitsMilli: null,
+          memRequestsBytes: null, memLimitsBytes: null
+        })
+      };
     });
+    res.set('X-Metrics-Cache', snapshot.state);
+    res.json(snapshot.data);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

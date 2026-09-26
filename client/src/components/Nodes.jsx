@@ -7,6 +7,8 @@ import Loader from './Loader';
 
 const fmtCpuM = (m) => (m >= 1000 ? `${(m / 1000).toFixed(2)} cores` : `${Math.round(m)}m`);
 const fmtGi = (gi) => `${gi.toFixed(1)} Gi`;
+const fmtCpuValue = (m) => (m == null ? '—' : fmtCpuM(m));
+const fmtMemValue = (bytes) => (bytes == null ? '—' : fmtGi(bytes / 1024 ** 3));
 
 const formatAge = (createdAt) => {
   if (!createdAt) return '-';
@@ -26,7 +28,7 @@ const formatMemory = (mem) => {
   return mem;
 };
 
-export default function Nodes({ focusNode, onFocusHandled, onNavigate, refreshSignal = 0 }) {
+export default function Nodes({ active = true, focusNode, onFocusHandled, onNavigate, refreshSignal = 0 }) {
   const [nodes, setNodes] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -57,48 +59,60 @@ export default function Nodes({ focusNode, onFocusHandled, onNavigate, refreshSi
 
   // Auto-select a node when navigated here via a cross-link
   useEffect(() => {
-    if (!focusNode || !nodes.length) return;
+    if (!active || !focusNode || !nodes.length) return;
     const match = nodes.find(n => n.name === focusNode);
     if (match) {
       setSelectedNode(match);
       setActiveTab('details');
     }
     onFocusHandled?.();
-  }, [focusNode, nodes]);
+  }, [active, focusNode, nodes]);
 
   // Live node metrics polling for the detail graphs. Keyed on the node *name*:
   // a refresh swaps in a new node object for the same node, and re-running this
   // would wipe the collected history.
   const selectedNodeName = selectedNode?.name;
+  const metricsNodeRef = useRef(null);
   useEffect(() => {
-    if (!selectedNodeName) return;
-    let active = true;
+    if (metricsNodeRef.current === selectedNodeName) return;
+    metricsNodeRef.current = selectedNodeName || null;
     setNcpuHist([]);
     setNmemHist([]);
     setNMetricsNow(null);
     setNMetricsAvail(true);
-    const poll = async () => {
-      try {
-        const res = await axios.get(`/api/metrics/node/${selectedNodeName}`);
-        if (!active) return;
-        if (res.data?.available === false) { setNMetricsAvail(false); return; }
-        setNMetricsNow(res.data);
-        setNcpuHist(h => [...h, res.data.cpuMilli].slice(-40));
-        setNmemHist(h => [...h, res.data.memBytes].slice(-40));
-      } catch (e) {
-        if (active) setNMetricsAvail(false);
-      }
-    };
-    poll();
-    const iv = setInterval(poll, 3000);
-    return () => { active = false; clearInterval(iv); };
   }, [selectedNodeName]);
 
   useEffect(() => {
-    if (selectedNodeName && activeTab === 'pods') {
+    if (!active || !selectedNodeName) return;
+    let live = true;
+    let pollTimer;
+    const poll = async () => {
+      let nextPollDelay = 3000;
+      try {
+        const res = await axios.get(`/api/metrics/node/${encodeURIComponent(selectedNodeName)}`);
+        if (!live) return;
+        if (res.data?.refreshing) nextPollDelay = 750;
+        setNMetricsNow(res.data);
+        setNMetricsAvail(res.data?.available !== false);
+        if (!res.data?.refreshing && !res.data?.stale) {
+          if (Number.isFinite(res.data?.cpuMilli)) setNcpuHist(h => [...h, res.data.cpuMilli].slice(-40));
+          if (Number.isFinite(res.data?.memBytes)) setNmemHist(h => [...h, res.data.memBytes].slice(-40));
+        }
+      } catch (e) {
+        if (live) setNMetricsAvail(false);
+      } finally {
+        if (live) pollTimer = setTimeout(poll, nextPollDelay);
+      }
+    };
+    poll();
+    return () => { live = false; clearTimeout(pollTimer); };
+  }, [active, selectedNodeName]);
+
+  useEffect(() => {
+    if (active && selectedNodeName && activeTab === 'pods') {
       fetchNodePods(selectedNodeName);
     }
-  }, [selectedNodeName, activeTab]);
+  }, [active, selectedNodeName, activeTab]);
 
   const fetchNodes = async ({ silent = false } = {}) => {
     if (!silent) setLoading(true);
@@ -253,7 +267,32 @@ export default function Nodes({ focusNode, onFocusHandled, onNavigate, refreshSi
               <div className="details-tab-content">
                 <div className="cluster-info-container" style={{ padding: '16px' }}>
                   <div className="cluster-info-card" style={{ gridColumn: '1 / -1' }}>
-                    <h3><Icon name="activity" size={15} /> Resource Usage</h3>
+                    <h3>
+                      <Icon name="activity" size={15} /> Requests, Limits & Usage
+                      {nMetricsNow?.source && <span className="resource-metric-source">{nMetricsNow.source}{nMetricsNow.refreshing ? ' · refreshing' : nMetricsNow.stale ? ' · last known' : ''}</span>}
+                    </h3>
+                    <table className="resource-usage-table node-resource-usage-table">
+                      <thead><tr><th>Resource</th><th>Requests</th><th>Limits (declared sum)</th><th>Usage</th></tr></thead>
+                      <tbody>
+                        <tr>
+                          <th>CPU</th>
+                          <td>{fmtCpuValue(nMetricsNow?.cpuRequestsMilli)}</td>
+                          <td>{fmtCpuValue(nMetricsNow?.cpuLimitsMilli)}</td>
+                          <td>{fmtCpuValue(nMetricsNow?.cpuMilli)}</td>
+                        </tr>
+                        <tr>
+                          <th>Memory</th>
+                          <td>{fmtMemValue(nMetricsNow?.memRequestsBytes)}</td>
+                          <td>{fmtMemValue(nMetricsNow?.memLimitsBytes)}</td>
+                          <td>{fmtMemValue(nMetricsNow?.memBytes)}</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                    {nMetricsNow?.scheduledPods != null && (
+                      <p className="node-resource-usage-note">
+                        Requests and limits are summed from {nMetricsNow.scheduledPods} scheduled pods. Limits include only values declared by pods.
+                      </p>
+                    )}
                     {!nMetricsAvail ? (
                       <div className="drawer-dim">Metrics not available</div>
                     ) : (

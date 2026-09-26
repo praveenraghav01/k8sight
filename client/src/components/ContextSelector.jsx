@@ -1,4 +1,5 @@
-import React, { useState, useRef, useEffect, useMemo } from 'react';
+import React, { useState, useRef, useEffect, useLayoutEffect, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import Icon from './Icons';
 
 const PROVIDERS = {
@@ -15,11 +16,16 @@ export default function ContextSelector({ contexts = [], contextsInfo, currentCo
   const [open, setOpen] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
   const [query, setQuery] = useState('');
+  const [dropdownLayout, setDropdownLayout] = useState(null);
   const ref = useRef(null);
+  const dropdownRef = useRef(null);
   const searchRef = useRef(null);
 
   useEffect(() => {
-    const onDown = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    const onDown = (e) => {
+      if (ref.current?.contains(e.target) || dropdownRef.current?.contains(e.target)) return;
+      setOpen(false);
+    };
     const onKey = (e) => { if (e.key === 'Escape') setOpen(false); };
     document.addEventListener('mousedown', onDown);
     document.addEventListener('keydown', onKey);
@@ -38,6 +44,35 @@ export default function ContextSelector({ contexts = [], contextsInfo, currentCo
 
   const q = query.toLowerCase();
   const visible = useMemo(() => contexts.filter((c) => !q || c.toLowerCase().includes(q)), [contexts, q]);
+  const visibleContextKey = visible.join('\u0000');
+  useLayoutEffect(() => {
+    if (!open) { setDropdownLayout(null); return; }
+    const trigger = ref.current?.querySelector('.ctx-trigger');
+    if (!trigger) return;
+    const measure = () => {
+      const rect = trigger.getBoundingClientRect();
+      const availableWidth = Math.max(180, window.innerWidth - rect.left - 16);
+      const label = dropdownRef.current?.querySelector('.ctx-option-label')
+        || trigger.querySelector('.ctx-trigger-label')
+        || trigger;
+      const font = window.getComputedStyle(label).font;
+      const canvas = document.createElement('canvas');
+      const context = canvas.getContext('2d');
+      if (context) context.font = font;
+      const longestLabel = visibleContextKey.split('\u0000').reduce((width, value) => (
+        Math.max(width, context?.measureText(value).width || value.length * 8)
+      ), 0);
+      const width = Math.min(availableWidth, Math.max(rect.width, Math.ceil(longestLabel + 66)));
+      setDropdownLayout({ left: rect.left, top: rect.bottom + 6, width, availableWidth });
+    };
+    measure();
+    window.addEventListener('resize', measure);
+    window.addEventListener('scroll', measure, true);
+    return () => {
+      window.removeEventListener('resize', measure);
+      window.removeEventListener('scroll', measure, true);
+    };
+  }, [open, visibleContextKey]);
   const grouped = useMemo(() => {
     const g = {};
     visible.forEach((c) => { const p = providerOf(c); (g[p] = g[p] || []).push(c); });
@@ -56,8 +91,17 @@ export default function ContextSelector({ contexts = [], contextsInfo, currentCo
         <span className="ctx-trigger-arrow"><Icon name={open ? 'chevronUp' : 'chevronDown'} size={13} strokeWidth={2.2} /></span>
       </button>
 
-      {open && (
-        <div className="ctx-dropdown">
+      {open && dropdownLayout && createPortal(
+        <div
+          ref={dropdownRef}
+          className="ctx-dropdown"
+          style={{
+            left: `${dropdownLayout.left}px`,
+            top: `${dropdownLayout.top}px`,
+            width: `${dropdownLayout.width}px`,
+            maxWidth: `${dropdownLayout.availableWidth}px`,
+          }}
+        >
           <div className="ctx-search">
             <Icon name="search" size={14} />
             <input ref={searchRef} type="text" placeholder={`Search ${contexts.length} contexts…`} value={query} onChange={(e) => setQuery(e.target.value)} />
@@ -113,7 +157,8 @@ export default function ContextSelector({ contexts = [], contextsInfo, currentCo
               )}
             </div>
           )}
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   );

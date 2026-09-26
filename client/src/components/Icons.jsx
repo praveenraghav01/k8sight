@@ -371,6 +371,12 @@ const ICONS = {
   minus: <path d="M5 12h14" />,
   filter: <path d="M22 3H2l8 9.5V19l4 2v-8.5L22 3z" />,
   activity: <path d="M22 12h-4l-3 9L9 3l-3 9H2" />,
+  costs: (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M16 8.5h-5.2a2.3 2.3 0 0 0 0 4.6h2.4a2.3 2.3 0 0 1 0 4.6H8M12 6v2M12 18v2" />
+    </>
+  ),
   cpu: (
     <>
       <rect x="4" y="4" width="16" height="16" rx="2" />

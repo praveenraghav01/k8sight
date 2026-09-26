@@ -3,7 +3,7 @@ import axios from 'axios';
 import './App.css';
 import Navigation from './components/Navigation';
 import { REFRESH_OPTIONS } from './components/RefreshControl';
-import ResourceViewer, { TAB_KEYS } from './components/ResourceViewer';
+import ResourceViewer from './components/ResourceViewer';
 import Overview from './components/Overview';
 import Cluster from './components/Cluster';
 import Nodes from './components/Nodes';
@@ -19,6 +19,7 @@ import KubeConfigModal from './components/KubeConfigModal';
 import AuthErrorModal from './components/AuthErrorModal';
 import AccessControl from './components/AccessControl';
 import SecurityCenter from './components/SecurityCenter';
+import CostsCenter from './components/CostsCenter';
 import ArgoCD from './components/ArgoCD';
 import Assistant from './components/Assistant';
 import AgentPanel from './components/AgentPanel';
@@ -30,7 +31,7 @@ import { useToast } from './components/Toast';
 
 // Views that load their own data and should NOT trigger the shared resource fetch.
 // (Overview is intentionally excluded — its dashboard is built from the shared fetch.)
-const STANDALONE_RESOURCE_TYPES = ['cluster', 'nodes', 'namespaces', 'helm', 'customResources', 'accessControl', 'topology', 'argocd', 'security'];
+const STANDALONE_RESOURCE_TYPES = ['cluster', 'nodes', 'namespaces', 'helm', 'customResources', 'accessControl', 'topology', 'argocd', 'security', 'costs'];
 
 // Maps a resourceType to the key it lives under in allResources.
 // Naive `type + 's'` breaks for a few types.
@@ -39,6 +40,20 @@ const pluralKey = (rt) => PLURAL_KEY[rt] || `${rt}s`;
 
 // Cluster-scoped types come from a single /api/storage call (not per-namespace)
 const CLUSTER_SCOPED = ['persistentVolume', 'storageClass'];
+
+const APP_VIEW_TYPES = ['overview', ...STANDALONE_RESOURCE_TYPES, 'resources', 'preferences'];
+const pageKeyFor = (type) => type === 'overview' || type === 'preferences' || STANDALONE_RESOURCE_TYPES.includes(type)
+  ? type
+  : 'resources';
+
+function CachedViewSlot({ active, children }) {
+  const [mounted, setMounted] = useState(active);
+  useEffect(() => {
+    if (active) setMounted(true);
+  }, [active]);
+  if (!mounted && !active) return null;
+  return <div className="cached-view-slot" hidden={!active}>{children}</div>;
+}
 
 function App() {
   const toast = useToast();
@@ -57,21 +72,25 @@ function App() {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [history, setHistory] = useState({ stack: ['overview'], idx: 0 });
   const navGuard = useRef(false);
-  const [allResources, setAllResources] = useState({});
+  const [resourceSnapshots, setResourceSnapshots] = useState({});
   const [selectedResource, setSelectedResource] = useState(null);
+  const [selectedResourceType, setSelectedResourceType] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [resourceAttemptKey, setResourceAttemptKey] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [focusResource, setFocusResource] = useState(null); // { type, namespace, name }
   const [focusNode, setFocusNode] = useState(null);
   const [crSelection, setCrSelection] = useState(null);
   const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'system');
-  const [refreshNonce, setRefreshNonce] = useState(0);
+  const [refreshSignals, setRefreshSignals] = useState({});
   const [refreshing, setRefreshing] = useState(false);
   // Auto-refresh cadence (key into REFRESH_OPTIONS). Defaults to 'auto' (= 1 min).
   const [refreshInterval, setRefreshInterval] = useState(() => localStorage.getItem('refreshInterval') || 'auto');
   const [argocdInstalled, setArgocdInstalled] = useState(false);
   const handleRefreshRef = useRef(() => {});
   const refreshInFlight = useRef(false);
+  const visitedViewsRef = useRef(new Set());
+  const previousViewIdentityRef = useRef(null);
 
   useEffect(() => { localStorage.setItem('refreshInterval', refreshInterval); }, [refreshInterval]);
 
@@ -96,12 +115,15 @@ function App() {
     config: false,
     argocd: false,
     argocdSettings: false,
-    security: false
+    security: false,
+    costs: false
   });
   // Which ArgoCD sub-view the sidebar is pointing at (dashboard/applications/…).
   const [argoView, setArgoView] = useState('dashboard');
   // Which Security Center sub-view the sidebar is pointing at.
   const [securityView, setSecurityView] = useState('overview');
+  // Which Cost Center sub-view the sidebar is pointing at.
+  const [costsView, setCostsView] = useState('overview');
   const [showAzure, setShowAzure] = useState(false);
   // When the failing cluster uses kubelogin/azurecli, the fix is `az login` (the
   // browser OAuth flow doesn't refresh the CLI token that kubelogin reads), so
@@ -119,6 +141,9 @@ function App() {
   };
 
   const authOk = authState.ok;
+  const activePageKey = pageKeyFor(resourceType);
+  const usesSharedResources = resourceType === 'overview'
+    || (resourceType !== 'preferences' && !STANDALONE_RESOURCE_TYPES.includes(resourceType));
 
   useEffect(() => {
     fetchConfigStatus();
@@ -145,11 +170,47 @@ function App() {
     return () => { live = false; };
   }, [authOk, configStatus.currentContext]);
 
+  const selectedNamespaceScope = selectedNamespaces.includes('all') || selectedNamespaces.length === 0
+    ? namespaces.filter((name) => name !== 'all').slice().sort()
+    : selectedNamespaces.filter((name) => name !== 'all').slice().sort();
+  const resourceDataKey = JSON.stringify({
+    context: configStatus.currentContext || '',
+    scope: CLUSTER_SCOPED.includes(resourceType) ? 'cluster' : selectedNamespaceScope,
+  });
+  const allResources = resourceSnapshots[resourceDataKey] || {};
+  const hasCachedResourceData = Object.prototype.hasOwnProperty.call(resourceSnapshots, resourceDataKey);
+  const resourceLoading = usesSharedResources && !hasCachedResourceData
+    && (loading || (authOk && resourceAttemptKey !== resourceDataKey));
+
+  const storeResourceSnapshot = (key, data) => {
+    setResourceSnapshots((previous) => {
+      const recent = Object.entries(previous).filter(([cachedKey]) => cachedKey !== key);
+      return Object.fromEntries([...recent.slice(-7), [key, data]]);
+    });
+  };
+
   useEffect(() => {
-    if (authOk && !STANDALONE_RESOURCE_TYPES.includes(resourceType)) {
-      fetchResources();
+    if (authOk && usesSharedResources) {
+      fetchResources({ silent: hasCachedResourceData });
     }
-  }, [selectedNamespaces, resourceType, authOk, namespaces]);
+  }, [selectedNamespaces, resourceType, authOk, namespaces, resourceDataKey, usesSharedResources]);
+
+  // Keep each visited page mounted for the current cluster. Returning to one
+  // bumps only its refresh signal, so it can update quietly from its last view.
+  useEffect(() => {
+    const identity = JSON.stringify([configStatus.currentContext || '', activePageKey]);
+    const previous = previousViewIdentityRef.current;
+    if (previous === identity) return;
+    if (visitedViewsRef.current.has(identity)
+      && activePageKey !== 'overview'
+      && activePageKey !== 'resources'
+      && activePageKey !== 'preferences') {
+      setRefreshSignals((current) => ({ ...current, [activePageKey]: (current[activePageKey] || 0) + 1 }));
+    } else {
+      visitedViewsRef.current.add(identity);
+    }
+    previousViewIdentityRef.current = identity;
+  }, [activePageKey, configStatus.currentContext]);
 
   const fetchConfigStatus = async () => {
     try {
@@ -222,10 +283,11 @@ function App() {
       });
       if (!resp.ok) throw new Error('switch failed');
       // Reset the view for the new cluster, then reload config + re-check auth.
+      setConfigStatus((current) => ({ ...current, currentContext: ctx }));
       setResourceType('overview');
       setSelectedResource(null);
+      setSelectedResourceType(null);
       setSelectedNamespaces(['all']);
-      setAllResources({});
       setNamespaces([]);
       await fetchConfigStatus();
       const ok = await checkAuth();
@@ -254,10 +316,8 @@ function App() {
   };
 
   // Global refresh for the active page. App-managed views (Overview + resource
-  // lists) reload via the shared fetch; self-fetching views (Cluster, Nodes,
-  // Topology, Helm, Namespaces, Custom Resources, Access Control, …) watch
-  // `refreshNonce` and re-fetch in place — no remount, so their selection, tab,
-  // scroll and pan/zoom survive a refresh and no loader flashes over the data.
+  // lists) reload via the shared fetch; self-fetching views watch only their own
+  // signal, so hidden pages stay idle and keep their current data.
   // `silent: true` (auto-refresh) also skips the spinning refresh icon, so a
   // background reload is invisible: the values just change.
   const handleRefresh = async ({ silent = false } = {}) => {
@@ -267,11 +327,16 @@ function App() {
     refreshInFlight.current = true;
     if (!silent) setRefreshing(true);
     try {
-      if (!STANDALONE_RESOURCE_TYPES.includes(resourceType)) {
-        await fetchNamespaces();
+      const refreshedNamespaces = await fetchNamespaces({ silent });
+      const namespaceListChanged = refreshedNamespaces
+        && (refreshedNamespaces.length !== namespaces.length
+          || refreshedNamespaces.some((name, index) => name !== namespaces[index]));
+      if (usesSharedResources && !namespaceListChanged) {
         await fetchResources({ silent });
       }
-      setRefreshNonce(n => n + 1);
+      if (activePageKey !== 'overview' && activePageKey !== 'preferences') {
+        setRefreshSignals((current) => ({ ...current, [activePageKey]: (current[activePageKey] || 0) + 1 }));
+      }
     } finally {
       refreshInFlight.current = false;
       // brief spin so the action is perceptible even when the fetch is instant
@@ -334,38 +399,54 @@ function App() {
     }
   };
 
-  const fetchNamespaces = async () => {
+  const fetchNamespaces = async ({ silent = false } = {}) => {
     try {
       const response = await axios.get('/api/namespaces');
-      setNamespaces(['all', ...response.data.namespaces]);
+      const next = ['all', ...response.data.namespaces];
+      setNamespaces((previous) => previous.length === next.length
+        && previous.every((name, index) => name === next[index]) ? previous : next);
+      return next;
     } catch (err) {
-      toast.error('Failed to fetch namespaces', { title: 'Namespaces' });
+      if (!silent) toast.error('Failed to fetch namespaces', { title: 'Namespaces' });
+      return null;
     }
   };
 
-  const resolveNamespaces = () => {
+  const handleNamespaceDeleted = (deletedNamespace) => {
+    setSelectedNamespaces((current) => {
+      if (current.includes('all')) return current;
+      const remaining = current.filter((namespace) => namespace !== deletedNamespace);
+      return remaining.length ? remaining : ['all'];
+    });
+    fetchNamespaces({ silent: true });
+  };
+
+  const resolveNamespaces = (availableNamespaces = namespaces) => {
     if (selectedNamespaces.includes('all') || selectedNamespaces.length === 0) {
-      return namespaces.filter(n => n !== 'all');
+      return availableNamespaces.filter(n => n !== 'all');
     }
     return selectedNamespaces;
   };
 
   const fetchResources = async ({ silent = false } = {}) => {
     const fetchId = ++fetchIdRef.current;
+    setResourceAttemptKey(resourceDataKey);
     // A silent (background) fetch keeps whatever is already on screen — the list
     // is replaced once the data is in, so there's no "Loading pods…" flash.
-    if (!silent) setLoading(true);
+    if (!silent || !hasCachedResourceData) setLoading(true);
+    else setLoading(false);
     try {
       // Cluster-scoped types (PersistentVolumes, StorageClasses) are a single call
       if (CLUSTER_SCOPED.includes(resourceType)) {
         const res = await axios.get('/api/storage');
         if (fetchId !== fetchIdRef.current) return;
-        setAllResources(res.data);
+        storeResourceSnapshot(resourceDataKey, res.data);
         return;
       }
 
       const namespacesToFetch = resolveNamespaces();
       const allData = {};
+      const failedNamespaces = new Set();
 
       // Fetch namespaces in parallel with a bounded concurrency pool.
       // The backend now uses in-process API calls (no process spawn), so we
@@ -386,6 +467,7 @@ function App() {
             });
           } catch (e) {
             // Skip a namespace that fails (e.g. RBAC) rather than failing all
+            if (silent) failedNamespaces.add(ns);
           }
         }
       };
@@ -395,9 +477,15 @@ function App() {
       );
 
       if (fetchId !== fetchIdRef.current) return;
-      setAllResources(allData);
+      if (silent && failedNamespaces.size) {
+        for (const [key, rows] of Object.entries(allResources)) {
+          const staleRows = rows.filter((row) => failedNamespaces.has(row.namespace));
+          if (staleRows.length) allData[key] = [...(allData[key] || []), ...staleRows];
+        }
+      }
+      storeResourceSnapshot(resourceDataKey, allData);
     } catch (err) {
-      if (fetchId === fetchIdRef.current) toast.error('Failed to fetch resources', { title: 'Resources' });
+      if (fetchId === fetchIdRef.current && !silent) toast.error('Failed to fetch resources', { title: 'Resources' });
     } finally {
       if (fetchId === fetchIdRef.current) setLoading(false);
     }
@@ -406,6 +494,7 @@ function App() {
   // Clear the selected resource (and drawer) only when the resource type changes.
   useEffect(() => {
     setSelectedResource(null);
+    setSelectedResourceType(null);
   }, [resourceType]);
 
   // Resolve a pending focus target once its list has loaded (cross-link navigation).
@@ -418,6 +507,7 @@ function App() {
     const match = list.find(r => r.name === focusResource.name && (r.namespace || '') === (focusResource.namespace || ''));
     if (match) {
       setSelectedResource(match);
+      setSelectedResourceType(focusResource.type);
       setFocusResource(null);
     }
   }, [allResources, focusResource]);
@@ -459,22 +549,90 @@ function App() {
     }));
   };
 
-  const getFilteredResources = () => {
-    const baseResources = allResources[pluralKey(resourceType)] || [];
+  const getFilteredResources = (type = resourceType) => {
+    const baseResources = allResources[pluralKey(type)] || [];
 
     if (!searchQuery) return baseResources;
     return baseResources.filter(r =>
       r.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      r.namespace.toLowerCase().includes(searchQuery.toLowerCase())
+      (r.namespace || '').toLowerCase().includes(searchQuery.toLowerCase())
     );
   };
 
-  const getTotalCount = () => (allResources[pluralKey(resourceType)] || []).length;
+  const getTotalCount = (type = resourceType) => (allResources[pluralKey(type)] || []).length;
 
   // ---- gate: what to render before the app is ready ----
   const showConfigModal = configChecked && !serverUnreachable && (!configStatus.loaded || forceConfigModal);
   const checkingAuth = configStatus.loaded && !forceConfigModal && (!authState.checked || autoRecovering);
   const showAuthError = configStatus.loaded && !forceConfigModal && authState.checked && !authState.ok && !autoRecovering;
+
+  const renderPage = (viewType) => {
+    const refreshSignal = refreshSignals[viewType] || 0;
+    if (viewType === 'overview') {
+      return (
+        <Overview
+          allResources={allResources}
+          selectedNamespaces={selectedNamespaces}
+          namespaces={namespaces}
+          onNamespaceSelect={setSelectedNamespaces}
+          loading={resourceLoading}
+          onResourceTypeChange={setResourceType}
+        />
+      );
+    }
+    if (viewType === 'cluster') return <Cluster configStatus={configStatus} refreshSignal={refreshSignal} />;
+    if (viewType === 'nodes') return <Nodes active={resourceType === viewType} focusNode={focusNode} onFocusHandled={() => setFocusNode(null)} onNavigate={nav} refreshSignal={refreshSignal} />;
+    if (viewType === 'namespaces') return <Namespaces onNavigate={nav} onNamespaceDeleted={handleNamespaceDeleted} refreshSignal={refreshSignal} />;
+    if (viewType === 'topology') return <Topology namespaces={namespaces} refreshSignal={refreshSignal} />;
+    if (viewType === 'helm') return <Helm refreshSignal={refreshSignal} />;
+    if (viewType === 'customResources') return <CustomResourceDetail selection={crSelection} onSelect={setCrSelection} refreshSignal={refreshSignal} />;
+    if (viewType === 'accessControl') return <AccessControl onNavigate={nav} refreshSignal={refreshSignal} />;
+    if (viewType === 'security') return <SecurityCenter namespaces={namespaces} onNavigate={nav} view={resourceType === viewType ? securityView : null} onViewChange={setSecurityView} refreshSignal={refreshSignal} />;
+    if (viewType === 'costs') return <CostsCenter key={`costs-${configStatus.currentContext}`} context={configStatus.currentContext} refreshSignal={refreshSignal} view={resourceType === viewType ? costsView : null} onViewChange={setCostsView} />;
+    if (viewType === 'argocd') return <ArgoCD onNavigate={nav} refreshSignal={refreshSignal} view={resourceType === viewType ? argoView : null} onViewChange={setArgoView} />;
+    if (viewType === 'preferences') {
+      return (
+        <Preferences
+          configStatus={configStatus}
+          theme={theme}
+          onSetTheme={setTheme}
+          onChangeConfig={() => setForceConfigModal(true)}
+          onAddAzure={() => openAzure()}
+          onAddAws={() => setShowAws(true)}
+          onAddGke={() => setShowGke(true)}
+          initialSection={prefSection}
+          onClose={() => setResourceType(prefReturn || 'overview')}
+        />
+      );
+    }
+    if (viewType === 'resources') {
+      return (
+        <ResourceViewer
+          active={activePageKey === 'resources'}
+          resourceType={resourceType}
+          resources={getFilteredResources()}
+          selectedResource={selectedResourceType === resourceType ? selectedResource : null}
+          onSelectResource={(resource) => {
+            setSelectedResource(resource);
+            setSelectedResourceType(resource ? resourceType : null);
+          }}
+          selectedNamespaces={selectedNamespaces}
+          namespaces={namespaces}
+          onNamespaceChange={setSelectedNamespaces}
+          loading={resourceLoading}
+          hasCachedData={hasCachedResourceData}
+          searchQuery={searchQuery}
+          onSearchChange={setSearchQuery}
+          totalCount={getTotalCount()}
+          onResourceTypeChange={setResourceType}
+          onNavigate={nav}
+          onRefresh={handleRefresh}
+          refreshSignal={refreshSignal}
+        />
+      );
+    }
+    return null;
+  };
 
   return (
     <div className="app-shell">
@@ -530,7 +688,7 @@ function App() {
           context={{
             view: resourceType,
             namespaces: selectedNamespaces,
-            selected: selectedResource
+            selected: selectedResource && selectedResourceType === resourceType
               ? { type: resourceType, namespace: selectedResource.namespace, name: selectedResource.name }
               : null,
           }}
@@ -582,6 +740,8 @@ function App() {
             onSelectArgoView={(v) => { setArgoView(v); setResourceType('argocd'); }}
             securityView={resourceType === 'security' ? securityView : null}
             onSelectSecurityView={(v) => { setSecurityView(v); setResourceType('security'); }}
+            costsView={resourceType === 'costs' ? costsView : null}
+            onSelectCostsView={(v) => { setCostsView(v); setResourceType('costs'); }}
             onAddAzure={() => openAzure()}
             onAddAws={() => setShowAws(true)}
             onAddGke={() => setShowGke(true)}
@@ -590,64 +750,14 @@ function App() {
           />
 
           <div className="content-col">
-          {resourceType === 'overview' ? (
-            <Overview
-              allResources={allResources}
-              selectedNamespaces={selectedNamespaces}
-              namespaces={namespaces}
-              onNamespaceSelect={setSelectedNamespaces}
-              loading={loading}
-              onResourceTypeChange={setResourceType}
-            />
-          ) : resourceType === 'cluster' ? (
-            <Cluster configStatus={configStatus} refreshSignal={refreshNonce} />
-          ) : resourceType === 'nodes' ? (
-            <Nodes focusNode={focusNode} onFocusHandled={() => setFocusNode(null)} onNavigate={nav} refreshSignal={refreshNonce} />
-          ) : resourceType === 'namespaces' ? (
-            <Namespaces onNavigate={nav} refreshSignal={refreshNonce} />
-          ) : resourceType === 'topology' ? (
-            <Topology namespaces={namespaces} refreshSignal={refreshNonce} />
-          ) : resourceType === 'helm' ? (
-            <Helm refreshSignal={refreshNonce} />
-          ) : resourceType === 'customResources' ? (
-            <CustomResourceDetail selection={crSelection} onSelect={setCrSelection} refreshSignal={refreshNonce} />
-          ) : resourceType === 'accessControl' ? (
-            <AccessControl onNavigate={nav} refreshSignal={refreshNonce} />
-          ) : resourceType === 'security' ? (
-            <SecurityCenter namespaces={namespaces} onNavigate={nav} view={securityView} onViewChange={setSecurityView} refreshSignal={refreshNonce} />
-          ) : resourceType === 'argocd' ? (
-            <ArgoCD onNavigate={nav} refreshSignal={refreshNonce} view={argoView} onViewChange={setArgoView} />
-          ) : resourceType === 'preferences' ? (
-            <Preferences
-              configStatus={configStatus}
-              theme={theme}
-              onSetTheme={setTheme}
-              onChangeConfig={() => setForceConfigModal(true)}
-              onAddAzure={() => openAzure()}
-              onAddAws={() => setShowAws(true)}
-              onAddGke={() => setShowGke(true)}
-              initialSection={prefSection}
-              onClose={() => setResourceType(prefReturn || 'overview')}
-            />
-          ) : (
-            <ResourceViewer
-              resourceType={resourceType}
-              resources={getFilteredResources()}
-              selectedResource={selectedResource}
-              onSelectResource={setSelectedResource}
-              selectedNamespaces={selectedNamespaces}
-              namespaces={namespaces}
-              onNamespaceChange={setSelectedNamespaces}
-              loading={loading}
-              searchQuery={searchQuery}
-              onSearchChange={setSearchQuery}
-              totalCount={getTotalCount()}
-              onResourceTypeChange={setResourceType}
-              onNavigate={nav}
-              onRefresh={handleRefresh}
-              refreshSignal={refreshNonce}
-            />
-          )}
+          {APP_VIEW_TYPES.map((viewType) => (
+            <CachedViewSlot
+              key={JSON.stringify([configStatus.currentContext || '', viewType])}
+              active={activePageKey === viewType}
+            >
+              {renderPage(viewType)}
+            </CachedViewSlot>
+          ))}
           <AgentPanel context={{ currentContext: configStatus.currentContext }} onOpenChange={setAgentOpen} />
           </div>
         </div>

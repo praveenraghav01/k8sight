@@ -24,10 +24,11 @@ A native desktop app (macOS · Windows · Linux) — and a Docker image — for 
 ## Features
 
 **Demo mode — try it with no cluster**
-- Pick the built-in **demo cluster** (or click **Explore the demo** on the connect screen) to try every feature against a realistic synthetic cluster — sample workloads (including a Pending and a CrashLoopBackOff pod), live metrics, logs, topology, Helm, Argo CD, a Security Center scan, a pod shell and the AI assistant — with **no kubeconfig required**.
+- Pick the built-in **demo cluster** (or click **Explore the demo** on the connect screen) to try every feature against a realistic synthetic cluster — sample workloads (including a Pending and a CrashLoopBackOff pod), live metrics, cost allocations, logs, topology, Helm, Argo CD, a Security Center scan, a pod shell and the AI assistant — with **no kubeconfig required**.
 
 **Explore**
 - Live cluster dashboard — node/pod health, workload charts, capacity.
+- **Costs** — optional OpenCost/Kubecost allocations for namespaces, workloads, and nodes, with automatic Service detection or manual per-context Service settings saved locally. When no provider is found, Costs recommends a low-footprint OpenCost Collector install that does not need a separate Prometheus or OpenCost UI.
 - Every workload type (Pods, Deployments, StatefulSets, DaemonSets, Services, …) with live CPU/memory, per-container status, and cross-links (namespace → node → pod → owner).
 - Interactive pan/zoom topology graph, lazy-loaded Custom Resource tree, and Helm releases with values and rendered manifests.
 - Sortable resource tables — click any column header to sort by value (CPU, memory, age, restarts, capacity), ascending → descending → off.
@@ -144,7 +145,7 @@ For a single-port production run: `npm run build && npm start`, then open **http
 
 ## Connect AI agents (MCP)
 
-The app is also an [MCP](https://modelcontextprotocol.io) server exposing the same capabilities as the UI — **~30 read tools** (contexts, resources, logs, events, topology, metrics, Helm, CRDs, Argo CD, …) plus **6 write tools** (`apply_yaml`, `delete_resource`, `scale_workload`, `rollout_restart`, `sync_argocd_app`, `refresh_argocd_app`).
+The app is also an [MCP](https://modelcontextprotocol.io) server exposing the same capabilities as the UI — **~32 read tools** (contexts, resources, logs, events, topology, metrics, costs, Helm, CRDs, Argo CD, …) plus **6 write tools** (`apply_yaml`, `delete_resource`, `scale_workload`, `rollout_restart`, `sync_argocd_app`, `refresh_argocd_app`).
 
 > [!NOTE]
 > Write tools are **off by default**. Enable them in **Preferences → MCP Server → Write access**, or start with `MCP_ALLOW_WRITE=1`. Reconnect the agent to pick up the new tool set.
@@ -205,6 +206,7 @@ All tools act on the **currently selected context**. Run the bridge standalone w
 
 - **"No kubeconfig loaded"** — ensure `~/.kube/config` exists or set `KUBECONFIG`.
 - **Metrics show `—`** — the cluster needs **metrics-server** installed.
+- **Costs show no provider** — follow the OpenCost Collector install command in Costs, or connect an existing OpenCost/Kubecost Service. The recommended Collector setup needs a default StorageClass for its initial 1 GiB, 30-day history volume (increase it for larger clusters); the kube identity needs permission to list Services and proxy requests to the cost provider Service.
 - **Helm view empty** — `helm` must be on the server's `PATH` and able to reach the cluster.
 - **Terminal won't open** — the target container needs a shell; distroless images won't work.
 - **"All namespaces" is slow the first time** — it fetches every namespace (cached afterward); pick one for faster loads.

@@ -1157,6 +1157,47 @@ export function handle(req, res) {
       }
     }
 
+    // ---------- OpenCost / Kubecost ----------
+    if (method === 'GET' && p === '/api/costs/status') {
+      return json({ installed: true, provider: 'opencost', namespace: 'opencost', service: 'opencost', port: 9003 });
+    }
+    if (method === 'GET' && p === '/api/costs/allocation') {
+      const groups = {
+        namespace: [
+          { name: 'shop', cpuCost: 4.21, gpuCost: 0, memoryCost: 1.13, pvCost: 0.30, networkCost: 0.30, loadBalancerCost: 0.70, sharedCost: 0.17, totalCost: 6.81 },
+          { name: 'monitoring', cpuCost: 1.40, gpuCost: 0, memoryCost: 0.90, pvCost: 0.20, networkCost: 0.12, loadBalancerCost: 0, sharedCost: 0.24, totalCost: 2.86 },
+          { name: 'kube-system', cpuCost: 0.90, gpuCost: 0, memoryCost: 0.51, pvCost: 0.03, networkCost: 0, loadBalancerCost: 0.10, sharedCost: 0.12, totalCost: 1.66 },
+          { name: 'argocd', cpuCost: 0.42, gpuCost: 0, memoryCost: 0.28, pvCost: 0, networkCost: 0.02, loadBalancerCost: 0, sharedCost: 0.08, totalCost: 0.80 },
+        ],
+        controller: [
+          { name: 'Deployment/frontend', cpuCost: 1.16, gpuCost: 0, memoryCost: 0.25, pvCost: 0, networkCost: 0.06, loadBalancerCost: 0.35, sharedCost: 0.05, totalCost: 1.87 },
+          { name: 'Deployment/catalog', cpuCost: 0.87, gpuCost: 0, memoryCost: 0.23, pvCost: 0, networkCost: 0.03, loadBalancerCost: 0, sharedCost: 0.03, totalCost: 1.16 },
+          { name: 'Deployment/checkout', cpuCost: 0.72, gpuCost: 0, memoryCost: 0.20, pvCost: 0, networkCost: 0.02, loadBalancerCost: 0, sharedCost: 0.02, totalCost: 0.96 },
+          { name: 'StatefulSet/postgres', cpuCost: 0.56, gpuCost: 0, memoryCost: 0.19, pvCost: 0.30, networkCost: 0.01, loadBalancerCost: 0, sharedCost: 0.03, totalCost: 1.09 },
+          { name: 'Deployment/cart', cpuCost: 0.48, gpuCost: 0, memoryCost: 0.16, pvCost: 0, networkCost: 0.02, loadBalancerCost: 0, sharedCost: 0.02, totalCost: 0.68 },
+        ],
+        node: [
+          { name: 'demo-node-1', cpuCost: 2.11, gpuCost: 0, memoryCost: 1.09, pvCost: 0.31, networkCost: 0.13, loadBalancerCost: 0.30, sharedCost: 0.20, totalCost: 4.14 },
+          { name: 'demo-node-2', cpuCost: 2.03, gpuCost: 0, memoryCost: 0.97, pvCost: 0.18, networkCost: 0.17, loadBalancerCost: 0.25, sharedCost: 0.18, totalCost: 3.78 },
+          { name: 'demo-node-3', cpuCost: 1.82, gpuCost: 0, memoryCost: 0.76, pvCost: 0.04, networkCost: 0.14, loadBalancerCost: 0.25, sharedCost: 0.23, totalCost: 3.24 },
+        ],
+        cluster: [
+          { name: 'demo-cluster', cpuCost: 6.93, gpuCost: 0, memoryCost: 2.82, pvCost: 0.53, networkCost: 0.44, loadBalancerCost: 0.80, sharedCost: 0.61, totalCost: 12.13 },
+        ],
+      };
+      const aggregate = ['cluster', 'namespace', 'controller', 'node'].includes(q.aggregate) ? q.aggregate : 'namespace';
+      const factor = ['24h', 'today'].includes(q.window) ? 1 / 7 : q.window === '30d' ? 30 / 7 : q.window === 'month' ? 17 / 7 : 1;
+      const allocations = groups[aggregate].map((row) => Object.fromEntries(
+        Object.entries(row).map(([key, value]) => [key, key === 'name' ? value : Number((value * factor).toFixed(4))])
+      ));
+      return json({
+        provider: 'opencost', source: { namespace: 'opencost', service: 'opencost' },
+        window: q.window || '7d', aggregate,
+        totalCost: allocations.reduce((sum, row) => sum + row.totalCost, 0),
+        currency: 'USD', allocations,
+      });
+    }
+
     // ---------- resources list ----------
     if (method === 'GET' && seg[1] === 'resources' && seg[2]) {
       const nsName = decodeURIComponent(seg[2]);

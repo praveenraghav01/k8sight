@@ -5,6 +5,7 @@ import MetricsChart from './MetricsChart';
 import Loader from './Loader';
 import ServicePortForward from './ServicePortForward';
 import useClickOutside from '../hooks/useClickOutside';
+import { effectivePodResource, parseCpuMilli, parseMemoryBytes } from '../utils/podResources';
 
 const fmtCpu = (m) => (m >= 1000 ? `${(m / 1000).toFixed(2)} cores` : `${Math.round(m)}m`);
 const fmtMem = (b) => {
@@ -12,31 +13,6 @@ const fmtMem = (b) => {
   return mi >= 1024 ? `${(mi / 1024).toFixed(2)} Gi` : `${Math.round(mi)} Mi`;
 };
 const fmtMemMi = (mi) => (mi >= 1024 ? `${(mi / 1024).toFixed(2)} Gi` : `${Math.round(mi)} Mi`);
-
-const parseCpuMilliStr = (s) => {
-  if (!s) return null;
-  s = String(s);
-  if (s.endsWith('n')) return parseFloat(s) / 1e6;
-  if (s.endsWith('u')) return parseFloat(s) / 1e3;
-  if (s.endsWith('m')) return parseFloat(s);
-  return parseFloat(s) * 1000;
-};
-const parseMemBytesStr = (s) => {
-  if (!s) return null;
-  const m = String(s).match(/^(\d+(?:\.\d+)?)\s*([KMGTP]i)?$/);
-  if (!m) return parseFloat(s) || null;
-  const mult = { Ki: 1024, Mi: 1024 ** 2, Gi: 1024 ** 3, Ti: 1024 ** 4, Pi: 1024 ** 5 };
-  return parseFloat(m[1]) * (mult[m[2]] || 1);
-};
-// Sum a resource across containers only if every container specifies it
-const sumRes = (containers, kind, res, parse) => {
-  let total = 0, count = 0;
-  containers.forEach(c => {
-    const v = c.resources?.[kind]?.[res];
-    if (v != null) { total += parse(v) || 0; count++; }
-  });
-  return count === containers.length && count > 0 ? total : null;
-};
 
 const KIND_ICON = {
   Pod: 'pod', Service: 'service', Deployment: 'deployment',
@@ -189,24 +165,31 @@ export default function ResourceDrawer({ resource, namespace, resourceType, onCl
     setMetricsAvail(true);
     const ns = resource.namespace || namespace;
 
+    let pollTimer;
     const poll = async () => {
+      let nextPollDelay = 3000;
       try {
-        const res = await axios.get(`/api/metrics/pod/${ns}/${resource.name}`);
+        const res = await axios.get(`/api/metrics/pod/${encodeURIComponent(ns)}/${encodeURIComponent(resource.name)}`);
         if (!active) return;
+        if (res.data?.refreshing) nextPollDelay = 750;
         if (res.data?.available === false) {
+          setMetricsNow(res.data);
           setMetricsAvail(false);
           return;
         }
         setMetricsNow(res.data);
-        setCpuHist(h => [...h, res.data.cpuMilli].slice(-40));
-        setMemHist(h => [...h, res.data.memBytes].slice(-40));
+        if (!res.data?.refreshing && !res.data?.stale) {
+          if (Number.isFinite(res.data?.cpuMilli)) setCpuHist(h => [...h, res.data.cpuMilli].slice(-40));
+          if (Number.isFinite(res.data?.memBytes)) setMemHist(h => [...h, res.data.memBytes].slice(-40));
+        }
       } catch (e) {
         if (active) setMetricsAvail(false);
+      } finally {
+        if (active) pollTimer = setTimeout(poll, nextPollDelay);
       }
     };
     poll();
-    const iv = setInterval(poll, 3000);
-    return () => { active = false; clearInterval(iv); };
+    return () => { active = false; clearTimeout(pollTimer); };
   }, [resource, isPodKind]);
 
   const fetchDetail = async ({ silent = false } = {}) => {
@@ -250,12 +233,12 @@ export default function ResourceDrawer({ resource, namespace, resourceType, onCl
   const containers = spec.containers || [];
 
   // CPU/Memory thresholds: prefer limits, fall back to requests
-  const cpuLimitVal = sumRes(containers, 'limits', 'cpu', parseCpuMilliStr);
-  const cpuReqVal = sumRes(containers, 'requests', 'cpu', parseCpuMilliStr);
+  const cpuLimitVal = effectivePodResource(spec, 'limits', 'cpu', parseCpuMilli);
+  const cpuReqVal = effectivePodResource(spec, 'requests', 'cpu', parseCpuMilli);
   const cpuThreshold = cpuLimitVal ?? cpuReqVal;          // millicores
   const cpuThreshKind = cpuLimitVal != null ? 'limit' : 'request';
-  const memLimitVal = sumRes(containers, 'limits', 'memory', parseMemBytesStr);
-  const memReqVal = sumRes(containers, 'requests', 'memory', parseMemBytesStr);
+  const memLimitVal = effectivePodResource(spec, 'limits', 'memory', parseMemoryBytes);
+  const memReqVal = effectivePodResource(spec, 'requests', 'memory', parseMemoryBytes);
   const memThreshold = memLimitVal ?? memReqVal;          // bytes
   const memThreshKind = memLimitVal != null ? 'limit' : 'request';
 
@@ -311,7 +294,27 @@ export default function ResourceDrawer({ resource, namespace, resourceType, onCl
       <div className="drawer-body">
         {isPodKind && (
           <div className="drawer-section">
-            <div className="drawer-section-title">Resource Usage</div>
+            <div className="drawer-section-title resource-usage-heading">
+              <span>Requests, Limits & Usage</span>
+              {metricsNow?.source && <span className="resource-metric-source">{metricsNow.source}{metricsNow.refreshing ? ' · refreshing' : metricsNow.stale ? ' · last known' : ''}</span>}
+            </div>
+            <table className="resource-usage-table">
+              <thead><tr><th>Resource</th><th>Request</th><th>Limit</th><th>Usage</th></tr></thead>
+              <tbody>
+                <tr>
+                  <th>CPU</th>
+                  <td>{cpuReqVal == null ? '—' : fmtCpu(cpuReqVal)}</td>
+                  <td>{cpuLimitVal == null ? '—' : fmtCpu(cpuLimitVal)}</td>
+                  <td>{metricsNow?.cpuMilli == null ? '—' : fmtCpu(metricsNow.cpuMilli)}</td>
+                </tr>
+                <tr>
+                  <th>Memory</th>
+                  <td>{memReqVal == null ? '—' : fmtMem(memReqVal)}</td>
+                  <td>{memLimitVal == null ? '—' : fmtMem(memLimitVal)}</td>
+                  <td>{metricsNow?.memBytes == null ? '—' : fmtMem(metricsNow.memBytes)}</td>
+                </tr>
+              </tbody>
+            </table>
             {!metricsAvail ? (
               <div className="drawer-dim">Metrics not available</div>
             ) : (

@@ -13,6 +13,7 @@ const NAV_GROUPS = [
     { key: 'events', label: 'Events', icon: 'events' },
     { key: 'helm', label: 'Helm', icon: 'helm' },
     { key: 'accessControl', label: 'Access Control', icon: 'accessControl' },
+    { key: 'costs', label: 'Costs', icon: 'costs' },
     { key: 'argocd', label: 'Argo CD', icon: 'argocd' },
   ] },
   { group: 'Workloads', items: [

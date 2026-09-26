@@ -18,6 +18,8 @@ export default function Navigation({
   onSelectArgoView,
   securityView,
   onSelectSecurityView,
+  costsView,
+  onSelectCostsView,
   onAddAzure,
   onAddAws,
   onAddGke,
@@ -79,6 +81,13 @@ export default function Navigation({
     { key: 'images', label: 'Images', icon: 'box' },
     { key: 'resources', label: 'Resources', icon: 'configuration' },
     { key: 'roles', label: 'Roles', icon: 'accessControl' },
+  ];
+
+  const costTypes = [
+    { key: 'overview', label: 'Overview', icon: 'overview' },
+    { key: 'namespaces', label: 'Namespaces', icon: 'namespace' },
+    { key: 'workloads', label: 'Workloads', icon: 'deployment' },
+    { key: 'nodes', label: 'Nodes', icon: 'nodes' },
   ];
 
   // ArgoCD sub-views — these mirror the tabs inside the ArgoCD view and only
@@ -253,6 +262,31 @@ export default function Navigation({
                   key={type.key}
                   className={`nav-item ${resourceType === 'security' && securityView === type.key ? 'active' : ''}`}
                   onClick={() => onSelectSecurityView(type.key)}
+                  title={type.label}
+                >
+                  <Icon name={type.icon} size={15} className="nav-lead-icon" />
+                  {type.label}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="nav-section">
+          <div className="nav-section-title" onClick={() => onToggleNav('costs')}>
+            <span className={`nav-section-chevron ${navExpanded.costs ? 'open' : ''}`}>
+              <Icon name="chevronRight" size={13} strokeWidth={2.2} />
+            </span>
+            <Icon name="costs" size={15} className="nav-lead-icon" />
+            Costs
+          </div>
+          {navExpanded.costs && (
+            <div className="nav-items">
+              {costTypes.map((type) => (
+                <div
+                  key={type.key}
+                  className={`nav-item ${resourceType === 'costs' && costsView === type.key ? 'active' : ''}`}
+                  onClick={() => onSelectCostsView(type.key)}
                   title={type.label}
                 >
                   <Icon name={type.icon} size={15} className="nav-lead-icon" />

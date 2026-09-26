@@ -69,6 +69,7 @@ const RESOURCE_LABELS = {
 export const TAB_KEYS = ['overview', 'pod', 'service', 'deployment', 'statefulSet', 'daemonSet', 'replicaSet', 'replicationController', 'job', 'cronJob', 'events'];
 
 export default function ResourceViewer({
+  active = true,
   resourceType,
   resources,
   selectedResource,
@@ -83,7 +84,8 @@ export default function ResourceViewer({
   onResourceTypeChange,
   onNavigate,
   onRefresh,
-  refreshSignal = 0
+  refreshSignal = 0,
+  hasCachedData = false
 }) {
   const toast = useToast();
   const [actionModal, setActionModal] = useState(null); // { type, resource, replicas, busy }
@@ -98,6 +100,14 @@ export default function ResourceViewer({
   const [sort, setSort] = useState(null); // { col, dir: 'asc' | 'desc' }
   const [selectedRows, setSelectedRows] = useState(new Set());
   const headerCheckRef = useRef(null);
+  const previousResourceTypeRef = useRef(resourceType);
+
+  useEffect(() => {
+    if (!active) {
+      setActionModal(null);
+      setMenu(null);
+    }
+  }, [active]);
 
   const rowKey = (r) => `${r.namespace}/${r.name}`;
   const isRowSelected = (r) => selectedRows.has(rowKey(r));
@@ -115,6 +125,14 @@ export default function ResourceViewer({
   useEffect(() => { setSelectedRows(new Set()); }, [resourceType, namespace]);
   // columns differ per kind, so a sort from the previous view no longer applies
   useEffect(() => { setSort(null); }, [resourceType]);
+  useEffect(() => {
+    if (previousResourceTypeRef.current === resourceType) return;
+    previousResourceTypeRef.current = resourceType;
+    setTabs([]);
+    setActiveTabId(null);
+    setActionModal(null);
+    setMenu(null);
+  }, [resourceType]);
   // native checkboxes need indeterminate set imperatively
   useEffect(() => {
     if (headerCheckRef.current) headerCheckRef.current.indeterminate = someSelected && !allSelected;
@@ -255,21 +273,18 @@ export default function ResourceViewer({
 
   // Live pod metrics for the table CPU/Memory columns
   useEffect(() => {
-    if (resourceType !== 'pod') {
-      setPodMetrics({});
-      return;
-    }
-    let active = true;
+    if (!active || resourceType !== 'pod') return;
+    let live = true;
     const fetchMetrics = async () => {
       try {
         const res = await axios.get('/api/metrics/pods');
-        if (active) setPodMetrics(res.data.metrics || {});
+        if (live) setPodMetrics(res.data.metrics || {});
       } catch (e) { /* metrics optional */ }
     };
     fetchMetrics();
     const iv = setInterval(fetchMetrics, 15000);
-    return () => { active = false; clearInterval(iv); };
-  }, [resourceType]);
+    return () => { live = false; clearInterval(iv); };
+  }, [active, resourceType]);
 
   const fmtCpu = (m) => (m >= 1000 ? `${(m / 1000).toFixed(2)}` : `${Math.round(m)}m`);
   const fmtMem = (b) => {
@@ -509,9 +524,14 @@ export default function ResourceViewer({
       </div>
 
       <div className="resource-table-wrapper">
-        {resourceType === 'events' ? (
-          <Events namespace={namespace} refreshSignal={refreshSignal} />
-        ) : loading ? (
+        <div className="resource-events-cache" hidden={resourceType !== 'events'}>
+          <Events
+            active={active && resourceType === 'events'}
+            namespace={namespace}
+            refreshSignal={resourceType === 'events' ? refreshSignal : 0}
+          />
+        </div>
+        {resourceType !== 'events' && (loading && !hasCachedData ? (
           <Loader label={`Loading ${RESOURCE_LABELS[resourceType]?.label || 'resources'}…`} />
         ) : resources.length === 0 ? (
           <div className="loading-indicator">No resources found</div>
@@ -592,7 +612,7 @@ export default function ResourceViewer({
               ))}
             </tbody>
           </table>
-        )}
+        ))}
       </div>
 
       {tabs.length > 0 && (
@@ -629,7 +649,7 @@ export default function ResourceViewer({
           <div className="bottom-panel-content">
             {tabs.map(t => (
               <div key={t.id} className="tab-pane" style={{ display: activeTabId === t.id ? 'block' : 'none' }}>
-                {t.type === 'logs' && (
+                {active && t.type === 'logs' && (
                   <LogsViewer
                     resource={t.resource}
                     namespace={t.resource.namespace}
@@ -638,10 +658,10 @@ export default function ResourceViewer({
                     onSearchChange={setLogSearch}
                   />
                 )}
-                {t.type === 'terminal' && (
+                {active && t.type === 'terminal' && (
                   <TerminalViewer resource={t.resource} namespace={t.resource.namespace} />
                 )}
-                {t.type === 'configuration' && (
+                {active && t.type === 'configuration' && (
                   <YamlViewer resource={t.resource} namespace={t.resource.namespace} resourceType={t.resourceType} onApplied={onRefresh} />
                 )}
               </div>

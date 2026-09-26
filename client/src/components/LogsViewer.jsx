@@ -18,6 +18,30 @@ const fmtTs = (d) => {
 // Light log-level colouring when not searching.
 const LEVEL_RX = /\b(ERROR|ERR|WARN|WARNING|INFO|DEBUG|TRACE|FATAL|PANIC)\b/g;
 const LEVEL_CLASS = { ERROR: 'err', ERR: 'err', FATAL: 'err', PANIC: 'err', WARN: 'warn', WARNING: 'warn', INFO: 'info', DEBUG: 'dbg', TRACE: 'dbg' };
+const writeClipboard = async (text) => {
+  try {
+    if (!navigator.clipboard?.writeText) throw new Error('Clipboard API unavailable');
+    await navigator.clipboard.writeText(text);
+    return;
+  } catch {
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    textarea.setAttribute('readonly', '');
+    textarea.style.position = 'fixed';
+    textarea.style.left = '-9999px';
+    document.body.appendChild(textarea);
+    let copied = false;
+    try {
+      textarea.focus();
+      textarea.select();
+      copied = document.execCommand('copy');
+    } finally {
+      textarea.remove();
+    }
+    if (!copied) throw new Error('Could not copy logs');
+  }
+};
+
 function colorLevels(msg) {
   const segs = []; let last = 0; let m; LEVEL_RX.lastIndex = 0;
   while ((m = LEVEL_RX.exec(msg)) !== null) {
@@ -46,8 +70,12 @@ export default function LogsViewer({ resource, namespace, searchQuery = '', onSe
   const [caseSensitive, setCaseSensitive] = useState(false);
   const [regex, setRegex] = useState(false);
   const [active, setActive] = useState(0);
+  const [copyState, setCopyState] = useState('idle');
   const bodyRef = useRef(null);
   const endRef = useRef(null);
+  const copyTimerRef = useRef(null);
+
+  useEffect(() => () => clearTimeout(copyTimerRef.current), []);
 
   useEffect(() => { setContainer(initialContainer || ''); setShowNames(containerNames.length > 1); }, [resource?.name, initialContainer]); // eslint-disable-line
 
@@ -137,12 +165,25 @@ export default function LogsViewer({ resource, namespace, searchQuery = '', onSe
     return segs.map((s, k) => (s.hl ? <mark key={k} className={`logs-hl${s.active ? ' active' : ''}`}>{s.t}</mark> : <span key={k}>{s.t}</span>));
   };
 
+  const getLogText = () => lines.map((l) => `${l.ts ? fmtTs(l.ts) + ' ' : ''}${l.container ? `[${l.container}] ` : ''}${l.msg}`).join('\n');
+
   const handleDownload = () => {
-    const text = lines.map((l) => `${l.ts ? fmtTs(l.ts) + ' ' : ''}${l.container ? `[${l.container}] ` : ''}${l.msg}`).join('\n');
+    const text = getLogText();
     const a = document.createElement('a');
     a.href = 'data:text/plain;charset=utf-8,' + encodeURIComponent(text);
     a.download = `${resource?.name || 'pod'}.log`;
     document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  };
+
+  const handleCopy = async () => {
+    try {
+      await writeClipboard(getLogText());
+      setCopyState('copied');
+    } catch {
+      setCopyState('error');
+    }
+    clearTimeout(copyTimerRef.current);
+    copyTimerRef.current = setTimeout(() => setCopyState('idle'), 1600);
   };
 
   const count = matchLines.length ? `${Math.min(active + 1, matchLines.length)} / ${matchLines.length}` : '0 / 0';
@@ -182,6 +223,15 @@ export default function LogsViewer({ resource, namespace, searchQuery = '', onSe
         <button className={`logs-icon-btn${showNames ? ' on' : ''}`} onClick={() => setShowNames((v) => !v)} title="Show resource names"><Icon name="tag" size={15} /></button>
         <button className={`logs-icon-btn${wrap ? ' on' : ''}`} onClick={() => setWrap((v) => !v)} title="Wrap lines"><Icon name="wrapText" size={15} /></button>
         <button className="logs-icon-btn" onClick={handleDownload} title="Download logs"><Icon name="download" size={15} /></button>
+        <button
+          className={`logs-icon-btn${copyState === 'copied' ? ' on' : ''}`}
+          onClick={handleCopy}
+          title={copyState === 'copied' ? 'Logs copied' : copyState === 'error' ? 'Copy failed' : 'Copy logs'}
+          aria-label={copyState === 'copied' ? 'Logs copied' : copyState === 'error' ? 'Copy failed' : 'Copy logs'}
+          disabled={!lines.length}
+        >
+          <Icon name={copyState === 'copied' ? 'check' : copyState === 'error' ? 'warning' : 'copy'} size={15} />
+        </button>
         <div className="logs-select tail">
           <select value={tail} onChange={(e) => setTail(Number(e.target.value))} title="Lines to show">
             <option value={100}>Last 100</option>

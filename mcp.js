@@ -224,6 +224,36 @@ export function createMcpServer({ baseURL, version, allowWrite } = {}) {
     return ok(data.pods ?? data);
   }));
 
+  server.registerTool('get_cost_provider_status', {
+    title: 'Get cost provider status',
+    description: 'Detect OpenCost or Kubecost in the active cluster. Supply all four selector fields to check a non-standard Service manually.',
+    inputSchema: {
+      provider: z.enum(['opencost', 'kubecost']).optional(),
+      namespace: z.string().optional(),
+      service: z.string().optional(),
+      port: z.number().int().min(1).max(65535).optional(),
+    },
+  }, wrap(async ({ provider, namespace, service, port }) => {
+    const { data } = await api.get('/api/costs/status', { params: { provider, namespace, service, port } });
+    return ok(data);
+  }));
+
+  server.registerTool('get_cost_allocations', {
+    title: 'Get Kubernetes cost allocations',
+    description: 'Read allocated USD costs from OpenCost or Kubecost for a time window, grouped by namespace, workload controller, node, or cluster. Supply all four selector fields to use a non-standard Service.',
+    inputSchema: {
+      window: z.enum(['24h', '7d', '30d', 'today', 'lastweek', 'month']).default('7d'),
+      aggregate: z.enum(['cluster', 'namespace', 'controller', 'node']).default('namespace'),
+      provider: z.enum(['opencost', 'kubecost']).optional(),
+      namespace: z.string().optional(),
+      service: z.string().optional(),
+      port: z.number().int().min(1).max(65535).optional(),
+    },
+  }, wrap(async ({ window = '7d', aggregate = 'namespace', provider, namespace, service, port }) => {
+    const { data } = await api.get('/api/costs/allocation', { params: { window, aggregate, provider, namespace, service, port } });
+    return ok(data);
+  }));
+
   server.registerTool('get_resource', {
     title: 'Get resource detail',
     description: 'Full detail for one resource (metadata, spec, status, conditions, containers) — richer than the raw YAML.',

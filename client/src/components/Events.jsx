@@ -3,37 +3,42 @@ import axios from 'axios';
 import Icon from './Icons';
 import Loader from './Loader';
 
-export default function Events({ namespace = 'all', refreshSignal = 0 }) {
-  const [events, setEvents] = useState([]);
+export default function Events({ active = true, namespace = 'all', refreshSignal = 0 }) {
+  const [eventSnapshots, setEventSnapshots] = useState({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const fetchIdRef = useRef(0);
+  const cacheKey = namespace || 'all';
+  const hasCachedEvents = Object.prototype.hasOwnProperty.call(eventSnapshots, cacheKey);
+  const events = eventSnapshots[cacheKey] || [];
 
   useEffect(() => {
-    fetchEvents();
-  }, [namespace]);
-
-  // Global/auto refresh: pull the new events in under the table, no loader.
-  const didMount = useRef(false);
-  useEffect(() => {
-    if (!didMount.current) { didMount.current = true; return; }
-    fetchEvents({ silent: true });
+    if (!active) return;
+    fetchEvents({ silent: hasCachedEvents });
+    // The cache check is intentionally read when the active namespace changes.
+    // Snapshot updates themselves must not start another request.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [refreshSignal]);
+  }, [active, namespace, refreshSignal]);
 
   const fetchEvents = async ({ silent = false } = {}) => {
+    const fetchId = ++fetchIdRef.current;
     if (!silent) setLoading(true);
+    setError(null);
     try {
       const ns = namespace || 'all';
       const response = await axios.get(`/api/events/${ns}`);
-      setEvents(response.data.events || []);
-      setError(null);
+      const result = response.data.events || [];
+      setEventSnapshots((current) => {
+        const recent = Object.entries(current).filter(([key]) => key !== cacheKey);
+        return Object.fromEntries([...recent.slice(-7), [cacheKey, result]]);
+      });
+      if (fetchId === fetchIdRef.current) setError(null);
     } catch (err) {
-      if (!silent) {
+      if (fetchId === fetchIdRef.current && !silent) {
         setError(`Failed to fetch events: ${err.message}`);
-        setEvents([]);
       }
     } finally {
-      setLoading(false);
+      if (fetchId === fetchIdRef.current) setLoading(false);
     }
   };
 
@@ -51,12 +56,12 @@ export default function Events({ namespace = 'all', refreshSignal = 0 }) {
       </div>
 
       <div className="events-content">
-        {loading && <Loader label="Loading events…" />}
+        {loading && !hasCachedEvents && <Loader label="Loading events…" />}
         {error && <div className="events-error">{error}</div>}
         {!loading && !error && events.length === 0 && (
           <div className="events-empty">No recent events</div>
         )}
-        {!loading && !error && events.length > 0 && (
+        {!error && events.length > 0 && (
           <table className="events-table">
             <thead>
               <tr>
