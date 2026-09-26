@@ -10,7 +10,7 @@
 //   4. Tear the server down on quit (which triggers its port-forward cleanup).
 'use strict';
 
-const { app, BrowserWindow, shell, dialog, Menu, utilityProcess } = require('electron');
+const { app, BrowserWindow, shell, dialog, Menu, utilityProcess, ipcMain } = require('electron');
 const path = require('path');
 const os = require('os');
 const fs = require('fs');
@@ -170,6 +170,7 @@ function createWindow() {
     trafficLightPosition: { x: 18, y: 15 },
     show: false,
     webPreferences: {
+      preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
       nodeIntegration: false,
     },
@@ -282,6 +283,17 @@ function setAutoCheck(on) {
 function canAutoUpdate() {
   return !!autoUpdater && app.isPackaged;
 }
+
+// IPC bridge for the Preferences UI (see electron/preload.cjs). Lets the renderer
+// read and change the auto-update preference the menu checkbox also drives.
+ipcMain.handle('updater:get', () => ({ autoCheck: autoCheckEnabled(), supported: canAutoUpdate() }));
+ipcMain.handle('updater:set', (_e, on) => {
+  setAutoCheck(on);
+  try { Menu.setApplicationMenu(buildMenu()); } catch { /* menu keeps its old checked state */ }
+  if (on) checkForUpdates(false); // start checking immediately when re-enabled
+  return { autoCheck: autoCheckEnabled(), supported: canAutoUpdate() };
+});
+ipcMain.handle('updater:check', () => { checkForUpdates(true); return true; });
 
 let updaterWired = false;
 let manualCheck = false;

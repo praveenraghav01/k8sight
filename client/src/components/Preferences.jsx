@@ -62,6 +62,22 @@ export default function Preferences({ configStatus, theme, onSetTheme, onChangeC
 
 /* ── General ─────────────────────────────────────────────────────── */
 function GeneralSection({ theme, onSetTheme }) {
+  // Auto-update lives in the Electron main process and is exposed via the
+  // preload bridge (window.k8sight). Absent in the browser / Docker build.
+  const updater = (typeof window !== 'undefined' && window.k8sight?.getAutoUpdate) ? window.k8sight : null;
+  const [autoUpdate, setAutoUpdate] = useState(null); // null until loaded
+  const [updBusy, setUpdBusy] = useState(false);
+  useEffect(() => {
+    if (!updater) return;
+    updater.getAutoUpdate().then((r) => setAutoUpdate(r?.autoCheck !== false)).catch(() => {});
+  }, []);
+  const changeAutoUpdate = async (on) => {
+    if (!updater || updBusy) return;
+    setUpdBusy(true);
+    try { const r = await updater.setAutoUpdate(on); setAutoUpdate(r?.autoCheck !== false); }
+    catch { /* leave state as-is */ }
+    finally { setUpdBusy(false); }
+  };
   return (
     <div className="prefs-section">
       <h2 className="prefs-h2">General</h2>
@@ -74,6 +90,23 @@ function GeneralSection({ theme, onSetTheme }) {
           ))}
         </div>
       </Field>
+      {updater && (
+        <Field label="Automatic updates" hint="Check for a new version on launch and install it in the background, then prompt to restart.">
+          <div className="prefs-seg">
+            {[{ k: true, label: 'On' }, { k: false, label: 'Off' }].map((o) => (
+              <button key={String(o.k)} className={`prefs-seg-btn ${autoUpdate === o.k ? 'active' : ''}`}
+                disabled={updBusy || autoUpdate === null} onClick={() => changeAutoUpdate(o.k)}>
+                {o.label}
+              </button>
+            ))}
+          </div>
+          {updater.checkForUpdates && (
+            <button className="prefs-btn" style={{ marginTop: 10 }} onClick={() => updater.checkForUpdates()}>
+              Check for updates now
+            </button>
+          )}
+        </Field>
+      )}
     </div>
   );
 }
