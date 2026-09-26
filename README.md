@@ -31,7 +31,7 @@ A native desktop app (macOS · Windows · Linux) — and a Docker image — for 
 - **Costs** — optional OpenCost/Kubecost allocations for namespaces, workloads, and nodes over the last 24 hours, 7 or 30 days, or month to date: totals and idle cost, a stacked **cost over time** chart by namespace (hover a bar for its breakdown), and a per-resource table. Detects the provider Service automatically or uses per-context settings saved locally. When no provider is found, Costs recommends a low-footprint OpenCost Collector install that does not need a separate Prometheus or OpenCost UI.
 - Every workload type (Pods, Deployments, StatefulSets, DaemonSets, Services, …) with live CPU/memory, per-container status, and cross-links (namespace → node → pod → owner).
 - Interactive pan/zoom topology graph and a lazy-loaded Custom Resource tree.
-- **Helm** — releases with their values and rendered manifests, plus search [Artifact Hub](https://artifacthub.io) and install or upgrade charts from the UI.
+- **Helm** — releases with their values and rendered manifests, plus search [Artifact Hub](https://artifacthub.io) and install or upgrade charts from the UI. The desktop app ships its own `helm`, so there's nothing extra to install.
 - Sortable resource tables — click any column header to sort by value (CPU, memory, age, restarts, capacity), ascending → descending → off.
 - Background auto-refresh that updates data in place — no loader flash, and your selection, active tab, search, scroll and topology pan/zoom are preserved.
 - Command palette (⌘K), native title bar with back/forward history, light & dark themes.
@@ -87,7 +87,7 @@ k8sight is a **desktop UI for clusters you already have** — closest in spirit 
 > No cluster handy? Launch the app and click **Explore the demo** (or pick the **demo** context) to browse and operate a synthetic cluster — every feature works, no setup needed.
 
 > [!NOTE]
-> To use a real cluster, k8sight shells out to `kubectl` (required on your `PATH`) and `helm` (v3, only to install or upgrade charts; viewing releases doesn't need it), and needs a working `kubeconfig` (`~/.kube/config`, or set `KUBECONFIG`). The packaged desktop app bundles its own Node runtime; building from source needs **Node.js 20+** (24 recommended).
+> To use a real cluster, k8sight shells out to `kubectl` (required on your `PATH`) and needs a working `kubeconfig` (`~/.kube/config`, or set `KUBECONFIG`). The packaged desktop app bundles its own Node runtime; building from source needs **Node.js 20+** (24 recommended).
 
 ### Desktop app
 
@@ -213,7 +213,7 @@ All tools act on the **currently selected context**. Run the bridge standalone w
 - **Metrics show `—`** — the cluster needs **metrics-server** installed.
 - **Costs show no provider** — follow the OpenCost Collector install command in Costs, or connect an existing OpenCost/Kubecost Service. The recommended Collector setup needs a default StorageClass for its initial 1 GiB, 30-day history volume (increase it for larger clusters); the kube identity needs permission to list Services and proxy requests to the cost provider Service.
 - **Helm view empty** — releases are read from the cluster's Helm release Secrets, so your kube identity needs permission to list Secrets.
-- **Can't install charts** — installing and upgrading run your local `helm` (v3), which must be on your `PATH` and able to reach the cluster. Chart search works without it.
+- **Can't install charts** — the desktop app uses its bundled `helm`; the Docker image and source builds use `helm` from your `PATH` (run `npm run fetch:helm` to get the bundled one locally). Either way it needs to reach the cluster. Chart search works without it.
 - **Terminal won't open** — the target container needs a shell; distroless images won't work.
 - **Costs load slowly or show no idle cost** — idle cost is fetched best-effort; on a large or busy OpenCost it's skipped so allocations still load quickly.
 - **App doesn't update itself** — self-update needs a released, signed build running from Applications; local builds show a link to the Releases page instead.

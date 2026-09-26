@@ -5,7 +5,8 @@
 //
 //   node scripts/fetch-helm.mjs           # current OS/arch → bin/helm
 //   node scripts/fetch-helm.mjs --all     # every platform  → bin/<os>-<arch>/helm
-//   HELM_VERSION=3.16.4 node scripts/fetch-helm.mjs   # pin a version
+//   HELM_VERSION=4.3.0 node scripts/fetch-helm.mjs    # override the pinned version
+//   HELM_VERSION=latest node scripts/fetch-helm.mjs   # newest stable release
 //
 // bin/ is gitignored — the binaries are fetched per build, not committed.
 import fs from 'fs';
@@ -15,7 +16,9 @@ import { fileURLToPath } from 'url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const BIN = path.join(ROOT, 'bin');
-const FALLBACK_VERSION = '3.16.4';
+// Pinned so every build ships the same Helm (reproducible, no surprise major
+// upgrades). Bump deliberately after testing chart search/install against it.
+const PINNED_VERSION = '4.3.0';
 
 // helm release archives (https://github.com/helm/helm/releases). Each archive
 // nests the binary under `<os>-<arch>/helm[.exe]`; we flatten it to bin/helm.
@@ -27,8 +30,10 @@ const TARGETS = {
   'win32-x64': { slug: 'windows-amd64', ext: 'zip', out: 'helm.exe' },
 };
 
-async function latestVersion() {
-  if (process.env.HELM_VERSION) return process.env.HELM_VERSION.replace(/^v/, '');
+async function resolveVersion() {
+  const want = (process.env.HELM_VERSION || '').replace(/^v/, '');
+  if (want && want !== 'latest') return want;
+  if (!want) return PINNED_VERSION;
   // get.helm.sh publishes a plain-text pointer to the current stable release.
   try {
     const r = await fetch('https://get.helm.sh/helm-latest-version', { headers: { 'user-agent': 'k8sight' } });
@@ -38,8 +43,8 @@ async function latestVersion() {
   try {
     const r = await fetch('https://api.github.com/repos/helm/helm/releases/latest', { headers: { 'user-agent': 'k8sight' } });
     const j = await r.json();
-    return (j.tag_name || '').replace(/^v/, '') || FALLBACK_VERSION;
-  } catch { return FALLBACK_VERSION; }
+    return (j.tag_name || '').replace(/^v/, '') || PINNED_VERSION;
+  } catch { return PINNED_VERSION; }
 }
 
 async function fetchOne(key, version, dir) {
@@ -68,7 +73,7 @@ async function fetchOne(key, version, dir) {
 
 async function main() {
   const all = process.argv.includes('--all');
-  const version = await latestVersion();
+  const version = await resolveVersion();
   console.log(`helm v${version}`);
   if (all) {
     for (const key of Object.keys(TARGETS)) await fetchOne(key, version, path.join(BIN, key));
