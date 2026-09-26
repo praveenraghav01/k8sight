@@ -212,7 +212,7 @@ function CostTrend({ series, window }) {
           </div>
         );
       })()}
-      <div className="cost-trend-legend" style={{ display: 'flex', flexWrap: 'wrap', gap: '8px 20px', marginTop: 12 }}>
+      <div className="cost-trend-legend" style={{ display: 'flex', flexWrap: 'wrap', gap: '10px 22px', marginTop: 14, paddingLeft: 12, paddingBottom: 10 }}>
         {legend.map((l) => (
           <span key={l.name} style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: 13 }}>
             <i style={{ width: 11, height: 11, borderRadius: 3, background: l.color, display: 'inline-block', flex: 'none' }} />
