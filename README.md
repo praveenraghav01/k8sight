@@ -28,12 +28,16 @@ A native desktop app (macOS · Windows · Linux) — and a Docker image — for 
 
 **Explore**
 - Live cluster dashboard — node/pod health, workload charts, capacity.
-- **Costs** — optional OpenCost/Kubecost allocations for namespaces, workloads, and nodes, with automatic Service detection or manual per-context Service settings saved locally. When no provider is found, Costs recommends a low-footprint OpenCost Collector install that does not need a separate Prometheus or OpenCost UI.
+- **Costs** — optional OpenCost/Kubecost allocations for namespaces, workloads, and nodes over the last 24 hours, 7 or 30 days, or month to date: totals and idle cost, a stacked **cost over time** chart by namespace (hover a bar for its breakdown), and a per-resource table. Detects the provider Service automatically or uses per-context settings saved locally. When no provider is found, Costs recommends a low-footprint OpenCost Collector install that does not need a separate Prometheus or OpenCost UI.
 - Every workload type (Pods, Deployments, StatefulSets, DaemonSets, Services, …) with live CPU/memory, per-container status, and cross-links (namespace → node → pod → owner).
-- Interactive pan/zoom topology graph, lazy-loaded Custom Resource tree, and Helm releases with values and rendered manifests.
+- Interactive pan/zoom topology graph and a lazy-loaded Custom Resource tree.
+- **Helm** — releases with their values and rendered manifests, plus search [Artifact Hub](https://artifacthub.io) and install or upgrade charts from the UI.
 - Sortable resource tables — click any column header to sort by value (CPU, memory, age, restarts, capacity), ascending → descending → off.
 - Background auto-refresh that updates data in place — no loader flash, and your selection, active tab, search, scroll and topology pan/zoom are preserved.
 - Command palette (⌘K), native title bar with back/forward history, light & dark themes.
+
+**Stays up to date**
+- The desktop app checks GitHub Releases on launch, downloads a new version in the background and asks to restart. Turn it off, or check manually, in **Preferences → General** (or the app menu).
 
 **Operate**
 - Edit and apply YAML; per-row Scale, Rollout restart, and Delete (two-step confirm).
@@ -68,6 +72,7 @@ k8sight is a **desktop UI for clusters you already have** — closest in spirit 
 | Cluster lifecycle (provision, upgrade) | — | ✅ | — |
 | Centralized team RBAC & multi-tenancy | — | ✅ | — |
 | Built-in security scan (image CVEs, config, RBAC) | ✅ *bundled Trivy* | via add-ons | — |
+| Cost view (OpenCost/Kubecost) | ✅ | via add-ons | — |
 | AI assistant + MCP server | ✅ | — | — |
 | Try with no cluster (demo mode) | ✅ | — | — |
 | One-click EKS/AKS/GKE onboarding (no CLI) | ✅ | ✅ | — |
@@ -82,7 +87,7 @@ k8sight is a **desktop UI for clusters you already have** — closest in spirit 
 > No cluster handy? Launch the app and click **Explore the demo** (or pick the **demo** context) to browse and operate a synthetic cluster — every feature works, no setup needed.
 
 > [!NOTE]
-> To use a real cluster, k8sight shells out to `kubectl` (required on your `PATH`) and `helm` (v3, for the Helm view), and needs a working `kubeconfig` (`~/.kube/config`, or set `KUBECONFIG`). The packaged desktop app bundles its own Node runtime; building from source needs **Node.js 20+** (24 recommended).
+> To use a real cluster, k8sight shells out to `kubectl` (required on your `PATH`) and `helm` (v3, only to install or upgrade charts; viewing releases doesn't need it), and needs a working `kubeconfig` (`~/.kube/config`, or set `KUBECONFIG`). The packaged desktop app bundles its own Node runtime; building from source needs **Node.js 20+** (24 recommended).
 
 ### Desktop app
 
@@ -100,7 +105,7 @@ npm run dist        # builds the UI and packages for the current OS → release/
 | Linux | `k8sight-linux.AppImage` and `k8sight-linux.deb` |
 
 > [!IMPORTANT]
-> The **macOS** app is **Developer ID–signed and notarized** — open the `.dmg`, drag k8sight to Applications, and it launches normally (no right-click workaround). The disk image itself isn't notarized yet, so macOS may ask you to confirm opening the `.dmg` the first time. **Windows** builds are unsigned — SmartScreen → **More info → Run anyway**.
+> The **macOS** app and its `.dmg` are **Developer ID–signed and notarized**: open the `.dmg`, drag k8sight to Applications, and it launches normally. Run it from Applications so it can update itself. **Windows** builds are unsigned — SmartScreen → **More info → Run anyway**.
 
 ### Docker
 
@@ -198,15 +203,18 @@ All tools act on the **currently selected context**. Run the bridge standalone w
 
 - **Backend** (`server.js`) — Express + `@kubernetes/client-node`; REST API, a `/ws/exec` WebSocket for shells, short-TTL caches, and `kubectl`/`helm` fallbacks. In production it also serves the built UI.
 - **Frontend** (`client/`) — React + Vite; same-origin `/api` + `/ws/exec`, xterm.js terminal, ⌘K palette, token-driven theming.
-- **Cloud** (`aws-eks.js`, `azure-aks.js`, `eks-token.js`, `azure-token.js`) — CLI-free EKS/AKS discovery, kubeconfig merge, and native runtime auth via bundled token helpers.
+- **Cloud** (`aws-eks.js`, `azure-aks.js`, `gke.js` and the `*-token.js` helpers) — CLI-free EKS/AKS/GKE discovery, kubeconfig merge, and native runtime auth via bundled token helpers.
 - **Security** (`trivy-scan.js`) — reads Trivy Operator reports or runs a bundled Trivy binary.
-- **Desktop** (`electron/`) — Electron shell that runs the backend as a utility process. Released macOS builds are **Developer ID–signed and notarized** by the [`Build & Release`](.github/workflows/release.yml) workflow (`after-pack.cjs` ad-hoc-signs local dev builds); all three OSes are published on a `v*.*.*` tag.
+- **Desktop** (`electron/`) — Electron shell that runs the backend as a utility process and self-updates via `electron-updater`. Released macOS builds are **Developer ID–signed and notarized** by the [`Build & Release`](.github/workflows/release.yml) workflow (`after-pack.cjs` ad-hoc-signs local dev builds); all three OSes are published on a `v*.*.*` tag.
 
 ## Troubleshooting
 
 - **"No kubeconfig loaded"** — ensure `~/.kube/config` exists or set `KUBECONFIG`.
 - **Metrics show `—`** — the cluster needs **metrics-server** installed.
 - **Costs show no provider** — follow the OpenCost Collector install command in Costs, or connect an existing OpenCost/Kubecost Service. The recommended Collector setup needs a default StorageClass for its initial 1 GiB, 30-day history volume (increase it for larger clusters); the kube identity needs permission to list Services and proxy requests to the cost provider Service.
-- **Helm view empty** — `helm` must be on the server's `PATH` and able to reach the cluster.
+- **Helm view empty** — releases are read from the cluster's Helm release Secrets, so your kube identity needs permission to list Secrets.
+- **Can't install charts** — installing and upgrading run your local `helm` (v3), which must be on your `PATH` and able to reach the cluster. Chart search works without it.
 - **Terminal won't open** — the target container needs a shell; distroless images won't work.
+- **Costs load slowly or show no idle cost** — idle cost is fetched best-effort; on a large or busy OpenCost it's skipped so allocations still load quickly.
+- **App doesn't update itself** — self-update needs a released, signed build running from Applications; local builds show a link to the Releases page instead.
 - **"All namespaces" is slow the first time** — it fetches every namespace (cached afterward); pick one for faster loads.

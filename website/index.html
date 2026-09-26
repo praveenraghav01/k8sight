@@ -588,7 +588,7 @@
           "name": "Do I need kubectl or the AWS/Azure CLI to use k8sight?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "k8sight needs kubectl on your PATH and a working kubeconfig. It does not need the aws, az or kubelogin CLIs: bundled token helpers authenticate imported EKS, AKS and GKE clusters at runtime, and Helm is bundled, so you can browse releases and install charts without installing helm."
+            "text": "k8sight needs kubectl on your PATH and a working kubeconfig. It does not need the aws, az or kubelogin CLIs: bundled token helpers authenticate imported EKS, AKS and GKE clusters at runtime, and Helm releases are read through the API. Only installing or upgrading charts uses your local helm."
           }
         },
         {
@@ -741,7 +741,7 @@
       <div class="card reveal">
         <div class="ico"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="M3.3 7L12 12l8.7-5M12 22V12"/></svg></div>
         <h3>Custom Resources &amp; Helm</h3>
-        <p>Lazy-loaded CRD tree with YAML details, and Helm releases with their values and manifests. Search Artifact Hub and install or upgrade charts in a few clicks, with Helm bundled.</p>
+        <p>Lazy-loaded CRD tree with YAML details, and Helm releases with their values and manifests. Search Artifact Hub and install or upgrade charts in a few clicks, using your local <code>helm</code>.</p>
       </div>
       <div class="card i-cyan reveal">
         <div class="ico"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke-width="2"><rect x="3" y="4" width="18" height="14" rx="2"/><path d="M8 21h8M12 18v3"/></svg></div>
@@ -1178,7 +1178,7 @@
       </details>
       <details class="faq-item">
         <summary>Do I need kubectl or the AWS/Azure CLI?</summary>
-        <p class="faq-a">k8sight needs <code>kubectl</code> on your PATH and a working kubeconfig. It does not need the <code>aws</code>, <code>az</code> or <code>kubelogin</code> CLIs: bundled token helpers authenticate imported EKS, AKS and GKE clusters at runtime, and Helm is bundled, so you can browse releases and install charts without installing <code>helm</code>.</p>
+        <p class="faq-a">k8sight needs <code>kubectl</code> on your PATH and a working kubeconfig. It does not need the <code>aws</code>, <code>az</code> or <code>kubelogin</code> CLIs: bundled token helpers authenticate imported EKS, AKS and GKE clusters at runtime, and Helm releases are read through the API. Only installing or upgrading charts uses your local <code>helm</code>.</p>
       </details>
       <details class="faq-item">
         <summary>Can I try k8sight without a Kubernetes cluster?</summary>
