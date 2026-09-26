@@ -14,8 +14,12 @@ import { SSOOIDCClient, RegisterClientCommand, StartDeviceAuthorizationCommand, 
 import { SSOClient, ListAccountsCommand, ListAccountRolesCommand, GetRoleCredentialsCommand } from '@aws-sdk/client-sso';
 import { loadSharedConfigFiles } from '@smithy/shared-ini-file-loader';
 
+import { tokenHelperPath } from './lib/resource-path.mjs';
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-export const EKS_TOKEN_HELPER = path.join(__dirname, 'eks-token.js');
+// Bundled, dependency-free helper (see scripts/bundle-token-helpers.mjs); resolved
+// to its unpacked location so the kubeconfig exec-plugin can spawn it under asar.
+export const EKS_TOKEN_HELPER = tokenHelperPath(import.meta.url, 'eks-token');
 
 // Static AWS region list. We deliberately do NOT call EC2 DescribeRegions —
 // that pulls in @aws-sdk/client-ec2 (~26 MB / 3k+ files), which bloated the

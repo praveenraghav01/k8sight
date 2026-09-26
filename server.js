@@ -27,6 +27,8 @@ import * as trivyScan from './trivy-scan.js';
 import * as demo from './demo.js';
 import { ensurePtyHelperExecutable } from './lib/pty-helper.mjs';
 import { searchCharts, chartVersions } from './lib/artifacthub.mjs';
+import { detectForeignTrivy } from './lib/trivy-detect.mjs';
+import { tokenHelperPath } from './lib/resource-path.mjs';
 
 // node-pty powers the pod terminal (a real PTY bridged to `kubectl exec`). Load
 // it defensively so a missing/unbuildable native module never crashes the whole
@@ -49,8 +51,9 @@ const app = express();
 const PORT = 3001;
 const CLIENT_DIST = path.join(__dirname, 'client', 'dist');
 // CLI-free AKS token helper — app-imported AAD clusters exec this instead of
-// kubelogin, so neither `az` nor `kubelogin` is needed at runtime.
-const AZURE_TOKEN_HELPER = path.join(__dirname, 'azure-token.js');
+// kubelogin, so neither `az` nor `kubelogin` is needed at runtime. Bundled and
+// resolved to its unpacked location so it stays spawnable under asar.
+const AZURE_TOKEN_HELPER = tokenHelperPath(import.meta.url, 'azure-token');
 
 // Response caching with TTL
 const cache = new Map();
@@ -2286,6 +2289,11 @@ app.get('/api/security/status', async (req, res) => {
         rbac: has('rbacassessmentreports') || has('clusterrbacassessmentreports'),
         exposedSecret: has('exposedsecretreports'),
       },
+      // When the official operator is absent, look for a *different* Trivy
+      // operator (e.g. devopstales/trivy-operator, group trivy-operator.
+      // devopstales.io) so the UI can explain the mismatch instead of just
+      // saying "not installed" when the user clearly did install one.
+      foreignOperator: installed ? null : detectForeignTrivy(names, TRIVY_GROUP),
     });
   } catch (e) {
     res.json({ installed: false, error: firstLine(e.message) });

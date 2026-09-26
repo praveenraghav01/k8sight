@@ -30,6 +30,8 @@ A native desktop app (macOS · Windows · Linux) — and a Docker image — for 
 - Live cluster dashboard — node/pod health, workload charts, capacity.
 - Every workload type (Pods, Deployments, StatefulSets, DaemonSets, Services, …) with live CPU/memory, per-container status, and cross-links (namespace → node → pod → owner).
 - Interactive pan/zoom topology graph, lazy-loaded Custom Resource tree, and Helm releases with values and rendered manifests.
+- Sortable resource tables — click any column header to sort by value (CPU, memory, age, restarts, capacity), ascending → descending → off.
+- Background auto-refresh that updates data in place — no loader flash, and your selection, active tab, search, scroll and topology pan/zoom are preserved.
 - Command palette (⌘K), native title bar with back/forward history, light & dark themes.
 
 **Operate**
@@ -97,7 +99,7 @@ npm run dist        # builds the UI and packages for the current OS → release/
 | Linux | `k8sight-linux.AppImage` and `k8sight-linux.deb` |
 
 > [!IMPORTANT]
-> Builds are unsigned / ad-hoc signed (no paid certificate). On another Mac, right-click → **Open** (or `xattr -dr com.apple.quarantine "/Applications/k8sight.app"`); on Windows, SmartScreen → **More info → Run anyway**.
+> The **macOS** app is **Developer ID–signed and notarized** — open the `.dmg`, drag k8sight to Applications, and it launches normally (no right-click workaround). The disk image itself isn't notarized yet, so macOS may ask you to confirm opening the `.dmg` the first time. **Windows** builds are unsigned — SmartScreen → **More info → Run anyway**.
 
 ### Docker
 
@@ -197,7 +199,7 @@ All tools act on the **currently selected context**. Run the bridge standalone w
 - **Frontend** (`client/`) — React + Vite; same-origin `/api` + `/ws/exec`, xterm.js terminal, ⌘K palette, token-driven theming.
 - **Cloud** (`aws-eks.js`, `azure-aks.js`, `eks-token.js`, `azure-token.js`) — CLI-free EKS/AKS discovery, kubeconfig merge, and native runtime auth via bundled token helpers.
 - **Security** (`trivy-scan.js`) — reads Trivy Operator reports or runs a bundled Trivy binary.
-- **Desktop** (`electron/`) — Electron shell that runs the backend as a utility process; `after-pack.cjs` ad-hoc signs the macOS build. Released for all three OSes by the [`Build & Release`](.github/workflows/release.yml) workflow on a `v*.*.*` tag.
+- **Desktop** (`electron/`) — Electron shell that runs the backend as a utility process. Released macOS builds are **Developer ID–signed and notarized** by the [`Build & Release`](.github/workflows/release.yml) workflow (`after-pack.cjs` ad-hoc-signs local dev builds); all three OSes are published on a `v*.*.*` tag.
 
 ## Troubleshooting
 
