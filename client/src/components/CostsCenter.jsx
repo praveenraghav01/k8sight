@@ -109,6 +109,54 @@ function AllocationTable({ rows, limit }) {
   );
 }
 
+// Cost-over-time area chart. Uniform-scaling SVG (fixed viewBox) so it fills the
+// panel width without distorting. Needs at least two points to draw a trend.
+function CostTrend({ series, window }) {
+  const points = Array.isArray(series?.series)
+    ? series.series.filter((p) => p && Number.isFinite(p.totalCost) && p.start)
+    : [];
+  if (points.length < 2) {
+    return <div className="cost-empty">Not enough history yet for a trend — this fills in once the cost provider has collected a couple of days of data.</div>;
+  }
+  const W = 720;
+  const H = 180;
+  const PADX = 6;
+  const PADT = 14;
+  const PADB = 24;
+  const n = points.length;
+  const max = Math.max(...points.map((p) => p.totalCost), 0) * 1.15 || 1;
+  const x = (i) => PADX + (i / (n - 1)) * (W - PADX * 2);
+  const y = (v) => H - PADB - (v / max) * (H - PADT - PADB);
+  const line = points.map((p, i) => `${i ? 'L' : 'M'} ${x(i).toFixed(1)} ${y(p.totalCost).toFixed(1)}`).join(' ');
+  const area = `${line} L ${x(n - 1).toFixed(1)} ${(H - PADB).toFixed(1)} L ${x(0).toFixed(1)} ${(H - PADB).toFixed(1)} Z`;
+  const last = points[n - 1];
+  const peak = points.reduce((m, p) => (p.totalCost > m.totalCost ? p : m), points[0]);
+  const fmtDay = (s) => { try { return new Date(s).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }); } catch { return ''; } };
+  const tickIdx = [...new Set([0, Math.floor((n - 1) / 2), n - 1])];
+  return (
+    <div className="cost-trend">
+      <div className="cost-trend-head" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}>
+        <strong style={{ fontSize: 22 }}>{formatMoney(last.totalCost)}</strong>
+        <span style={{ fontSize: 12.5, color: 'var(--text-mute, #86868b)' }}>latest {window === '24h' || window === 'today' ? 'hour' : 'day'} · peak {formatMoney(peak.totalCost)}</span>
+      </div>
+      <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: 'auto', display: 'block' }} role="img" aria-label="Cost over time">
+        <defs>
+          <linearGradient id="costTrendFill" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stopColor="var(--accent, #2997ff)" stopOpacity="0.30" />
+            <stop offset="1" stopColor="var(--accent, #2997ff)" stopOpacity="0" />
+          </linearGradient>
+        </defs>
+        <path d={area} fill="url(#costTrendFill)" />
+        <path d={line} fill="none" stroke="var(--accent, #2997ff)" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+        <circle cx={x(n - 1)} cy={y(last.totalCost)} r="3" fill="var(--accent, #2997ff)" />
+      </svg>
+      <div className="cost-trend-axis" style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4, fontSize: 11.5, color: 'var(--text-mute, #86868b)' }}>
+        {tickIdx.map((i) => <span key={i}>{fmtDay(points[i].start)}</span>)}
+      </div>
+    </div>
+  );
+}
+
 export default function CostsCenter({ view, onViewChange, refreshSignal = 0, context }) {
   const [localTab, setLocalTab] = useState('overview');
   const tab = view || localTab;
@@ -118,6 +166,7 @@ export default function CostsCenter({ view, onViewChange, refreshSignal = 0, con
   const [statusLoading, setStatusLoading] = useState(true);
   const statusIdentityRef = useRef(null);
   const [data, setData] = useState(null);
+  const [series, setSeries] = useState(null);
   const [dataQueryKey, setDataQueryKey] = useState(null);
   const [loading, setLoading] = useState(false);
   const costQueryKeyRef = useRef(null);
@@ -216,6 +265,16 @@ export default function CostsCenter({ view, onViewChange, refreshSignal = 0, con
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
   }, [status, window, aggregate, manualConfig, context, costQueryKey]);
+
+  // Cost-over-time trend (cluster total per day/hour) for the Overview chart.
+  useEffect(() => {
+    if (!status?.installed) { setSeries(null); return undefined; }
+    let active = true;
+    axios.get('/api/costs/timeseries', { params: { window, ...(manualConfig || {}) } })
+      .then(({ data: result }) => { if (active) setSeries(result); })
+      .catch(() => { if (active) setSeries(null); });
+    return () => { active = false; };
+  }, [status, window, manualConfig, context, costQueryKey]);
 
   const openConfig = () => {
     const source = manualConfig || (status?.installed ? {
@@ -404,6 +463,11 @@ export default function CostsCenter({ view, onViewChange, refreshSignal = 0, con
                     <span className="cost-kpi-note">{biggest ? formatMoney(biggest.totalCost) : 'No cost data'}</span>
                   </article>
                 </div>
+
+                <section className="cost-panel" style={{ marginBottom: 16 }}>
+                  <div className="cost-panel-title">Cost over time</div>
+                  <CostTrend series={series} window={window} />
+                </section>
 
                 <div className="cost-panels">
                   <section className="cost-panel">
