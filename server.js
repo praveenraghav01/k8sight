@@ -26,6 +26,8 @@ import * as gke from './gke.js';
 import * as trivyScan from './trivy-scan.js';
 import * as demo from './demo.js';
 import { ensurePtyHelperExecutable } from './lib/pty-helper.mjs';
+import { searchCharts, chartVersions } from './lib/artifacthub.mjs';
+import { detectForeignTrivy } from './lib/trivy-detect.mjs';
 import { tokenHelperPath } from './lib/resource-path.mjs';
 
 // node-pty powers the pod terminal (a real PTY bridged to `kubectl exec`). Load
@@ -372,12 +374,17 @@ app.get('/api/config/status', (req, res) => {
   // URL) so the UI can group and icon them.
   const providerOf = (server = '', name = '') => {
     const s = server.toLowerCase();
-    if (s.includes('.azmk8s.io') || s.includes('azure')) return 'azure';
-    if (s.includes('.eks.amazonaws.com') || s.includes('eks.') ) return 'aws';
-    // GKE is reached on a bare public IP, so the server URL says nothing. Both
+    // Match on the parsed hostname (not a substring of the whole URL) so a URL
+    // like https://evil.com/.eks.amazonaws.com can't be misclassified.
+    let host = '';
+    try { host = new URL(server).hostname.toLowerCase(); } catch { /* not a URL */ }
+    const hostEndsWith = (suffix) => host === suffix.replace(/^\./, '') || host.endsWith(suffix);
+    if (hostEndsWith('.azmk8s.io')) return 'azure';
+    if (hostEndsWith('.eks.amazonaws.com')) return 'aws';
+    // GKE is reached on a bare public IP, so the server URL rarely helps. Both
     // gcloud and this app name their contexts gke_<project>_<location>_<cluster>,
-    // which is the only reliable signal.
-    if (s.includes('.gke.') || s.includes('container.googleapis.com') || name.toLowerCase().startsWith('gke_')) return 'gcp';
+    // which is the most reliable signal.
+    if (hostEndsWith('.googleapis.com') || hostEndsWith('.gke.goog') || name.toLowerCase().startsWith('gke_')) return 'gcp';
     if (/(127\.0\.0\.1|localhost|:6443|:8443|host\.docker|kubernetes\.docker|minikube|kind|orbstack|rancher)/.test(s)) return 'local';
     return 'other';
   };
@@ -1957,6 +1964,140 @@ app.get('/api/helm/releases/:namespace/:name/manifest', async (req, res) => {
   }
 });
 
+// ---------------------------------------------------------------------------
+// Helm chart search & install
+//
+// The reads above decode Helm's release Secrets straight from the Kubernetes
+// API, with no helm binary. Installing a chart needs Helm's templating engine,
+// so the install path shells out to `helm` — resolved from the app-bundled
+// bin/ first (scripts/fetch-helm.mjs), then PATH. Search is pure HTTPS to
+// Artifact Hub (see lib/artifacthub.mjs) and needs no binary at all.
+// ---------------------------------------------------------------------------
+const HELM_NAME = process.platform === 'win32' ? 'helm.exe' : 'helm';
+let _helmBin = null;
+const helmBin = () => {
+  if (_helmBin) return _helmBin;
+  const candidates = [
+    process.env.HELM_BIN,
+    path.join(__dirname, 'bin', HELM_NAME),
+    process.resourcesPath && path.join(process.resourcesPath, 'bin', HELM_NAME),
+  ].filter(Boolean);
+  for (const p of candidates) { try { if (fs.existsSync(p)) { _helmBin = p; return _helmBin; } } catch { /* keep looking */ } }
+  _helmBin = resolveBinSync('helm'); // fall back to PATH (absolute if found)
+  return _helmBin;
+};
+
+// helm accepts --kube-context to pin the app's current context, mirroring kctl().
+const helmCtx = (...args) => (currentContext ? ['--kube-context', currentContext, ...args] : args);
+
+// DNS-1123-style validation for the release/namespace/repo names we hand to helm.
+const isHelmName = (s) => typeof s === 'string' && /^[a-z0-9]([-a-z0-9]{0,251}[a-z0-9])?$/.test(s);
+// A chart's own name may include dots (e.g. an OCI path segment); keep it strict but permit them.
+const isChartName = (s) => typeof s === 'string' && /^[a-zA-Z0-9._-]{1,253}$/.test(s);
+const isVersion = (s) => s === undefined || s === '' || (typeof s === 'string' && /^[a-zA-Z0-9._+-]{1,64}$/.test(s));
+
+// Is helm available (bundled or on PATH)? Reports its version for the UI.
+app.get('/api/helm/available', async (req, res) => {
+  try {
+    const { stdout } = await execFileAsync(helmBin(), ['version', '--short'], { encoding: 'utf-8', timeout: 8000 });
+    res.json({ installed: true, version: stdout.trim() });
+  } catch {
+    res.json({ installed: false, version: null });
+  }
+});
+
+// Search Artifact Hub for Helm charts.
+app.get('/api/helm/charts/search', async (req, res) => {
+  const q = String(req.query.q || '').trim();
+  if (!q) return res.json({ charts: [] });
+  try {
+    const charts = await searchCharts(q, { limit: Number(req.query.limit) || 24 });
+    res.json({ charts });
+  } catch (error) {
+    res.status(502).json({ error: `Chart search failed: ${error.message}` });
+  }
+});
+
+// List available versions for a chart (repo name + chart name from a result).
+app.get('/api/helm/charts/versions', async (req, res) => {
+  const repo = String(req.query.repo || '').trim();
+  const chart = String(req.query.chart || '').trim();
+  if (!repo || !chart) return res.status(400).json({ error: 'repo and chart are required' });
+  try {
+    res.json({ versions: await chartVersions(repo, chart) });
+  } catch (error) {
+    res.status(502).json({ error: `Version lookup failed: ${error.message}` });
+  }
+});
+
+// Shared driver for `helm upgrade [--install]`. Installing a fresh release and
+// upgrading/downgrading an existing one differ only in a couple of flags:
+//   install → `upgrade --install … --create-namespace`
+//   upgrade → `upgrade …` (optionally `--reuse-values` to keep current values)
+// `verb` is used only in error text ("Install failed" / "Upgrade failed").
+async function runHelmDeploy(req, res, { install, verb }) {
+  if (!kubeConfig) return res.status(400).json({ error: 'No kubeconfig loaded' });
+  const { repoName, repoUrl, chart, version, releaseName, namespace = 'default', values, reuseValues } = req.body || {};
+
+  // Validate everything we splice into the helm argv (execFile → no shell, but
+  // we still reject malformed names so helm gets clean input).
+  if (!isHelmName(repoName)) return res.status(400).json({ error: 'Invalid repository name' });
+  if (!isChartName(chart)) return res.status(400).json({ error: 'Invalid chart name' });
+  if (!isHelmName(releaseName)) return res.status(400).json({ error: 'Invalid release name (use lowercase letters, digits and dashes)' });
+  if (!isHelmName(namespace)) return res.status(400).json({ error: 'Invalid namespace' });
+  if (!isVersion(version)) return res.status(400).json({ error: 'Invalid version' });
+  try { new URL(repoUrl); } catch { return res.status(400).json({ error: 'Invalid repository URL' }); }
+  if (!/^https?:\/\//i.test(repoUrl)) return res.status(400).json({ error: 'Repository URL must be http(s)' });
+
+  const bin = helmBin();
+  // Confirm helm is actually runnable before we start mutating repo config.
+  try {
+    await execFileAsync(bin, ['version', '--short'], { timeout: 8000 });
+  } catch {
+    return res.status(501).json({ error: 'Helm is not available on the server. Install Helm to enable chart installs.' });
+  }
+
+  let valuesFile = null;
+  try {
+    // 1. Register the repo (idempotent; --force-update refreshes a changed URL).
+    await execFileAsync(bin, ['repo', 'add', repoName, repoUrl, '--force-update'], { encoding: 'utf-8', timeout: 60000 });
+    // 2. Refresh the repo index so the requested version resolves.
+    await execFileAsync(bin, ['repo', 'update', repoName], { encoding: 'utf-8', timeout: 60000 });
+
+    const args = helmCtx('upgrade', ...(install ? ['--install'] : []), releaseName, `${repoName}/${chart}`,
+      '--namespace', namespace, ...(install ? ['--create-namespace'] : []));
+    if (version) args.push('--version', version);
+
+    // 3. Values handling. If the caller supplied values, validate + pass with -f.
+    // Otherwise, a plain `helm upgrade` resets values to chart defaults — so for
+    // an upgrade with no new values we reuse the release's current values.
+    if (typeof values === 'string' && values.trim() && values.trim() !== '{}') {
+      try { yaml.load(values); } catch (e) { return res.status(400).json({ error: `Values are not valid YAML: ${e.message}` }); }
+      valuesFile = path.join(os.tmpdir(), `km-helm-values-${randomUUID()}.yaml`);
+      fs.writeFileSync(valuesFile, values, { mode: 0o600 });
+      args.push('-f', valuesFile);
+    } else if (!install && reuseValues) {
+      args.push('--reuse-values');
+    }
+
+    const { stdout } = await execFileAsync(bin, args, { encoding: 'utf-8', maxBuffer: 16 * 1024 * 1024, timeout: 300000 });
+    cache.delete('helm-releases'); // surface the change on the next list.
+    res.json({ ok: true, output: stdout, release: releaseName, namespace });
+  } catch (error) {
+    const detail = (error.stderr || error.message || '').toString().trim();
+    res.status(500).json({ error: `${verb} failed: ${detail}` });
+  } finally {
+    if (valuesFile) { try { fs.unlinkSync(valuesFile); } catch { /* best effort */ } }
+  }
+}
+
+// Install a chart into the current cluster (creates the namespace if missing).
+app.post('/api/helm/install', (req, res) => runHelmDeploy(req, res, { install: true, verb: 'Install' }));
+
+// Upgrade or downgrade an existing release to a different chart version and/or
+// values. Same chart/repo, new --version; values are reused unless overridden.
+app.post('/api/helm/upgrade', (req, res) => runHelmDeploy(req, res, { install: false, verb: 'Upgrade' }));
+
 const CRD_JSONPATH = '{range .items[*]}{.metadata.name}{"\\t"}{.spec.group}{"\\t"}{.spec.names.kind}{"\\t"}{.spec.names.plural}{"\\t"}{.spec.names.singular}{"\\t"}{.spec.scope}{"\\t"}{.metadata.creationTimestamp}{"\\t"}{.spec.versions[?(@.storage==true)].name}{"\\n"}{end}';
 
 const fetchCrdsWithKubectl = async () => {
@@ -2153,6 +2294,11 @@ app.get('/api/security/status', async (req, res) => {
         rbac: has('rbacassessmentreports') || has('clusterrbacassessmentreports'),
         exposedSecret: has('exposedsecretreports'),
       },
+      // When the official operator is absent, look for a *different* Trivy
+      // operator (e.g. devopstales/trivy-operator, group trivy-operator.
+      // devopstales.io) so the UI can explain the mismatch instead of just
+      // saying "not installed" when the user clearly did install one.
+      foreignOperator: installed ? null : detectForeignTrivy(names, TRIVY_GROUP),
     });
   } catch (e) {
     res.json({ installed: false, error: firstLine(e.message) });

@@ -1073,6 +1073,19 @@ function reconcileWorkloadPods(nsName, kind, name, replicas) {
   }
 }
 
+// A small canned Artifact Hub result set so the chart search/install flow is
+// fully explorable in demo mode (no network call to artifacthub.io).
+const DEMO_CHARTS = [
+  { id: 'bitnami/nginx', name: 'nginx', displayName: 'NGINX', version: '18.2.0', appVersion: '1.27.3', description: 'NGINX Open Source web server, reverse proxy and load balancer.', logo: null, stars: 106, deprecated: false, repository: { name: 'bitnami', url: 'https://charts.bitnami.com/bitnami', official: true, verified: true } },
+  { id: 'prometheus-community/kube-prometheus-stack', name: 'kube-prometheus-stack', displayName: 'Kube Prometheus Stack', version: '65.1.0', appVersion: 'v0.77.1', description: 'Prometheus, Grafana and Alertmanager preconfigured for Kubernetes monitoring.', logo: null, stars: 512, deprecated: false, repository: { name: 'prometheus-community', url: 'https://prometheus-community.github.io/helm-charts', official: false, verified: true } },
+  { id: 'grafana/grafana', name: 'grafana', displayName: 'Grafana', version: '8.5.1', appVersion: '11.3.0', description: 'The open observability platform for dashboards and visualization.', logo: null, stars: 287, deprecated: false, repository: { name: 'grafana', url: 'https://grafana.github.io/helm-charts', official: false, verified: true } },
+  { id: 'ingress-nginx/ingress-nginx', name: 'ingress-nginx', displayName: 'Ingress NGINX', version: '4.11.3', appVersion: '1.11.3', description: 'Ingress controller for Kubernetes using NGINX as a reverse proxy.', logo: null, stars: 198, deprecated: false, repository: { name: 'ingress-nginx', url: 'https://kubernetes.github.io/ingress-nginx', official: true, verified: true } },
+  { id: 'bitnami/postgresql', name: 'postgresql', displayName: 'PostgreSQL', version: '16.2.1', appVersion: '17.2.0', description: 'PostgreSQL is a powerful, open source object-relational database.', logo: null, stars: 154, deprecated: false, repository: { name: 'bitnami', url: 'https://charts.bitnami.com/bitnami', official: true, verified: true } },
+  { id: 'bitnami/redis', name: 'redis', displayName: 'Redis', version: '20.2.1', appVersion: '7.4.1', description: 'Redis is an open source, in-memory data store used as a database and cache.', logo: null, stars: 143, deprecated: false, repository: { name: 'bitnami', url: 'https://charts.bitnami.com/bitnami', official: true, verified: true } },
+  { id: 'argo/argo-cd', name: 'argo-cd', displayName: 'Argo CD', version: '7.7.0', appVersion: 'v2.13.0', description: 'A declarative, GitOps continuous delivery tool for Kubernetes.', logo: null, stars: 231, deprecated: false, repository: { name: 'argo', url: 'https://argoproj.github.io/argo-helm', official: false, verified: true } },
+  { id: 'jetstack/cert-manager', name: 'cert-manager', displayName: 'cert-manager', version: 'v1.16.1', appVersion: 'v1.16.1', description: 'Automatically provision and manage TLS certificates in Kubernetes.', logo: null, stars: 176, deprecated: false, repository: { name: 'jetstack', url: 'https://charts.jetstack.io', official: false, verified: true } },
+];
+
 // ----------------------------------------------------------------------------
 // Main request handler
 // ----------------------------------------------------------------------------
@@ -1258,6 +1271,53 @@ export function handle(req, res) {
       const rel = cluster.helm.find((r) => r.namespace === decodeURIComponent(seg[3]) && r.name === decodeURIComponent(seg[4]));
       if (!rel) return json({ error: 'Release not found' }, 404);
       return json({ yaml: rel.manifest || '' });
+    }
+    // ---------- helm chart search & install (canned) ----------
+    if (method === 'GET' && p === '/api/helm/available') {
+      return json({ installed: true, version: 'v3.16.4+demo' });
+    }
+    if (method === 'GET' && p === '/api/helm/charts/search') {
+      const query = String(q.q || '').trim().toLowerCase();
+      if (!query) return json({ charts: [] });
+      const charts = DEMO_CHARTS
+        .filter((c) => c.name.includes(query) || c.description.toLowerCase().includes(query) || c.repository.name.includes(query))
+        .slice(0, Number(q.limit) || 24);
+      return json({ charts });
+    }
+    if (method === 'GET' && p === '/api/helm/charts/versions') {
+      const chart = String(q.chart || '').toLowerCase();
+      const found = DEMO_CHARTS.find((c) => c.name === chart);
+      const base = found?.version || '1.0.0';
+      const [maj, min] = base.split('.');
+      // Fabricate a small descending version list off the chart's current version.
+      const versions = [base, `${maj}.${Math.max(0, Number(min) - 1)}.0`, `${Math.max(0, Number(maj) - 1)}.0.0`]
+        .filter((v, i, a) => a.indexOf(v) === i)
+        .map((v) => ({ version: v, appVersion: found?.appVersion || '', ts: 0 }));
+      return json({ versions });
+    }
+    if (method === 'POST' && p === '/api/helm/install') {
+      const { releaseName, namespace = 'default', chart } = req.body || {};
+      if (!/^[a-z0-9]([-a-z0-9]*[a-z0-9])?$/.test(String(releaseName || ''))) {
+        return json({ error: 'Invalid release name (use lowercase letters, digits and dashes)' }, 400);
+      }
+      // Add a live release to the in-memory cluster so it shows up in the list.
+      cluster.helm.push(makeHelmRelease(releaseName, namespace, {
+        chart: chart || releaseName, chartVer: (req.body?.version || '1.0.0'), appVersion: '', status: 'deployed', revision: 1,
+        values: (() => { try { return req.body?.values ? yaml.load(req.body.values) || {} : {}; } catch { return {}; } })(),
+      }));
+      return json({ ok: true, release: releaseName, namespace, output: `NAME: ${releaseName}\nNAMESPACE: ${namespace}\nSTATUS: deployed\nREVISION: 1\n(demo — no cluster changes were made)` });
+    }
+    if (method === 'POST' && p === '/api/helm/upgrade') {
+      const { releaseName, namespace = 'default', version } = req.body || {};
+      const rel = cluster.helm.find((r) => r.name === releaseName && r.namespace === namespace);
+      if (!rel) return json({ error: `Release ${releaseName} not found in ${namespace}` }, 404);
+      // Bump the revision and swap the chart version to mirror a real up/downgrade.
+      rel.version = (rel.version || 1) + 1;
+      if (rel.info) rel.info.status = 'deployed';
+      if (version && rel.chart?.metadata) rel.chart.metadata.version = version;
+      const merged = (() => { try { return req.body?.values ? { ...(rel.config || {}), ...(yaml.load(req.body.values) || {}) } : rel.config; } catch { return rel.config; } })();
+      rel.config = merged;
+      return json({ ok: true, release: releaseName, namespace, output: `Release "${releaseName}" has been upgraded.\nNAMESPACE: ${namespace}\nSTATUS: deployed\nREVISION: ${rel.version}\n(demo — no cluster changes were made)` });
     }
 
     // ---------- custom resources ----------

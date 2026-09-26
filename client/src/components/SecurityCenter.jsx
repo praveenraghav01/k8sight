@@ -206,8 +206,8 @@ export default function SecurityCenter({ namespaces = [], onNavigate, view, onVi
                 <>
                   {tab === 'overview' && <ImagesView vuln={vuln} ns={ns} q={q} onSelect={(d) => setDetail({ type: 'image', data: d })} selected={detail?.data} criticalOnly />}
                   {tab === 'images' && <ImagesView vuln={vuln} ns={ns} q={q} onSelect={(d) => setDetail({ type: 'image', data: d })} selected={detail?.data} />}
-                  {tab === 'resources' && (scanMode ? <OperatorNote feature="Resource best-practice checks" /> : <ChecksView data={config} ns={ns} q={q} onSelect={(d) => setDetail({ type: 'checks', data: d })} selected={detail?.data} label="resource" />)}
-                  {tab === 'roles' && (scanMode ? <OperatorNote feature="RBAC risk analysis" /> : <ChecksView data={rbac} ns={ns} q={q} onSelect={(d) => setDetail({ type: 'checks', data: d })} selected={detail?.data} label="role" />)}
+                  {tab === 'resources' && (scanMode ? <OperatorNote feature="Resource best-practice checks" foreign={status?.foreignOperator} /> : <ChecksView data={config} ns={ns} q={q} onSelect={(d) => setDetail({ type: 'checks', data: d })} selected={detail?.data} label="resource" />)}
+                  {tab === 'roles' && (scanMode ? <OperatorNote feature="RBAC risk analysis" foreign={status?.foreignOperator} /> : <ChecksView data={rbac} ns={ns} q={q} onSelect={(d) => setDetail({ type: 'checks', data: d })} selected={detail?.data} label="role" />)}
                 </>
               )}
             </>
@@ -540,12 +540,31 @@ function ScanBanner({ scan, onRescan }) {
   );
 }
 
-function OperatorNote({ feature }) {
+function OperatorNote({ feature, foreign }) {
+  const installCmd = 'helm repo add aqua https://aquasecurity.github.io/helm-charts/\n'
+    + 'helm repo update\n'
+    + 'helm install trivy-operator aqua/trivy-operator \\\n'
+    + '  --namespace trivy-system --create-namespace';
   return (
     <div className="sec-empty">
       <Icon name="shield" size={28} />
-      <p><strong>{feature}</strong> needs the Trivy Operator.</p>
-      <p className="sec-dim" style={{ maxWidth: 420, textAlign: 'center' }}>The built-in scan covers image vulnerabilities. Install the Trivy Operator in-cluster to also get resource best-practice and RBAC checks.</p>
+      {foreign ? (
+        <>
+          <p><strong>{feature}</strong> needs the official Aqua Trivy Operator.</p>
+          <p className="sec-dim" style={{ maxWidth: 460, textAlign: 'center' }}>
+            A different Trivy operator (<strong>{foreign.name}</strong>) is installed — its CRDs live under{' '}
+            <code>{foreign.group}</code> and don’t include the config-audit or RBAC reports k8sight reads. Install the
+            official Aqua operator (group <code>aquasecurity.github.io</code>) for resource best-practice and RBAC checks:
+          </p>
+          <pre className="sec-install-cmd">{installCmd}</pre>
+        </>
+      ) : (
+        <>
+          <p><strong>{feature}</strong> needs the Trivy Operator.</p>
+          <p className="sec-dim" style={{ maxWidth: 420, textAlign: 'center' }}>The built-in scan covers image vulnerabilities. Install the Trivy Operator in-cluster to also get resource best-practice and RBAC checks.</p>
+          <pre className="sec-install-cmd">{installCmd}</pre>
+        </>
+      )}
     </div>
   );
 }

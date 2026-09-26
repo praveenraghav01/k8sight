@@ -13,6 +13,7 @@ import crypto from 'crypto';
 import yaml from 'js-yaml';
 import { fileURLToPath } from 'url';
 import { tokenHelperPath } from './lib/resource-path.mjs';
+import { GOOGLE_TOKEN_URI, assertGoogleTokenUri } from './lib/google-token-uri.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export const GKE_TOKEN_HELPER = tokenHelperPath(import.meta.url, 'gke-token');
@@ -103,12 +104,16 @@ export function getStatus() {
 // ---- access tokens --------------------------------------------------------
 export async function accessTokenFromServiceAccount(key) {
   const now = Math.floor(Date.now() / 1000);
+  // Reject a key whose declared token endpoint isn't Google's, then always POST
+  // the signed assertion (a bearer credential) to the fixed Google endpoint —
+  // never to a value derived from the key file.
+  assertGoogleTokenUri(key.token_uri);
   const header = { alg: 'RS256', typ: 'JWT' };
-  const claims = { iss: key.client_email, scope: OAUTH_SCOPE, aud: key.token_uri || 'https://oauth2.googleapis.com/token', iat: now, exp: now + 3600 };
+  const claims = { iss: key.client_email, scope: OAUTH_SCOPE, aud: GOOGLE_TOKEN_URI, iat: now, exp: now + 3600 };
   const input = `${b64url(JSON.stringify(header))}.${b64url(JSON.stringify(claims))}`;
   const sig = crypto.sign('RSA-SHA256', Buffer.from(input), key.private_key);
   const assertion = `${input}.${b64url(sig)}`;
-  const res = await fetch(key.token_uri || 'https://oauth2.googleapis.com/token', {
+  const res = await fetch(GOOGLE_TOKEN_URI, {
     method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({ grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer', assertion }),
   });

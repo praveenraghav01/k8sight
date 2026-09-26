@@ -1,6 +1,6 @@
 {
   "name": "k8sight",
-  "version": "1.5.2",
+  "version": "1.5.3",
   "description": "A native desktop UI for browsing and operating Kubernetes clusters",
   "author": {
     "name": "Praveen Kumar",
@@ -16,6 +16,7 @@
     "client": "cd client && npm run dev",
     "version:sync": "node scripts/sync-version.mjs",
     "fetch:trivy": "node scripts/fetch-trivy.mjs",
+    "fetch:helm": "node scripts/fetch-helm.mjs",
     "postinstall": "node scripts/fix-pty-helper.mjs",
     "test": "node --test \"test/**/*.test.mjs\"",
     "build": "node scripts/write-gke-oauth.mjs && npm run version:sync && cd client && npm run build",
@@ -97,7 +98,8 @@
         "from": "bin",
         "to": "bin",
         "filter": [
-          "trivy*"
+          "trivy*",
+          "helm*"
         ]
       }
     ],

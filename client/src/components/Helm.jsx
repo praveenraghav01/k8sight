@@ -4,6 +4,7 @@ import hljs from 'highlight.js';
 import 'highlight.js/styles/atom-one-dark.css';
 import Icon from './Icons';
 import Loader from './Loader';
+import HelmChartSearch from './HelmChartSearch';
 
 const formatAge = (dateStr) => {
   if (!dateStr) return '-';
@@ -26,6 +27,8 @@ export default function Helm({ refreshSignal = 0 }) {
   const [yamlContent, setYamlContent] = useState('');
   const [yamlLoading, setYamlLoading] = useState(false);
   const [yamlError, setYamlError] = useState(null);
+  const [showSearch, setShowSearch] = useState(false);
+  const [upgradeTarget, setUpgradeTarget] = useState(null);
 
   useEffect(() => {
     fetchReleases();
@@ -111,8 +114,27 @@ export default function Helm({ refreshSignal = 0 }) {
           </h3>
           <span className="resource-count">{releases.length} items</span>
         </div>
-        <div className="resource-controls" />
+        <div className="resource-controls">
+          <button className="resource-btn primary" onClick={() => setShowSearch(true)}>
+            <Icon name="plus" size={15} /> Install chart
+          </button>
+        </div>
       </div>
+
+      {showSearch && (
+        <HelmChartSearch
+          onClose={() => setShowSearch(false)}
+          onInstalled={() => fetchReleases()}
+        />
+      )}
+
+      {upgradeTarget && (
+        <HelmChartSearch
+          upgradeRelease={upgradeTarget}
+          onClose={() => setUpgradeTarget(null)}
+          onInstalled={() => { fetchReleases(); if (selectedRelease) fetchYaml(selectedRelease, activeTab); }}
+        />
+      )}
 
       <div className="resource-table-wrapper">
         {loading ? (
@@ -186,7 +208,15 @@ export default function Helm({ refreshSignal = 0 }) {
             >
               <Icon name="manifest" size={15} /> Manifest
             </button>
-            <button className="bottom-panel-toggle" onClick={() => setSelectedRelease(null)} title="Close">
+            <button
+              className="helm-upgrade-btn"
+              style={{ marginLeft: 'auto' }}
+              onClick={() => setUpgradeTarget(selectedRelease)}
+              title="Upgrade or downgrade this release"
+            >
+              <Icon name="download" size={14} /> Upgrade / downgrade
+            </button>
+            <button className="bottom-panel-toggle" style={{ marginLeft: 0 }} onClick={() => setSelectedRelease(null)} title="Close">
               <Icon name="close" size={16} />
             </button>
           </div>

@@ -1175,6 +1175,130 @@ body {
   gap: 10px;
 }
 
+/* Header action button (e.g. Helm "Install chart"). */
+.resource-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 13px;
+  font-size: 13px;
+  font-weight: 550;
+  color: var(--text);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-out), filter var(--dur-fast) var(--ease-out);
+}
+.resource-btn:hover { background: var(--bg-hover); }
+.resource-btn.primary {
+  color: #fff;
+  background: var(--accent-strong);
+  border-color: var(--accent-strong);
+}
+.resource-btn.primary:hover { filter: brightness(1.12); }
+
+/* ---- Helm chart search & install modal ---- */
+.modal.modal-wide { max-width: 680px; display: flex; flex-direction: column; max-height: min(82vh, 760px); }
+
+.chart-search-box {
+  position: relative;
+  display: flex;
+  align-items: center;
+  margin-bottom: 12px;
+}
+.chart-search-icon { position: absolute; left: 12px; color: var(--text-muted); display: flex; }
+.chart-search-input {
+  width: 100%;
+  padding: 11px 14px 11px 38px;
+  font-size: 14px;
+  color: var(--text);
+  background: var(--bg-base);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+}
+.chart-search-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-tint); }
+.chart-search-spin { position: absolute; right: 12px; color: var(--text-muted); display: flex; animation: loader-spin 0.9s linear infinite; }
+
+.chart-warn {
+  display: flex; align-items: center; gap: 7px;
+  padding: 9px 12px; margin-bottom: 10px;
+  font-size: 12.5px; color: var(--yellow);
+  background: var(--yellow-tint);
+  border: 1px solid color-mix(in srgb, var(--yellow) 30%, transparent);
+  border-radius: var(--radius-sm);
+}
+
+.chart-results { flex: 1; overflow-y: auto; margin: 0 -6px; padding: 0 6px; min-height: 200px; }
+.chart-empty { padding: 40px 12px; text-align: center; color: var(--text-muted); font-size: 13px; line-height: 1.5; }
+
+.chart-result {
+  display: flex; align-items: center; gap: 13px; width: 100%; text-align: left;
+  padding: 12px; margin-bottom: 6px;
+  background: var(--bg-base);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: border-color var(--dur-fast) var(--ease-out), background var(--dur-fast) var(--ease-out);
+}
+.chart-result:hover { border-color: var(--accent); background: var(--bg-hover); }
+.chart-result-logo {
+  flex-shrink: 0; width: 40px; height: 40px;
+  display: grid; place-items: center;
+  background: var(--bg-elevated); border: 1px solid var(--border); border-radius: var(--radius-sm);
+  color: var(--text-muted); overflow: hidden;
+}
+.chart-result-logo img { width: 28px; height: 28px; object-fit: contain; }
+.chart-result-main { flex: 1; min-width: 0; }
+.chart-result-title { display: flex; align-items: center; gap: 8px; }
+.chart-result-name { font-size: 14px; font-weight: 600; color: var(--text); }
+.chart-badge {
+  font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em;
+  padding: 1px 6px; border-radius: 4px;
+}
+.chart-badge.official { color: var(--accent); background: var(--accent-tint); }
+.chart-badge.verified { color: var(--green); background: var(--green-tint); }
+.chart-badge.deprecated { color: var(--red); background: var(--red-tint); }
+.chart-result-desc {
+  margin-top: 3px; font-size: 12.5px; color: var(--text-secondary); line-height: 1.45;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.chart-result-meta { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 6px; font-size: 11.5px; color: var(--text-muted); }
+.chart-result-go { flex-shrink: 0; color: var(--text-muted); display: flex; }
+
+.chart-install-form { display: flex; flex-direction: column; overflow-y: auto; }
+.chart-install-summary { display: flex; gap: 13px; padding-bottom: 14px; margin-bottom: 4px; border-bottom: 1px solid var(--border); }
+.chart-link { color: var(--link); text-decoration: none; display: inline-flex; align-items: center; gap: 4px; }
+.chart-link:hover { text-decoration: underline; }
+.chart-form-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; margin: 16px 0 6px; }
+.chart-form-grid .modal-label { margin-top: 0; }
+.chart-values { font-family: var(--mono); font-size: 12.5px; line-height: 1.5; resize: vertical; min-height: 120px; }
+.chart-install-actions { display: flex; justify-content: space-between; gap: 10px; margin-top: 16px; }
+.chart-install-actions .modal-btn { display: inline-flex; align-items: center; gap: 6px; }
+.chart-ver-hint { font-weight: 400; color: var(--text-muted); text-transform: none; letter-spacing: 0; }
+
+/* "Upgrade / downgrade" action in the Helm release bottom panel. */
+.helm-upgrade-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-right: 4px;
+  padding: 6px 12px;
+  font-size: 12.5px;
+  font-weight: 550;
+  color: var(--accent);
+  background: var(--accent-tint);
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-out);
+}
+.helm-upgrade-btn:hover { background: var(--accent-tint-strong); }
+
+@media (max-width: 620px) {
+  .chart-form-grid { grid-template-columns: 1fr; }
+}
+
 .search-box {
   position: relative;
   display: flex;
@@ -3689,6 +3813,23 @@ button.sec-tr.row.sel { background: var(--accent-tint); }
 
 .sec-empty { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 60px 0; color: var(--text-muted); }
 .sec-empty svg { color: var(--green); }
+.sec-install-cmd {
+  margin-top: 6px;
+  max-width: 560px;
+  width: 100%;
+  padding: 12px 14px;
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+  background: var(--bg-base);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  white-space: pre-wrap;
+  overflow-x: auto;
+  text-align: left;
+  user-select: all;
+}
 
 /* Drawer */
 .sec-drawer { width: 480px; max-width: 46vw; flex: none; border-left: 1px solid var(--border-strong); background: var(--bg-surface); display: flex; flex-direction: column; animation: drawer-in .16s ease; }
