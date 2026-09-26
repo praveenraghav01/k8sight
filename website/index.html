@@ -6,7 +6,7 @@
 <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
 <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)" />
 <title>k8sight: a beautiful desktop UI for Kubernetes</title>
-<meta name="description" content="k8sight is a native desktop app for browsing and operating any Kubernetes cluster from your local kubeconfig. Live dashboards, pod logs, interactive shells, topology, Helm, Argo CD, cloud clusters (EKS/AKS/GKE), a built-in Security Center (image CVEs, config & RBAC audit), an AI assistant and docked coding agents. Download for macOS, Windows and Linux." />
+<meta name="description" content="k8sight is a native desktop app for browsing and operating any Kubernetes cluster from your local kubeconfig. Live dashboards, pod logs, interactive shells, topology, Helm chart install, Argo CD, cloud clusters (EKS/AKS/GKE), a built-in Security Center (image CVEs, config & RBAC audit), cost visibility, an AI assistant and docked coding agents. Download for macOS, Windows and Linux." />
 <link rel="canonical" href="https://k8sight.in/" />
 <!-- Open Graph -->
 <meta property="og:type" content="website" />
@@ -536,7 +536,9 @@
         "Live cluster dashboard: node and pod health, workload charts, capacity",
         "Pod logs, in-pod shell (TTY), and port-forwarding",
         "Interactive pan/zoom topology graph and Custom Resource tree",
-        "Helm releases with values and rendered manifests",
+        "Helm releases with values and rendered manifests, plus chart search and install from Artifact Hub",
+        "Cost visibility from OpenCost or Kubecost: totals, idle cost and cost over time by namespace",
+        "In-app auto-update for signed desktop builds",
         "First-class Argo CD GitOps dashboard with sync/refresh/rollback",
         "Built-in Security Center: image CVEs, config and RBAC audit, exposed secrets (bundled Trivy)",
         "One-click AWS EKS, Azure AKS and Google GKE onboarding without the aws/az/gcloud CLI",
@@ -586,7 +588,7 @@
           "name": "Do I need kubectl or the AWS/Azure CLI to use k8sight?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "k8sight needs kubectl on your PATH and a working kubeconfig. It does not need the aws, az or kubelogin CLIs: bundled token helpers authenticate imported EKS, AKS and GKE clusters at runtime, and Helm releases are read through the API without the helm CLI."
+            "text": "k8sight needs kubectl on your PATH and a working kubeconfig. It does not need the aws, az or kubelogin CLIs: bundled token helpers authenticate imported EKS, AKS and GKE clusters at runtime, and Helm is bundled, so you can browse releases and install charts without installing helm."
           }
         },
         {
@@ -658,7 +660,7 @@
 <section class="hero tile-canvas" id="top">
   <div class="wrap">
     <h1>See your whole cluster in <span class="grad">one beautiful</span> window</h1>
-    <p class="sub">A native desktop app for every cluster in your <code>kubeconfig</code>: live metrics, logs, shells, topology, Helm and Argo CD.</p>
+    <p class="sub">A native desktop app for every cluster in your <code>kubeconfig</code>: live metrics, logs, shells, topology, Helm, Argo CD and costs.</p>
     <div class="cta-row">
       <a class="btn btn-primary" href="#download">
         <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg>
@@ -674,8 +676,8 @@
     <div class="shot-wrap reveal">
       <div class="shot-glow"></div>
       <div class="shot-frame">
-        <img class="shot-dark" src="assets/screenshot-dashboard-dark.png" width="2946" height="1760" decoding="async" fetchpriority="high" alt="k8sight cluster dashboard showing node and pod health, capacity, and cluster info" />
-        <img class="shot-light" src="assets/screenshot-dashboard-light.png" width="2946" height="1760" decoding="async" fetchpriority="high" alt="k8sight cluster dashboard in light theme showing node and pod health, capacity, and cluster info" />
+        <img class="shot-dark" src="assets/screenshot-dashboard-dark.webp" width="2000" height="1195" decoding="async" fetchpriority="high" alt="k8sight cluster dashboard showing node and pod health, capacity, and cluster info" />
+        <img class="shot-light" src="assets/screenshot-dashboard-light.webp" width="2000" height="1195" decoding="async" fetchpriority="high" alt="k8sight cluster dashboard in light theme showing node and pod health, capacity, and cluster info" />
       </div>
     </div>
   </div>
@@ -739,7 +741,7 @@
       <div class="card reveal">
         <div class="ico"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="M3.3 7L12 12l8.7-5M12 22V12"/></svg></div>
         <h3>Custom Resources &amp; Helm</h3>
-        <p>Lazy-loaded CRD tree with YAML details, plus Helm releases with their values and rendered manifests, no <code>helm</code> CLI needed.</p>
+        <p>Lazy-loaded CRD tree with YAML details, and Helm releases with their values and manifests. Search Artifact Hub and install or upgrade charts in a few clicks, with Helm bundled.</p>
       </div>
       <div class="card i-cyan reveal">
         <div class="ico"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke-width="2"><rect x="3" y="4" width="18" height="14" rx="2"/><path d="M8 21h8M12 18v3"/></svg></div>
@@ -766,6 +768,16 @@
         <h3>External tools, detected</h3>
         <p>k8sight finds <code>kubectl</code>, <code>helm</code>, cloud CLIs and coding agents on your real login-shell PATH, shown with their official logos.</p>
       </div>
+      <div class="card i-green reveal">
+        <div class="ico"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M21 12a9 9 0 0 1-15.5 6.2L3 16"/><path d="M3 12a9 9 0 0 1 15.5-6.2L21 8"/><path d="M21 3v5h-5M3 21v-5h5"/></svg></div>
+        <h3>Updates itself</h3>
+        <p>New versions download in the background and install on restart. Prefer to update by hand? Turn it off in Preferences.</p>
+      </div>
+      <div class="card i-amber reveal">
+        <div class="ico"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M3 6h18M3 12h12M3 18h6"/><path d="M18 14v7M15 18l3 3 3-3"/></svg></div>
+        <h3>Sortable, live tables</h3>
+        <p>Sort any column by its real value, from CPU to age. Data refreshes in place, so your selection, scroll and filters stay put.</p>
+      </div>
     </div>
   </div>
 </section>
@@ -781,8 +793,8 @@
     <div class="shot-wrap reveal" style="margin-bottom:52px;">
       <div class="shot-glow"></div>
       <div class="shot-frame">
-        <img class="shot-dark" src="assets/screenshot-agent-dark.png" width="2946" height="1760" decoding="async" loading="lazy" alt="k8sight with a Claude Code coding agent docked in a panel beside the cluster dashboard" />
-        <img class="shot-light" src="assets/screenshot-agent-light.png" width="2946" height="1760" decoding="async" loading="lazy" alt="k8sight in light theme with a Claude Code coding agent docked in a panel beside the cluster dashboard" />
+        <img class="shot-dark" src="assets/screenshot-agent-dark.webp" width="2000" height="1195" decoding="async" loading="lazy" alt="k8sight with a Claude Code coding agent docked in a panel beside the cluster dashboard" />
+        <img class="shot-light" src="assets/screenshot-agent-light.webp" width="2000" height="1195" decoding="async" loading="lazy" alt="k8sight in light theme with a Claude Code coding agent docked in a panel beside the cluster dashboard" />
       </div>
     </div>
     <div class="split">
@@ -904,8 +916,8 @@
     <div class="shot-wrap reveal" style="margin-bottom:52px;">
       <div class="shot-glow"></div>
       <div class="shot-frame">
-        <img class="shot-dark" src="assets/screenshot-argocd-dark.png" width="2946" height="1760" decoding="async" loading="lazy" alt="k8sight Argo CD dashboard showing sync and health status, application summary cards, a needs-attention row, and recent sync activity" />
-        <img class="shot-light" src="assets/screenshot-argocd-light.png" width="2946" height="1760" decoding="async" loading="lazy" alt="k8sight Argo CD dashboard in light theme showing sync and health status, application summary cards, a needs-attention row, and recent sync activity" />
+        <img class="shot-dark" src="assets/screenshot-argocd-dark.webp" width="2000" height="1195" decoding="async" loading="lazy" alt="k8sight Argo CD dashboard showing sync and health status, application summary cards, a needs-attention row, and recent sync activity" />
+        <img class="shot-light" src="assets/screenshot-argocd-light.webp" width="2000" height="1195" decoding="async" loading="lazy" alt="k8sight Argo CD dashboard in light theme showing sync and health status, application summary cards, a needs-attention row, and recent sync activity" />
       </div>
     </div>
 
@@ -964,8 +976,8 @@
     <div class="shot-wrap reveal" style="margin-bottom:52px;">
       <div class="shot-glow"></div>
       <div class="shot-frame">
-        <img class="shot-dark" src="assets/screenshot-security-dark.png" width="2946" height="1760" decoding="async" loading="lazy" alt="k8sight Security Center showing donut summaries for scan status, results, vulnerabilities by severity and exposed secrets, with a per-image table of CVE counts from a built-in Trivy scan" />
-        <img class="shot-light" src="assets/screenshot-security-light.png" width="2946" height="1760" decoding="async" loading="lazy" alt="k8sight Security Center in light theme showing donut summaries for scan status, results, vulnerabilities by severity and exposed secrets, with a per-image table of CVE counts from a built-in Trivy scan" />
+        <img class="shot-dark" src="assets/screenshot-security-dark.webp" width="2000" height="1195" decoding="async" loading="lazy" alt="k8sight Security Center showing donut summaries for scan status, results, vulnerabilities by severity and exposed secrets, with a per-image table of CVE counts from a built-in Trivy scan" />
+        <img class="shot-light" src="assets/screenshot-security-light.webp" width="2000" height="1195" decoding="async" loading="lazy" alt="k8sight Security Center in light theme showing donut summaries for scan status, results, vulnerabilities by severity and exposed secrets, with a per-image table of CVE counts from a built-in Trivy scan" />
       </div>
     </div>
 
@@ -1077,7 +1089,8 @@
         </a>
         <ol class="steps">
           <li>Open the <code>.dmg</code> and drag k8sight to Applications.</li>
-          <li>Signed &amp; notarized (Developer ID). Drag to Applications and open.</li>
+          <li>Signed &amp; notarized, so it opens without a security prompt.</li>
+          <li>Keeps itself up to date after that.</li>
           <li>Requires <code>kubectl</code> installed locally.</li>
         </ol>
       </div>
@@ -1165,7 +1178,7 @@
       </details>
       <details class="faq-item">
         <summary>Do I need kubectl or the AWS/Azure CLI?</summary>
-        <p class="faq-a">k8sight needs <code>kubectl</code> on your PATH and a working kubeconfig. It does not need the <code>aws</code>, <code>az</code> or <code>kubelogin</code> CLIs: bundled token helpers authenticate imported EKS and AKS clusters at runtime, and Helm releases are read through the API without the <code>helm</code> CLI.</p>
+        <p class="faq-a">k8sight needs <code>kubectl</code> on your PATH and a working kubeconfig. It does not need the <code>aws</code>, <code>az</code> or <code>kubelogin</code> CLIs: bundled token helpers authenticate imported EKS, AKS and GKE clusters at runtime, and Helm is bundled, so you can browse releases and install charts without installing <code>helm</code>.</p>
       </details>
       <details class="faq-item">
         <summary>Can I try k8sight without a Kubernetes cluster?</summary>
