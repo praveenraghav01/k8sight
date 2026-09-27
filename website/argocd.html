@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
+<meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)" />
+<title>Argo CD in a Kubernetes desktop app | k8sight</title>
+<meta name="description" content="k8sight detects Argo CD and adds a full workspace: live sync and health, resource trees, sync history, sync, refresh and prune, ApplicationSets, projects and repos, with no argocd CLI or separate login." />
+<link rel="canonical" href="https://k8sight.in/argocd" />
+<meta property="og:type" content="website" />
+<meta property="og:site_name" content="k8sight" />
+<meta property="og:url" content="https://k8sight.in/argocd" />
+<meta property="og:title" content="Argo CD in a Kubernetes desktop app | k8sight" />
+<meta property="og:description" content="k8sight detects Argo CD and adds a full workspace: live sync and health, resource trees, sync history, sync, refresh and prune, ApplicationSets, projects and repos, with no argocd CLI or separate login." />
+<meta property="og:image" content="https://k8sight.in/assets/og-image.png" />
+<meta property="og:image:width" content="1200" />
+<meta property="og:image:height" content="630" />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="Argo CD in a Kubernetes desktop app | k8sight" />
+<meta name="twitter:description" content="k8sight detects Argo CD and adds a full workspace: live sync and health, resource trees, sync history, sync, refresh and prune, ApplicationSets, projects and repos, with no argocd CLI or separate login." />
+<meta name="twitter:image" content="https://k8sight.in/assets/og-image.png" />
+<meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1" />
+<link rel="icon" href="assets/icon.svg" type="image/svg+xml" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" />
+<link rel="stylesheet" href="assets/site.css" />
+<script>
+  // Set theme before first paint to avoid a flash.
+  try {
+    var t = localStorage.getItem('theme') || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+    document.documentElement.dataset.theme = t;
+  } catch (e) { document.documentElement.dataset.theme = 'dark'; }
+</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "WebPage",
+      "@id": "https://k8sight.in/argocd#webpage",
+      "url": "https://k8sight.in/argocd",
+      "name": "Argo CD in a Kubernetes desktop app | k8sight",
+      "description": "k8sight detects Argo CD and adds a full workspace: live sync and health, resource trees, sync history, sync, refresh and prune, ApplicationSets, projects and repos, with no argocd CLI or separate login.",
+      "isPartOf": {
+        "@id": "https://k8sight.in/#website"
+      },
+      "about": {
+        "@type": "SoftwareApplication",
+        "name": "k8sight",
+        "applicationCategory": "DeveloperApplication",
+        "operatingSystem": "macOS, Windows, Linux",
+        "offers": {
+          "@type": "Offer",
+          "price": "0",
+          "priceCurrency": "USD"
+        }
+      }
+    },
+    {
+      "@type": "BreadcrumbList",
+      "itemListElement": [
+        {
+          "@type": "ListItem",
+          "position": 1,
+          "name": "Home",
+          "item": "https://k8sight.in/"
+        },
+        {
+          "@type": "ListItem",
+          "position": 2,
+          "name": "Argo CD",
+          "item": "https://k8sight.in/argocd"
+        }
+      ]
+    }
+  ]
+}
+</script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header>
+  <div class="wrap">
+    <nav>
+      <a class="brand" href="index.html">
+        <img class="logo" src="assets/icon.svg" width="26" height="26" alt="k8sight logo" />
+        <span>k8sight<small>KUBERNETES, IN SIGHT</small></span>
+      </a>
+      <div class="nav-right">
+        <div class="nav-links" id="navLinks">
+          <a href="operations.html">Operations</a>
+          <a href="ai.html">AI</a>
+          <a href="cloud.html">Cloud</a>
+          <a href="argocd.html" class="current" aria-current="page">Argo CD</a>
+          <a href="security.html">Security</a>
+          <a href="costs.html">Costs</a>
+          <a href="docs.html">Docs</a>
+          <a class="nav-pill nav-ghost" href="https://github.com/praveenraghav01/k8sight" target="_blank" rel="noopener">GitHub</a>
+          <a class="nav-pill nav-cta" href="index.html#download">Download</a>
+        </div>
+        <button class="theme-btn" id="themeBtn" aria-label="Toggle light and dark theme">
+          <svg aria-hidden="true" focusable="false" class="ic-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4 12H2M22 12h-2M5 5l1.5 1.5M17.5 17.5 19 19M19 5l-1.5 1.5M6.5 17.5 5 19"/></svg>
+          <svg aria-hidden="true" focusable="false" class="ic-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+        </button>
+        <button class="menu-btn" id="menuBtn" aria-label="Menu">
+          <svg aria-hidden="true" focusable="false" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+        </button>
+      </div>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+<section class="hero page-hero" id="top">
+  <div class="wrap">
+    <span class="kicker">GitOps, natively</span>
+    <h1>First-class Argo CD support</h1>
+    <p class="sub">Running Argo CD? The app auto-detects it and adds a full Argo CD workspace, no <code>argocd</code> CLI and no separate login. It reads the Application CRDs straight from your cluster using your kubeconfig&rsquo;s own RBAC.</p>
+    <div class="cta-row">
+      <a class="btn btn-primary" href="index.html#download">
+        <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg>
+        Download k8sight
+      </a>
+      <a class="btn btn-ghost" href="docs.html#argocd">Read the docs</a>
+    </div>
+    <div class="chips reveal">
+      <span class="chip"><span class="d" style="background:var(--green)"></span>Synced</span>
+      <span class="chip"><span class="d" style="background:var(--amber)"></span>OutOfSync</span>
+      <span class="chip"><span class="d" style="background:var(--green)"></span>Healthy</span>
+      <span class="chip"><span class="d" style="background:var(--cyan)"></span>Progressing</span>
+      <span class="chip"><span class="d" style="background:var(--red)"></span>Degraded</span>
+      <span class="chip"><span class="d" style="background:var(--purple)"></span>Suspended</span>
+    </div>
+    <div class="shot-wrap reveal">
+      <div class="shot-frame">
+        <img class="shot-dark" src="assets/screenshot-argocd-dark.webp" width="2000" height="1195" decoding="async" alt="k8sight Argo CD dashboard with sync and health status, application summary and recent sync activity" />
+        <img class="shot-light" src="assets/screenshot-argocd-light.webp" width="2000" height="1195" decoding="async" alt="k8sight Argo CD dashboard with sync and health status, application summary and recent sync activity (light theme)" />
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="sec" id="details">
+  <div class="wrap">
+    <div class="sec-head reveal">
+      <span class="kicker">What&rsquo;s inside</span>
+      <h2>The whole Argo CD picture</h2>
+    </div>
+  <div class="wrap">
+    
+
+    
+
+    
+
+    <div class="grid">
+      <div class="card i-cyan reveal">
+        <div class="ico"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke-width="2"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg></div>
+        <h3>Applications dashboard</h3>
+        <p>Every Application with live sync and health status, quick filters, and a <em>needs-attention</em> view that surfaces whatever is drifting or unhealthy.</p>
+      </div>
+      <div class="card i-purple reveal">
+        <div class="ico"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke-width="2"><circle cx="12" cy="5" r="2.5"/><circle cx="6" cy="19" r="2.5"/><circle cx="18" cy="19" r="2.5"/><path d="M12 7.5v3.5M12 11H6.4a1 1 0 0 0-1 1v4.5M12 11h5.6a1 1 0 0 1 1 1v4.5"/></svg></div>
+        <h3>Resource tree &amp; history</h3>
+        <p>Open an app for its managed resource tree, sync parameters, and full sync/rollout history, each resource with its own sync and health badge.</p>
+      </div>
+      <div class="card i-green reveal">
+        <div class="ico"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M21 12a9 9 0 0 1-9 9 9 9 0 0 1-8-5M3 12a9 9 0 0 1 9-9 9 9 0 0 1 8 5"/><path d="M20 4v5h-5M4 20v-5h5"/></svg></div>
+        <h3>Sync, refresh &amp; prune</h3>
+        <p>Trigger a Sync with <code>prune</code>, <code>dry-run</code>, apply-only, force or replace, or a soft/hard Refresh, right from the drawer.</p>
+      </div>
+      <div class="card i-amber reveal">
+        <div class="ico"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M12 2 2 7l10 5 10-5-10-5z"/><path d="M2 12l10 5 10-5M2 17l10 5 10-5"/></svg></div>
+        <h3>App Sets, Projects &amp; repos</h3>
+        <p>Browse ApplicationSets, AppProjects, connected Git/Helm repositories and destination clusters, the whole Argo CD picture.</p>
+      </div>
+      <div class="card reveal">
+        <div class="ico"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M10 6h10M10 12h10M10 18h10"/><path d="M3.5 6 5 7.5 7.5 5M3.5 12 5 13.5 7.5 11M3.5 18 5 19.5 7.5 17"/></svg></div>
+        <h3>Bulk operations</h3>
+        <p>Select many Applications and sync or refresh them together, with an opt-in multi-select so you always choose exactly what runs.</p>
+      </div>
+      <div class="card i-red reveal">
+        <div class="ico"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/></svg></div>
+        <h3>AI-assisted triage</h3>
+        <p>One click hands an app&rsquo;s sync/health condition and failing resources to the assistant for a root-cause read <span style="color:var(--text-mute)">(needs your own LLM subscription)</span>.</p>
+      </div>
+    </div>
+  </div>
+  </div>
+</section>
+
+<section class="sec" id="tree">
+  <div class="wrap">
+    <div class="sec-head reveal">
+      <span class="kicker">Resource tree</span>
+      <h2>See everything an app manages</h2>
+      <p>Open any Application to see its managed resources as a tree, each with its own sync and health badge, next to the app&rsquo;s sync status and history.</p>
+    </div>
+    <div class="shot-wrap reveal">
+      <div class="shot-frame">
+        <img class="shot-dark" src="assets/screenshot-argocd-tree-dark.webp" width="2000" height="1195" decoding="async" alt="k8sight Argo CD resource tree for an application, showing its service, deployment, replica set and pods with health badges" />
+        <img class="shot-light" src="assets/screenshot-argocd-tree-light.webp" width="2000" height="1195" decoding="async" alt="k8sight Argo CD resource tree for an application, showing its service, deployment, replica set and pods with health badges (light theme)" />
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="sec" id="more">
+  <div class="wrap">
+    <div class="sec-head reveal">
+      <span class="kicker">More in k8sight</span>
+      <h2>Explore the other features</h2>
+    </div>
+    <div class="more-grid reveal">
+      <a class="more-link" href="operations.html"><b>Operations <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M5 12h14M13 6l6 6-6 6"/></svg></b><span>Live dashboard, every workload type, logs, a real shell, topology, Helm and port forwarding.</span></a>
+      <a class="more-link" href="ai.html"><b>AI assistant <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M5 12h14M13 6l6 6-6 6"/></svg></b><span>Ask about your cluster in plain English, and dock your own coding agents beside it.</span></a>
+      <a class="more-link" href="cloud.html"><b>Cloud clusters <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M5 12h14M13 6l6 6-6 6"/></svg></b><span>Add EKS, AKS and GKE clusters to your kubeconfig with no cloud CLI.</span></a>
+      <a class="more-link" href="security.html"><b>Security Center <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M5 12h14M13 6l6 6-6 6"/></svg></b><span>Image CVEs, config audits, RBAC checks and exposed secrets, powered by Trivy.</span></a>
+      <a class="more-link" href="costs.html"><b>Costs <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M5 12h14M13 6l6 6-6 6"/></svg></b><span>Spend by namespace, workload and node from OpenCost or Kubecost.</span></a>
+    </div>
+  </div>
+</section>
+
+<section class="sec last final-cta" id="get">
+  <div class="wrap reveal">
+    <h2>See it on your own cluster</h2>
+    <p>Free and open source for macOS, Windows and Linux. No cluster handy? The built-in demo works with nothing but the app.</p>
+    <div class="cta-row">
+      <a class="btn btn-primary" href="index.html#download">
+        <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg>
+        Download k8sight
+      </a>
+      <a class="btn btn-ghost" href="https://github.com/praveenraghav01/k8sight" target="_blank" rel="noopener">View on GitHub</a>
+    </div>
+  </div>
+</section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <a class="brand" href="#top">
+      <img class="logo" src="assets/icon.svg" width="26" height="26" alt="" />
+      <span>k8sight<small>© 2026 · MIT-style open source</small></span>
+    </a>
+    <div class="links">
+      <a href="operations.html">Operations</a>
+      <a href="ai.html">AI</a>
+      <a href="cloud.html">Cloud</a>
+      <a href="argocd.html">Argo CD</a>
+      <a href="security.html">Security</a>
+      <a href="costs.html">Costs</a>
+      <a href="index.html#download">Download</a>
+      <a href="docs.html">Docs</a>
+      <a href="privacy.html">Privacy</a>
+      <a href="terms.html">Terms</a>
+      <a href="https://github.com/praveenraghav01/k8sight" target="_blank" rel="noopener">GitHub</a>
+      <a href="https://www.youtube.com/@k8sight" target="_blank" rel="noopener">YouTube</a>
+    </div>
+    <div class="copy">Built for developers and platform teams. Requires a Kubernetes cluster and a valid kubeconfig. Not affiliated with the Kubernetes project or the CNCF.</div>
+    <div class="made">
+      <a href="https://madewithloveinindia.org" target="_blank" rel="noopener">Made with <span aria-label="Love" style="color: #f43f5e">&hearts;</span> in India</a>
+    </div>
+  </div>
+</footer>
+
+<script src="assets/site.js"></script>
+</body>
+</html>

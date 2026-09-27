@@ -32,6 +32,12 @@
 ## Links
 
 - Home: https://k8sight.in/
+- Operations: dashboard, workloads, logs, shell, topology, Helm: https://k8sight.in/operations
+- AI assistant and coding agents: https://k8sight.in/ai
+- Cloud clusters: EKS, AKS and GKE with no CLI: https://k8sight.in/cloud
+- Argo CD: https://k8sight.in/argocd
+- Security Center: CVEs, config and RBAC audits: https://k8sight.in/security
+- Costs: OpenCost and Kubecost: https://k8sight.in/costs
 - Documentation: https://k8sight.in/docs
 - Comparison (k8sight vs Rancher vs Lens/k9s): https://k8sight.in/docs#compare
 - Download (all platforms): https://github.com/praveenraghav01/k8sight/releases/latest
