@@ -153,6 +153,19 @@ jobs:
           tag_name: ${{ steps.ver.outputs.tag }}
           target_commitish: ${{ github.sha }}
           draft: false
+          # Shown above the auto-generated notes. The other assets (the .zip,
+          # latest*.yml and .blockmap files) are the auto-update feed, which the
+          # installed app reads; people installing only need the file below.
+          body: |
+            ## Download
+
+            | Platform | File |
+            |---|---|
+            | macOS (Apple Silicon) | **`k8sight-macos.dmg`** |
+            | Windows | **`k8sight-windows.exe`** |
+            | Linux | **`k8sight-linux.AppImage`** or **`k8sight-linux.deb`** |
+
+            Already installed? k8sight updates itself; the other files here are what it uses to do that.
           generate_release_notes: true
           fail_on_unmatched_files: true
           files: |

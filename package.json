@@ -128,7 +128,8 @@
       ]
     },
     "dmg": {
-      "format": "ULFO"
+      "format": "ULFO",
+      "writeUpdateInfo": false
     },
     "linux": {
       "category": "Development",
