@@ -177,6 +177,27 @@
 </script>
 </head>
 <body>
+<!-- ACADEMY PROMO -->
+<div class="promo-bar" id="promoBar">
+  <a class="promo-inner" href="https://learn.k8sight.in" target="_blank" rel="noopener">
+    <span class="promo-badge">New</span>
+    <span class="promo-text"><b>k8sight Academy</b> · hands-on Kubernetes courses. Start learning free.</span>
+    <span class="promo-arrow" aria-hidden="true">→</span>
+  </a>
+  <button class="promo-close" id="promoClose" type="button" aria-label="Dismiss">×</button>
+</div>
+<script>
+  (function () {
+    var bar = document.getElementById('promoBar');
+    if (!bar) return;
+    try { if (localStorage.getItem('k8s-promo-academy') === 'off') bar.hidden = true; } catch (e) {}
+    var btn = document.getElementById('promoClose');
+    if (btn) btn.addEventListener('click', function (e) {
+      e.preventDefault(); e.stopPropagation(); bar.hidden = true;
+      try { localStorage.setItem('k8s-promo-academy', 'off'); } catch (e) {}
+    });
+  })();
+</script>
 <a class="skip-link" href="#features">Skip to content</a>
 
 <!-- NAV -->
