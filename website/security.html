@@ -80,6 +80,27 @@
 </script>
 </head>
 <body>
+<!-- ACADEMY PROMO -->
+<div class="promo-bar" id="promoBar">
+  <a class="promo-inner" href="https://learn.k8sight.in" target="_blank" rel="noopener">
+    <span class="promo-badge">New</span>
+    <span class="promo-text"><b>k8sight Academy</b> · hands-on Kubernetes courses. Start learning free.</span>
+    <span class="promo-arrow" aria-hidden="true">→</span>
+  </a>
+  <button class="promo-close" id="promoClose" type="button" aria-label="Dismiss">×</button>
+</div>
+<script>
+  (function () {
+    var bar = document.getElementById('promoBar');
+    if (!bar) return;
+    try { if (localStorage.getItem('k8s-promo-academy') === 'off') bar.hidden = true; } catch (e) {}
+    var btn = document.getElementById('promoClose');
+    if (btn) btn.addEventListener('click', function (e) {
+      e.preventDefault(); e.stopPropagation(); bar.hidden = true;
+      try { localStorage.setItem('k8s-promo-academy', 'off'); } catch (e) {}
+    });
+  })();
+</script>
 <a class="skip-link" href="#main">Skip to content</a>
 <header>
   <div class="wrap">
@@ -97,7 +118,7 @@
           <a href="security.html" class="current" aria-current="page">Security</a>
           <a href="costs.html">Costs</a>
           <a href="docs.html">Docs</a>
-          <a class="nav-pill nav-ghost" href="https://github.com/praveenraghav01/k8sight" target="_blank" rel="noopener">GitHub</a>
+          <a class="nav-pill nav-ghost" href="https://learn.k8sight.in" target="_blank" rel="noopener">Learn</a>
           <a class="nav-pill nav-cta" href="index.html#download">Download</a>
         </div>
         <button class="theme-btn" id="themeBtn" aria-label="Toggle light and dark theme">
