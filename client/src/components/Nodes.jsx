@@ -1,9 +1,13 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import axios from 'axios';
 import Icon from './Icons';
 import MetricsChart from './MetricsChart';
+import MetricHistoryControls from './MetricHistoryControls';
 import ContextMenu from './ContextMenu';
 import Loader from './Loader';
+import TerminalViewer from './TerminalViewer';
+import { useToast } from './Toast';
+import useMetricHistory from '../hooks/useMetricHistory';
 
 const fmtCpuM = (m) => (m >= 1000 ? `${(m / 1000).toFixed(2)} cores` : `${Math.round(m)}m`);
 const fmtGi = (gi) => `${gi.toFixed(1)} Gi`;
@@ -28,7 +32,28 @@ const formatMemory = (mem) => {
   return mem;
 };
 
+const cpuCores = (value) => {
+  if (!value || value === '-') return -1;
+  const s = String(value);
+  if (s.endsWith('m')) return Number.parseFloat(s) / 1000;
+  if (s.endsWith('u')) return Number.parseFloat(s) / 1e6;
+  if (s.endsWith('n')) return Number.parseFloat(s) / 1e9;
+  return Number.parseFloat(s) || -1;
+};
+
+const memoryBytes = (value) => {
+  if (!value || value === '-') return -1;
+  const match = String(value).match(/^([\d.]+)\s*(Ki|Mi|Gi|Ti|Pi|Ei|K|M|G|T|P|E)?$/);
+  if (!match) return -1;
+  const multipliers = {
+    Ki: 1024, Mi: 1024 ** 2, Gi: 1024 ** 3, Ti: 1024 ** 4, Pi: 1024 ** 5, Ei: 1024 ** 6,
+    K: 1e3, M: 1e6, G: 1e9, T: 1e12, P: 1e15, E: 1e18
+  };
+  return Number.parseFloat(match[1]) * (multipliers[match[2]] || 1);
+};
+
 export default function Nodes({ active = true, focusNode, onFocusHandled, onNavigate, refreshSignal = 0 }) {
+  const toast = useToast();
   const [nodes, setNodes] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -42,10 +67,19 @@ export default function Nodes({ active = true, focusNode, onFocusHandled, onNavi
   const [nMetricsNow, setNMetricsNow] = useState(null);
   const [nMetricsAvail, setNMetricsAvail] = useState(true);
   const [menu, setMenu] = useState(null);
+  const [sort, setSort] = useState(null);
+  const [nodeBusy, setNodeBusy] = useState(false);
+  const [nodeAction, setNodeAction] = useState(null);
 
   useEffect(() => {
     fetchNodes();
   }, []);
+
+  useEffect(() => {
+    if (active) return;
+    setMenu(null);
+    setNodeAction(null);
+  }, [active]);
 
   // Global/auto refresh: re-fetch in place (no remount), so the selected node,
   // the open tab and the metrics history stay put and no loader flashes.
@@ -72,6 +106,11 @@ export default function Nodes({ active = true, focusNode, onFocusHandled, onNavi
   // a refresh swaps in a new node object for the same node, and re-running this
   // would wipe the collected history.
   const selectedNodeName = selectedNode?.name;
+  const metricHistory = useMetricHistory({
+    kind: 'node',
+    name: selectedNodeName,
+    enabled: Boolean(active && selectedNodeName && activeTab === 'details')
+  });
   const metricsNodeRef = useRef(null);
   useEffect(() => {
     if (metricsNodeRef.current === selectedNodeName) return;
@@ -83,11 +122,11 @@ export default function Nodes({ active = true, focusNode, onFocusHandled, onNavi
   }, [selectedNodeName]);
 
   useEffect(() => {
-    if (!active || !selectedNodeName) return;
+    if (!active || !selectedNodeName || activeTab !== 'details') return;
     let live = true;
     let pollTimer;
     const poll = async () => {
-      let nextPollDelay = 3000;
+      let nextPollDelay = 5000;
       try {
         const res = await axios.get(`/api/metrics/node/${encodeURIComponent(selectedNodeName)}`);
         if (!live) return;
@@ -106,7 +145,7 @@ export default function Nodes({ active = true, focusNode, onFocusHandled, onNavi
     };
     poll();
     return () => { live = false; clearTimeout(pollTimer); };
-  }, [active, selectedNodeName]);
+  }, [active, activeTab, selectedNodeName]);
 
   useEffect(() => {
     if (active && selectedNodeName && activeTab === 'pods') {
@@ -145,6 +184,29 @@ export default function Nodes({ active = true, focusNode, onFocusHandled, onNavi
     }
   };
 
+  const runNodeOperation = async (operation, node, options = {}) => {
+    if (nodeBusy) return;
+    setNodeBusy(true);
+    if (operation === 'drain') setNodeAction((current) => current ? { ...current, busy: true, error: null } : current);
+    try {
+      const { data } = await axios.post(`/api/nodes/${encodeURIComponent(node.name)}/${operation}`, options);
+      if (operation === 'drain') setNodeAction(null);
+      toast.success(operation === 'drain' ? `Node ${node.name} drained` : (data.message || `Node ${node.name}: ${operation}`), { title: 'Node' });
+    } catch (err) {
+      const message = err.response?.data?.error || err.message || `Failed to ${operation} node ${node.name}`;
+      if (operation === 'drain') setNodeAction((current) => current ? { ...current, busy: false, error: message } : current);
+      toast.error(message, { title: `Node ${operation}` });
+    } finally {
+      setNodeBusy(false);
+      // A drain may cordon the node before failing, so refresh after either
+      // outcome. Refresh the open pod list too when this node is selected.
+      await fetchNodes({ silent: true });
+      if (selectedNode?.name === node.name && activeTab === 'pods') {
+        await fetchNodePods(node.name, { silent: true });
+      }
+    }
+  };
+
   const selectNode = (node) => {
     setSelectedNode(node);
     setActiveTab('details');
@@ -156,9 +218,52 @@ export default function Nodes({ active = true, focusNode, onFocusHandled, onNavi
     return '#ff6b6b';
   };
 
+  const sortValue = (node, column) => {
+    switch (column) {
+      case 'Name': return node.name || '';
+      case 'Status': return node.status || '';
+      case 'Scheduling': return node.unschedulable ? 1 : 0;
+      case 'Roles': return node.roles || '';
+      case 'Version': return node.version || '';
+      case 'Internal IP': return node.internalIp || '';
+      case 'CPU': return cpuCores(node.cpuCapacity);
+      case 'Memory': return memoryBytes(node.memoryCapacity);
+      // Match the Pods table: ascending age order shows the newest first.
+      case 'Age': return node.createdAt ? -new Date(node.createdAt).getTime() : Infinity;
+      default: return '';
+    }
+  };
+
+  const toggleSort = (column) => setSort((previous) => {
+    if (!previous || previous.col !== column) return { col: column, dir: 'asc' };
+    return previous.dir === 'asc' ? { col: column, dir: 'desc' } : null;
+  });
+
+  const sortedNodes = useMemo(() => {
+    if (!sort) return nodes;
+    const direction = sort.dir === 'asc' ? 1 : -1;
+    return [...nodes].sort((a, b) => {
+      const va = sortValue(a, sort.col);
+      const vb = sortValue(b, sort.col);
+      if (typeof va === 'number' && typeof vb === 'number') return (va - vb) * direction;
+      return String(va).localeCompare(String(vb), undefined, { numeric: true, sensitivity: 'base' }) * direction;
+    });
+  }, [nodes, sort]);
+
   const nodeMenuItems = (node) => [
     { icon: 'details', label: 'Details', onClick: () => { setSelectedNode(node); setActiveTab('details'); } },
-    { icon: 'pod', label: 'Pods on node', onClick: () => { setSelectedNode(node); setActiveTab('pods'); } }
+    { icon: 'pod', label: 'Pods on node', onClick: () => { setSelectedNode(node); setActiveTab('pods'); } },
+    { icon: 'terminal', label: 'Open node terminal', onClick: () => { setSelectedNode(node); setActiveTab('terminal'); } },
+    { divider: true },
+    {
+      icon: 'refresh',
+      label: node.unschedulable ? 'Uncordon' : 'Cordon',
+      onClick: () => runNodeOperation(node.unschedulable ? 'uncordon' : 'cordon', node)
+    },
+    {
+      icon: 'delete', label: 'Drain node…', danger: true,
+      onClick: () => setNodeAction({ type: 'drain', node, deleteEmptyDirData: false, busy: false, error: null })
+    }
   ];
 
   return (
@@ -185,19 +290,26 @@ export default function Nodes({ active = true, focusNode, onFocusHandled, onNavi
           <table className="resource-table">
             <thead>
               <tr>
-                <th>Name</th>
-                <th>Status</th>
-                <th>Roles</th>
-                <th>Version</th>
-                <th>Internal IP</th>
-                <th>CPU</th>
-                <th>Memory</th>
-                <th>Age</th>
+                {['Name', 'Status', 'Scheduling', 'Roles', 'Version', 'Internal IP', 'CPU', 'Memory', 'Age'].map((column) => {
+                  const isSorted = sort?.col === column;
+                  return (
+                    <th
+                      key={column}
+                      className={`sortable ${isSorted ? 'sorted' : ''}`}
+                      onClick={() => toggleSort(column)}
+                      title={`Sort by ${column}`}
+                      aria-sort={isSorted ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none'}
+                    >
+                      {column}
+                      <span className="sort-arrow">{isSorted ? (sort.dir === 'asc' ? '↑' : '↓') : '↕'}</span>
+                    </th>
+                  );
+                })}
                 <th></th>
               </tr>
             </thead>
             <tbody>
-              {nodes.map((node, idx) => (
+              {sortedNodes.map((node, idx) => (
                 <tr
                   key={`${node.name}-${idx}`}
                   className={`resource-table-row ${selectedNode?.name === node.name ? 'active' : ''}`}
@@ -223,6 +335,11 @@ export default function Nodes({ active = true, focusNode, onFocusHandled, onNavi
                         {node.status}
                       </span>
                     </div>
+                  </td>
+                  <td>
+                    <span style={{ color: node.unschedulable ? '#d29922' : '#5eb575', fontSize: '12px', fontWeight: 500 }}>
+                      {node.unschedulable ? 'Cordoned' : 'Schedulable'}
+                    </span>
                   </td>
                   <td>{node.roles}</td>
                   <td>{node.version}</td>
@@ -257,6 +374,12 @@ export default function Nodes({ active = true, focusNode, onFocusHandled, onNavi
               onClick={() => setActiveTab('pods')}
             >
               <Icon name="pod" size={15} /> Pods
+            </button>
+            <button
+              className={`bottom-tab ${activeTab === 'terminal' ? 'active' : ''}`}
+              onClick={() => setActiveTab('terminal')}
+            >
+              <Icon name="terminal" size={15} /> Terminal
             </button>
             <button className="bottom-panel-toggle" onClick={() => setSelectedNode(null)} title="Close">
               <Icon name="close" size={16} />
@@ -293,34 +416,44 @@ export default function Nodes({ active = true, focusNode, onFocusHandled, onNavi
                         Requests and limits are summed from {nMetricsNow.scheduledPods} scheduled pods. Limits include only values declared by pods.
                       </p>
                     )}
-                    {!nMetricsAvail ? (
-                      <div className="drawer-dim">Metrics not available</div>
-                    ) : (
-                      <div className="metric-charts" style={{ flexDirection: 'row' }}>
-                        <div style={{ flex: 1 }}>
-                          <MetricsChart
-                            id="node-cpu"
-                            label="CPU"
-                            data={ncpuHist}
-                            limit={nMetricsNow?.cpuCapacityMilli}
-                            thresholdLabel="capacity"
-                            format={fmtCpuM}
-                            fallbackColor="#58a6ff"
-                          />
-                        </div>
-                        <div style={{ flex: 1 }}>
-                          <MetricsChart
-                            id="node-mem"
-                            label="Memory"
-                            data={nmemHist.map(b => b / 1024 ** 3)}
-                            limit={nMetricsNow ? nMetricsNow.memCapacityBytes / 1024 ** 3 : null}
-                            thresholdLabel="capacity"
-                            format={fmtGi}
-                            fallbackColor="#bc8cff"
-                          />
-                        </div>
+                    <MetricHistoryControls
+                      period={metricHistory.period}
+                      onChange={metricHistory.setPeriod}
+                      loading={metricHistory.loading}
+                      available={metricHistory.available}
+                      message={metricHistory.message}
+                      source={metricHistory.source}
+                      pointCount={metricHistory.points.length}
+                    />
+                    {!nMetricsAvail && <div className="drawer-dim">Current metrics unavailable.</div>}
+                    <div className="metric-charts" style={{ flexDirection: 'row' }}>
+                      <div style={{ flex: 1 }}>
+                        <MetricsChart
+                          id="node-cpu"
+                          label="CPU"
+                          data={metricHistory.available
+                            ? metricHistory.points.map((point) => ({ timestamp: point.timestamp, value: point.cpuMilli }))
+                            : ncpuHist}
+                          limit={nMetricsNow?.cpuCapacityMilli}
+                          thresholdLabel="capacity"
+                          format={fmtCpuM}
+                          fallbackColor="#58a6ff"
+                        />
                       </div>
-                    )}
+                      <div style={{ flex: 1 }}>
+                        <MetricsChart
+                          id="node-mem"
+                          label="Memory"
+                          data={metricHistory.available
+                            ? metricHistory.points.map((point) => ({ timestamp: point.timestamp, value: point.memBytes == null ? null : point.memBytes / 1024 ** 3 }))
+                            : nmemHist.map(b => b / 1024 ** 3)}
+                          limit={nMetricsNow ? nMetricsNow.memCapacityBytes / 1024 ** 3 : null}
+                          thresholdLabel="capacity"
+                          format={fmtGi}
+                          fallbackColor="#bc8cff"
+                        />
+                      </div>
+                    </div>
                   </div>
                   <div className="cluster-info-card">
                     <h3><Icon name="nodes" size={15} /> Node Info</h3>
@@ -434,6 +567,14 @@ export default function Nodes({ active = true, focusNode, onFocusHandled, onNavi
                 )}
               </div>
             )}
+
+            {activeTab === 'terminal' && (
+              <div className="details-tab-content" style={{ padding: 0, height: '100%', display: 'flex', flexDirection: 'column' }}>
+                {active
+                  ? <TerminalViewer resource={{ kind: 'Node', name: selectedNode.name }} />
+                  : <div className="loading-indicator">The node terminal closes when you leave the Nodes page.</div>}
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -445,6 +586,38 @@ export default function Nodes({ active = true, focusNode, onFocusHandled, onNavi
           items={nodeMenuItems(menu.node)}
           onClose={() => setMenu(null)}
         />
+      )}
+
+      {nodeAction?.type === 'drain' && (
+        <div className="action-modal-backdrop" onClick={() => !nodeAction.busy && setNodeAction(null)}>
+          <div className="action-modal" onClick={(e) => e.stopPropagation()}>
+            <h3 className="action-modal-title danger"><Icon name="delete" size={16} /> Drain node</h3>
+            <p className="action-modal-body">
+              Evict regular pods from <b>{nodeAction.node.name}</b>. DaemonSet pods stay on the node, and eviction respects PodDisruptionBudgets.
+              The node is cordoned as part of the drain and stays unschedulable until you uncordon it.
+            </p>
+            <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, margin: '0 0 16px', color: 'var(--text-secondary)', fontSize: 12, lineHeight: 1.45 }}>
+              <input
+                type="checkbox"
+                checked={nodeAction.deleteEmptyDirData}
+                disabled={nodeAction.busy}
+                onChange={(e) => setNodeAction((current) => ({ ...current, deleteEmptyDirData: e.target.checked }))}
+              />
+              <span>Allow deleting local data stored in <code>emptyDir</code> volumes</span>
+            </label>
+            {nodeAction.error && <div className="namespace-delete-error">{nodeAction.error}</div>}
+            <div className="action-modal-actions">
+              <button className="action-modal-btn" onClick={() => setNodeAction(null)} disabled={nodeAction.busy}>Cancel</button>
+              <button
+                className="action-modal-btn primary danger"
+                onClick={() => runNodeOperation('drain', nodeAction.node, { deleteEmptyDirData: nodeAction.deleteEmptyDirData })}
+                disabled={nodeAction.busy || nodeBusy}
+              >
+                {nodeAction.busy ? 'Draining…' : 'Drain node'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

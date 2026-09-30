@@ -959,6 +959,30 @@ function nodeMetricNow(name) {
   };
 }
 
+function demoMetricHistory(kind, namespace, name, period) {
+  const durations = { '15m': 15 * 60, '1h': 3600, '6h': 6 * 3600, '24h': 24 * 3600, '7d': 7 * 24 * 3600 };
+  const durationSeconds = durations[period];
+  if (!durationSeconds) return { available: false, points: [], message: 'Unsupported time range.' };
+  const base = kind === 'pod'
+    ? cluster.podMetricBase[`${namespace}/${name}`]
+    : cluster.nodeMetricBase[name];
+  if (!base) return { available: false, points: [], message: 'No demo metrics for this resource.' };
+
+  const stepSeconds = Math.max(15, Math.ceil(durationSeconds / 120));
+  const pointCount = Math.floor(durationSeconds / stepSeconds);
+  const seed = [...`${namespace}/${name}`].reduce((sum, char) => sum + char.charCodeAt(0), 0);
+  const end = Math.floor(Date.now() / (stepSeconds * 1000)) * stepSeconds;
+  const points = Array.from({ length: pointCount + 1 }, (_, index) => {
+    const wave = Math.sin((index + seed) / 8) * 0.12 + Math.sin((index + seed) / 21) * 0.05;
+    return {
+      timestamp: new Date((end - (pointCount - index) * stepSeconds) * 1000).toISOString(),
+      cpuMilli: round1(Math.max(0, base.cpuMilli * (1 + wave))),
+      memBytes: Math.round(Math.max(0, base.memBytes * (1 + wave * 0.4)))
+    };
+  });
+  return { available: true, source: 'Demo', period, stepSeconds, points, message: null };
+}
+
 // ----------------------------------------------------------------------------
 // Topology (matches server.js { nodes:[{id,kind,name,category,status}], edges:[{source,target,type}] })
 // ----------------------------------------------------------------------------
@@ -1107,8 +1131,30 @@ export function handle(req, res) {
     const seg = p.split('/').filter(Boolean); // e.g. ['api','resources','shop']
     const json = (obj, code = 200) => { res.status(code).json(obj); return true; };
 
+    // ---------- synthetic current + historical metrics ----------
+    if (method === 'GET' && seg[1] === 'metrics' && seg[2] === 'history' && seg[3] === 'pod') {
+      return json(demoMetricHistory('pod', decodeURIComponent(seg[4] || ''), decodeURIComponent(seg[5] || ''), q.period || '1h'));
+    }
+    if (method === 'GET' && seg[1] === 'metrics' && seg[2] === 'history' && seg[3] === 'node') {
+      return json(demoMetricHistory('node', '', decodeURIComponent(seg[4] || ''), q.period || '1h'));
+    }
+    if (method === 'GET' && seg[1] === 'metrics' && seg[2] === 'pod' && seg[3] && seg[4]) {
+      const metrics = podMetricNow(decodeURIComponent(seg[3]), decodeURIComponent(seg[4]));
+      return json(metrics ? { ...metrics, available: true, source: 'Demo metrics' } : { available: false });
+    }
+    if (method === 'GET' && seg[1] === 'metrics' && seg[2] === 'node' && seg[3]) {
+      const metrics = nodeMetricNow(decodeURIComponent(seg[3]));
+      return json(metrics || { available: false });
+    }
+
     // ---------- cluster summary ----------
     if (method === 'GET' && p === '/api/cluster/summary') return json(clusterSummary());
+    if (method === 'GET' && p === '/api/cluster/pods-summary') {
+      return json({ pods: clusterSummary().pods });
+    }
+    if (method === 'GET' && p === '/api/cluster/metrics') {
+      return json({ resourceUsage: clusterSummary().resourceUsage });
+    }
 
     // ---------- namespaces ----------
     if (method === 'GET' && p === '/api/namespaces') {
@@ -1128,6 +1174,41 @@ export function handle(req, res) {
     if (method === 'GET' && p === '/api/rbac') return json(rbacResponse());
 
     // ---------- nodes ----------
+    if (method === 'POST' && seg[1] === 'nodes' && ['cordon', 'uncordon', 'drain'].includes(seg[3])) {
+      const nodeName = decodeURIComponent(seg[2] || '');
+      const node = cluster.nodes.find((item) => item.metadata.name === nodeName);
+      if (!node) return json({ error: `Node not found: ${nodeName}` }, 404);
+      if (seg[3] === 'cordon') {
+        node.spec.unschedulable = true;
+        return json({ success: true, message: `${nodeName} cordoned (demo)` });
+      }
+      if (seg[3] === 'uncordon') {
+        node.spec.unschedulable = false;
+        return json({ success: true, message: `${nodeName} uncordoned (demo)` });
+      }
+
+      node.spec.unschedulable = true;
+      const candidates = cluster.nodes
+        .filter((item) => item.metadata.name !== nodeName && !item.spec?.unschedulable)
+        .map((item) => ({ name: item.metadata.name, load: allPods().filter((pod) => pod.spec?.nodeName === item.metadata.name).length }))
+        .sort((a, b) => a.load - b.load);
+      for (const pod of allPods().filter((item) => item.spec?.nodeName === nodeName)) {
+        const owners = pod.metadata?.ownerReferences || [];
+        const isDaemonSetPod = owners.some((owner) => owner.kind === 'DaemonSet');
+        const isMirrorPod = Boolean(pod.metadata?.annotations?.['kubernetes.io/config.mirror']);
+        if (isDaemonSetPod || isMirrorPod) continue;
+        const destination = candidates.find((candidate) => candidate.name !== nodeName);
+        if (destination) {
+          pod.spec.nodeName = destination.name;
+          destination.load++;
+          candidates.sort((a, b) => a.load - b.load);
+        } else {
+          pod.spec.nodeName = undefined;
+          pod.status.phase = 'Pending';
+        }
+      }
+      return json({ success: true, message: `${nodeName} drained (demo)` });
+    }
     if (method === 'GET' && p === '/api/nodes') return json({ nodes: cluster.nodes.map(formatNode) });
     if (method === 'GET' && seg[1] === 'nodes' && seg[3] === 'pods') {
       const nodeName = decodeURIComponent(seg[2]);
@@ -1241,23 +1322,66 @@ export function handle(req, res) {
       });
     }
 
-    // ---------- resources list ----------
-    if (method === 'GET' && seg[1] === 'resources' && seg[2]) {
+    // ---------- compact Overview counts ----------
+    if (method === 'GET' && seg[1] === 'resources' && seg[2] && seg[3] === 'overview') {
       const nsName = decodeURIComponent(seg[2]);
-      const n = cluster.ns[nsName];
-      if (!n) return json({ pods: [], services: [], deployments: [], statefulSets: [], daemonSets: [], configMaps: [], secrets: [], serviceAccounts: [], ingresses: [], networkPolicies: [], persistentVolumeClaims: [] });
+      const sources = nsName === 'all'
+        ? Object.entries(cluster.ns)
+        : cluster.ns[nsName] ? [[nsName, cluster.ns[nsName]]] : [];
+      const overviewByNamespace = {};
+      for (const [name, source] of sources) {
+        const phases = { Running: 0, Pending: 0, Succeeded: 0, Failed: 0, Unknown: 0 };
+        for (const pod of source.pods || []) {
+          const phase = pod.status?.phase || 'Unknown';
+          phases[phase in phases ? phase : 'Unknown']++;
+        }
+        overviewByNamespace[name] = {
+          pods: { total: (source.pods || []).length, phases },
+          deployments: (source.deployments || []).length,
+          statefulSets: (source.statefulSets || []).length,
+          daemonSets: (source.daemonSets || []).length,
+          services: (source.services || []).length
+        };
+      }
+      return json({ overviewByNamespace });
+    }
+
+    // ---------- single-kind resource list ----------
+    if (method === 'GET' && seg[1] === 'resources' && seg[2] && seg[3]) {
+      const nsName = decodeURIComponent(seg[2]);
+      const resourceType = decodeURIComponent(seg[3]);
+      const types = {
+        pods: ['pods', 'Pod'], services: ['services', 'Service'], deployments: ['deployments', 'Deployment'],
+        statefulSets: ['statefulSets', 'StatefulSet'], daemonSets: ['daemonSets', 'DaemonSet'],
+        replicaSets: ['replicaSets', 'ReplicaSet'], replicationControllers: ['replicationControllers', 'ReplicationController'],
+        jobs: ['jobs', 'Job'], cronJobs: ['cronjobs', 'CronJob'], configMaps: ['configMaps', 'ConfigMap'],
+        secrets: ['secrets', 'Secret'], serviceAccounts: ['serviceAccounts', 'ServiceAccount'],
+        ingresses: ['ingresses', 'Ingress'], networkPolicies: ['networkPolicies', 'NetworkPolicy'],
+        persistentVolumeClaims: ['persistentVolumeClaims', 'PersistentVolumeClaim']
+      };
+      const entry = types[resourceType];
+      if (!entry) return json({ error: `Unsupported resource type: ${resourceType}` }, 404);
+      const [collection, kind] = entry;
+      const sources = nsName === 'all' ? Object.values(cluster.ns) : [cluster.ns[nsName]].filter(Boolean);
+      return json({ [resourceType]: sources.flatMap((n) => n[collection] || []).map((item) => formatResource(item, kind)) });
+    }
+
+    // ---------- resources list (used for Overview) ----------
+    if (method === 'GET' && seg[1] === 'resources' && seg[2] && !seg[3]) {
+      const nsName = decodeURIComponent(seg[2]);
+      const sources = nsName === 'all' ? Object.values(cluster.ns) : [cluster.ns[nsName]].filter(Boolean);
+      if (!sources.length) return json({ services: [], deployments: [], statefulSets: [], daemonSets: [], configMaps: [], secrets: [], serviceAccounts: [], ingresses: [], networkPolicies: [], persistentVolumeClaims: [] });
       return json({
-        pods: n.pods.map((x) => formatResource(x, 'Pod')),
-        services: n.services.map((x) => formatResource(x, 'Service')),
-        deployments: n.deployments.map((x) => formatResource(x, 'Deployment')),
-        statefulSets: n.statefulSets.map((x) => formatResource(x, 'StatefulSet')),
-        daemonSets: n.daemonSets.map((x) => formatResource(x, 'DaemonSet')),
-        configMaps: n.configMaps.map((x) => formatResource(x, 'ConfigMap')),
-        secrets: n.secrets.map((x) => formatResource(x, 'Secret')),
-        serviceAccounts: n.serviceAccounts.map((x) => formatResource(x, 'ServiceAccount')),
-        ingresses: n.ingresses.map((x) => formatResource(x, 'Ingress')),
-        networkPolicies: n.networkPolicies.map((x) => formatResource(x, 'NetworkPolicy')),
-        persistentVolumeClaims: n.persistentVolumeClaims.map((x) => formatResource(x, 'PersistentVolumeClaim')),
+        services: sources.flatMap((n) => n.services).map((x) => formatResource(x, 'Service')),
+        deployments: sources.flatMap((n) => n.deployments).map((x) => formatResource(x, 'Deployment')),
+        statefulSets: sources.flatMap((n) => n.statefulSets).map((x) => formatResource(x, 'StatefulSet')),
+        daemonSets: sources.flatMap((n) => n.daemonSets).map((x) => formatResource(x, 'DaemonSet')),
+        configMaps: sources.flatMap((n) => n.configMaps).map((x) => formatResource(x, 'ConfigMap')),
+        secrets: sources.flatMap((n) => n.secrets).map((x) => formatResource(x, 'Secret')),
+        serviceAccounts: sources.flatMap((n) => n.serviceAccounts).map((x) => formatResource(x, 'ServiceAccount')),
+        ingresses: sources.flatMap((n) => n.ingresses).map((x) => formatResource(x, 'Ingress')),
+        networkPolicies: sources.flatMap((n) => n.networkPolicies).map((x) => formatResource(x, 'NetworkPolicy')),
+        persistentVolumeClaims: sources.flatMap((n) => n.persistentVolumeClaims).map((x) => formatResource(x, 'PersistentVolumeClaim')),
       });
     }
 
@@ -1558,6 +1682,11 @@ function clusterSummary() {
     currentContext: DEMO_CONTEXT, serverVersion: 'v1.29.4', platform: 'linux/amd64',
     contexts: [DEMO_CONTEXT], clusters: [DEMO_CONTEXT], nodes: nodeSummary, roles,
     capacity: { cpuCapacity: +cpuCapacity.toFixed(1), cpuAllocatable: +cpuAllocatable.toFixed(1), memCapacityBytes: memCapacity, memAllocatableBytes: memAllocatable },
+    resourceUsage: {
+      source: null, cpuSource: null, memorySource: null,
+      cpuMilli: null, memBytes: null, cpuRequestsMilli: null,
+      cpuLimitsMilli: null, memRequestsBytes: null, memLimitsBytes: null
+    },
     versions: [...versions], osImages: [...osImages], pods: { total: podTotal, phases }, namespaceCount: cluster.nsMeta.length,
   };
 }
@@ -1725,24 +1854,35 @@ function pfStart(body) {
 // ----------------------------------------------------------------------------
 export function shellSession(ws, meta = {}) {
   const send = (s) => { try { if (ws.readyState === 1) ws.send(s); } catch { /* ignore */ } };
-  const PROMPT = '\x1b[1;32mdemo@' + (meta.pod || 'pod') + '\x1b[0m:\x1b[1;34m/app\x1b[0m$ ';
+  const targetName = meta.node || meta.pod || 'pod';
+  const isNode = Boolean(meta.node);
+  const PROMPT = '\x1b[1;32mdemo@' + targetName + '\x1b[0m:\x1b[1;34m' + (isNode ? '/' : '/app') + '\x1b[0m' + (isNode ? '# ' : '$ ');
   let line = '';
 
   const banner = [
     '\r\n\x1b[1;36m╭──────────────────────────────────────────────╮\x1b[0m',
-    '\r\n\x1b[1;36m│\x1b[0m  k8sight demo shell (synthetic pod)           \x1b[1;36m│\x1b[0m',
+    isNode
+      ? '\r\n\x1b[1;36m│\x1b[0m  k8sight demo shell (synthetic node)          \x1b[1;36m│\x1b[0m'
+      : '\r\n\x1b[1;36m│\x1b[0m  k8sight demo shell (synthetic pod)           \x1b[1;36m│\x1b[0m',
     '\r\n\x1b[1;36m╰──────────────────────────────────────────────╯\x1b[0m',
-    `\r\n\x1b[90mConnected to ${meta.namespace || 'shop'}/${meta.pod || 'pod'}${meta.container ? ' [' + meta.container + ']' : ''}. This is a demo — no real cluster.\x1b[0m`,
+    isNode
+      ? `\r\n\x1b[90mConnected to node/${meta.node}. This is a demo — no real cluster.\x1b[0m`
+      : `\r\n\x1b[90mConnected to ${meta.namespace || 'shop'}/${meta.pod || 'pod'}${meta.container ? ' [' + meta.container + ']' : ''}. This is a demo — no real cluster.\x1b[0m`,
     "\r\n\x1b[90mTry: ls, pwd, whoami, cat <file>, env, help, clear, exit\x1b[0m\r\n\r\n",
   ].join('');
   send(banner);
   send(PROMPT);
 
-  const FS = {
-    'app.js': "console.log('demo app listening on :8080');\n",
-    'config.yaml': 'log_level: info\ncurrency: USD\n',
-    'readme.txt': 'This is a synthetic demo pod filesystem.\n',
-  };
+  const FS = isNode
+    ? {
+        'etc/os-release': 'NAME="Demo Linux"\nVERSION="1.0"\n',
+        'var/log/kubelet.log': 'demo kubelet: node is Ready\n',
+      }
+    : {
+        'app.js': "console.log('demo app listening on :8080');\n",
+        'config.yaml': 'log_level: info\ncurrency: USD\n',
+        'readme.txt': 'This is a synthetic demo pod filesystem.\n',
+      };
 
   const run = (cmd) => {
     const [name, ...args] = cmd.trim().split(/\s+/);
@@ -1750,12 +1890,12 @@ export function shellSession(ws, meta = {}) {
       case '': return '';
       case 'help': return 'Available: ls, pwd, whoami, cat <file>, echo, env, hostname, date, uname, ps, clear, exit\r\n';
       case 'ls': return Object.keys(FS).join('  ') + '\r\n';
-      case 'pwd': return '/app\r\n';
+      case 'pwd': return (isNode ? '/' : '/app') + '\r\n';
       case 'whoami': return 'root\r\n';
-      case 'hostname': return (meta.pod || 'demo-pod') + '\r\n';
+      case 'hostname': return targetName + '\r\n';
       case 'date': return new Date().toString() + '\r\n';
-      case 'uname': return 'Linux ' + (meta.pod || 'demo-pod') + ' 5.15.0-101-generic #111-Ubuntu x86_64 GNU/Linux\r\n';
-      case 'env': return `POD_NAMESPACE=${meta.namespace || 'shop'}\r\nHOSTNAME=${meta.pod || 'demo-pod'}\r\nPATH=/usr/local/bin:/usr/bin:/bin\r\nHOME=/root\r\n`;
+      case 'uname': return 'Linux ' + targetName + ' 5.15.0-101-generic #111-Ubuntu x86_64 GNU/Linux\r\n';
+      case 'env': return `${isNode ? `NODE_NAME=${meta.node}\r\n` : `POD_NAMESPACE=${meta.namespace || 'shop'}\r\n`}HOSTNAME=${targetName}\r\nPATH=/usr/local/bin:/usr/bin:/bin\r\nHOME=/root\r\n`;
       case 'ps': return '  PID TTY          TIME CMD\r\n    1 ?        00:00:01 app\r\n   42 pts/0    00:00:00 sh\r\n';
       case 'echo': return args.join(' ') + '\r\n';
       case 'cat': {

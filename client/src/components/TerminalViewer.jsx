@@ -65,6 +65,7 @@ export default function TerminalViewer({ resource, namespace }) {
 
   const ns = resource?.namespace || namespace;
   const container = resource?.container;
+  const isNode = resource?.kind === 'Node';
 
   const connect = () => {
     const term = termRef.current;
@@ -72,8 +73,10 @@ export default function TerminalViewer({ resource, namespace }) {
     setStatus('connecting');
 
     const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
-    const params = new URLSearchParams({ namespace: ns, pod: resource.name });
-    if (container) params.set('container', container);
+    const params = isNode
+      ? new URLSearchParams({ node: resource.name })
+      : new URLSearchParams({ namespace: ns, pod: resource.name });
+    if (!isNode && container) params.set('container', container);
     const ws = new WebSocket(`${proto}://${window.location.host}/ws/exec?${params.toString()}`);
     wsRef.current = ws;
 
@@ -151,9 +154,9 @@ export default function TerminalViewer({ resource, namespace }) {
       try { term.dispose(); } catch (e) {}
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [resource?.name]);
+  }, [resource?.name, resource?.kind]);
 
-  const statusText = status === 'connected' ? `pod/${resource?.name}`
+  const statusText = status === 'connected' ? `${isNode ? 'node' : 'pod'}/${resource?.name}`
     : status === 'connecting' ? 'connecting…' : 'disconnected';
   const dotClass = status === 'connected' ? 'running' : status === 'connecting' ? 'pending' : 'failed';
 
@@ -164,6 +167,7 @@ export default function TerminalViewer({ resource, namespace }) {
           <span className={`status-dot ${dotClass}`} />
           {statusText}
         </span>
+        {isNode && <span title="A privileged debug pod mounts the node root at /host; cleanup is requested when the terminal closes." style={{ fontSize: 11, color: 'var(--text-muted)' }}>temporary privileged node session</span>}
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
           <button className="terminal-btn" onClick={reconnect} title="Reconnect">
             <Icon name="refresh" size={14} /> Reconnect
