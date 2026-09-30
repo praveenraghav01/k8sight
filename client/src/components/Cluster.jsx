@@ -83,40 +83,79 @@ function CapacityBar({ label, icon, used, total, unit, color }) {
 
 export default function Cluster({ refreshSignal = 0, configStatus = {}, onSwitchContext }) {
   const [data, setData] = useState(null);
+  const [podSummary, setPodSummary] = useState(null);
+  const [resourceUsage, setResourceUsage] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [podsLoading, setPodsLoading] = useState(true);
+  const [metricsLoading, setMetricsLoading] = useState(true);
   const [error, setError] = useState(null);
 
   // First load shows the loader; every later refresh re-fetches in place, so the
   // numbers just change instead of the page blanking out.
   const didMount = useRef(false);
   useEffect(() => {
-    fetchSummary({ silent: didMount.current });
+    let live = true;
+    const silent = didMount.current;
+    if (!silent) setLoading(true);
+    setPodsLoading(true);
+    setMetricsLoading(true);
+
+    const fetchSummary = async () => {
+      try {
+        const res = await axios.get('/api/cluster/summary');
+        if (!live) return;
+        setData(res.data);
+        if (res.data?.pods?.total != null) setPodSummary(res.data.pods);
+        setError(res.data?.error || null);
+      } catch (err) {
+        if (live && !silent) {
+          setError(`Failed to load cluster summary: ${err.response?.data?.error || err.message}`);
+        }
+      } finally {
+        if (live) setLoading(false);
+      }
+    };
+
+    const fetchPodsSummary = async () => {
+      try {
+        const res = await axios.get('/api/cluster/pods-summary');
+        if (live) setPodSummary(res.data?.pods || null);
+      } catch {
+        // Pod counts load independently and do not gate node/capacity data.
+      } finally {
+        if (live) setPodsLoading(false);
+      }
+    };
+
+    const fetchMetrics = async () => {
+      try {
+        const res = await axios.get('/api/cluster/metrics');
+        if (live) setResourceUsage(res.data?.resourceUsage || null);
+      } catch {
+        // Keep the core dashboard available when its optional metrics sources
+        // are slow or unavailable.
+      } finally {
+        if (live) setMetricsLoading(false);
+      }
+    };
+
+    fetchSummary();
+    fetchPodsSummary();
+    fetchMetrics();
     didMount.current = true;
+
+    return () => { live = false; };
   }, [refreshSignal, configStatus.currentContext]);
 
-  const fetchSummary = async ({ silent = false } = {}) => {
-    if (!silent) setLoading(true);
-    try {
-      const res = await axios.get('/api/cluster/summary');
-      setData(res.data);
-      setError(res.data?.error || null);
-    } catch (err) {
-      // A background reload keeps the last good data on screen rather than
-      // replacing it with an error the user didn't ask for.
-      if (!silent) setError(`Failed to load cluster summary: ${err.response?.data?.error || err.message}`);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const phases = data?.pods?.phases || {};
+  const phases = podSummary?.phases || {};
   const healthSegments = [
     { label: 'Running', value: (phases.Running || 0) + (phases.Succeeded || 0), color: COLORS.running },
     { label: 'Pending', value: phases.Pending || 0, color: COLORS.pending },
     { label: 'Failed', value: (phases.Failed || 0) + (phases.Unknown || 0), color: COLORS.failed }
   ];
-  const podTotal = data?.pods?.total || 0;
+  const podTotal = podSummary?.total ?? null;
   const healthyPct = podTotal ? Math.round((healthSegments[0].value / podTotal) * 100) : 0;
+  const podCountLabel = podTotal == null ? (podsLoading ? 'loading' : 'unavailable') : `${podTotal} pods`;
 
   const nodeSegments = [
     { label: 'Ready', value: data?.nodes?.ready || 0, color: COLORS.running },
@@ -126,7 +165,7 @@ export default function Cluster({ refreshSignal = 0, configStatus = {}, onSwitch
   const nodeReadyPct = nodeTotal ? Math.round(((data?.nodes?.ready || 0) / nodeTotal) * 100) : 0;
 
   const cap = data?.capacity || {};
-  const resources = data?.resourceUsage || {};
+  const resources = resourceUsage || data?.resourceUsage || {};
   const roleEntries = Object.entries(data?.roles || {});
   const contextsInfo = configStatus.contextsInfo || [];
   const contextInfoByName = new Map(contextsInfo.map((context) => [context.name, context]));
@@ -156,7 +195,9 @@ export default function Cluster({ refreshSignal = 0, configStatus = {}, onSwitch
       dataSource: resources.memorySource
     },
     {
-      label: 'Pods', value: podTotal, sub: `${phases.Running || 0} running`, icon: 'pod', tone: 'cyan',
+      label: 'Pods', value: podTotal == null ? '…' : podTotal,
+      sub: podTotal == null ? (podsLoading ? 'loading' : 'unavailable') : `${phases.Running || 0} running`,
+      icon: 'pod', tone: 'cyan',
       detailLines: [
         `Pending ${phases.Pending || 0}`,
         `Succeeded ${phases.Succeeded || 0}`,
@@ -195,11 +236,11 @@ export default function Cluster({ refreshSignal = 0, configStatus = {}, onSwitch
                   <div className="kpi-value">{k.value}</div>
                   <div className="kpi-label">{k.label}</div>
                   <div className="kpi-sub">{k.sub}</div>
-                  {k.detailLines.map((line, index) => (
+                  {(k.detailLines || []).map((line, index) => (
                     <div key={index} className="kpi-detail-line">{line}</div>
                   ))}
                   <div className="kpi-detail-source">
-                    Source: {k.dataSource || 'unavailable'}
+                    Source: {k.dataSource || (metricsLoading ? 'loading' : 'unavailable')}
                   </div>
                 </div>
               </div>
@@ -229,10 +270,10 @@ export default function Cluster({ refreshSignal = 0, configStatus = {}, onSwitch
             <div className="chart-card">
               <div className="chart-card-title">
                 <h3>Pod Health</h3>
-                <span className="total">{podTotal} pods</span>
+                <span className="total">{podCountLabel}</span>
               </div>
               <div className="donut-wrap">
-                <Donut segments={healthSegments} centerNum={`${healthyPct}%`} centerLabel="healthy" />
+                <Donut segments={healthSegments} centerNum={podTotal == null ? '…' : `${healthyPct}%`} centerLabel="healthy" />
                 <div className="legend">
                   {healthSegments.map(s => (
                     <div key={s.label} className="legend-item">
