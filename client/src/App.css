@@ -742,17 +742,6 @@ body {
   text-transform: uppercase;
   letter-spacing: 0.6px;
 }
-.nav-brand-version {
-  margin-left: 6px;
-  padding: 1px 5px;
-  border-radius: 5px;
-  background: var(--bg-hover);
-  color: var(--text-secondary);
-  font-family: var(--mono);
-  font-size: 9.5px;
-  letter-spacing: 0;
-  text-transform: none;
-}
 
 .nav-cluster {
   font-size: 10.5px;
