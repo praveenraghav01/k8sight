@@ -97,7 +97,41 @@ export function createMcpServer({ baseURL, version, allowWrite } = {}) {
     description: 'List workloads/services/config/etc. in a namespace (or "all"). Returns a compact per-kind summary (name, namespace, status).',
     inputSchema: { namespace: z.string().default('all').describe('namespace name, or "all"') },
   }, wrap(async ({ namespace = 'all' }) => {
-    const { data } = await api.get(`/api/resources/${encodeURIComponent(namespace)}`);
+    if (namespace === 'all') {
+      try {
+        const [resourcesResponse, podsResponse] = await Promise.all([
+          api.get('/api/resources/all'),
+          api.get('/api/resources/all/pods'),
+        ]);
+        const summary = {};
+        for (const [kind, items] of Object.entries({ ...resourcesResponse.data, ...podsResponse.data })) {
+          if (Array.isArray(items) && items.length) {
+            summary[kind] = items.map((r) => ({ name: r.name, namespace: r.namespace, status: r.status }));
+          }
+        }
+        return ok(summary);
+      } catch {
+        // Preserve namespace-scoped access when a role denies cluster-wide list.
+      }
+    }
+    const namespaces = namespace === 'all'
+      ? (await api.get('/api/namespaces')).data.namespaces
+      : [namespace];
+    const data = {};
+    let cursor = 0;
+    const loadNamespace = async () => {
+      while (cursor < namespaces.length) {
+        const current = namespaces[cursor++];
+        const [resourcesResponse, podsResponse] = await Promise.all([
+          api.get(`/api/resources/${encodeURIComponent(current)}`).catch(() => ({ data: {} })),
+          api.get(`/api/resources/${encodeURIComponent(current)}/pods`).catch(() => ({ data: {} })),
+        ]);
+        for (const [kind, items] of Object.entries({ ...resourcesResponse.data, ...podsResponse.data })) {
+          if (Array.isArray(items)) data[kind] = [...(data[kind] || []), ...items];
+        }
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(12, namespaces.length) }, loadNamespace));
     const summary = {};
     for (const [kind, list] of Object.entries(data)) {
       if (Array.isArray(list) && list.length) {
@@ -175,8 +209,16 @@ export function createMcpServer({ baseURL, version, allowWrite } = {}) {
     description: 'Cluster overview: node & pod health, CPU/memory capacity and allocatable, Kubernetes version, node roles.',
     inputSchema: {},
   }, wrap(async () => {
-    const { data } = await api.get('/api/cluster/summary');
-    return ok(data);
+    const [summaryResponse, podsResponse, metricsResponse] = await Promise.all([
+      api.get('/api/cluster/summary'),
+      api.get('/api/cluster/pods-summary').catch(() => null),
+      api.get('/api/cluster/metrics').catch(() => null),
+    ]);
+    return ok({
+      ...summaryResponse.data,
+      ...(podsResponse?.data || {}),
+      ...(metricsResponse?.data || {})
+    });
   }));
 
   server.registerTool('list_nodes', {

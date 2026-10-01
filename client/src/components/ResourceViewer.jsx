@@ -117,8 +117,16 @@ export default function ResourceViewer({
     next.has(k) ? next.delete(k) : next.add(k);
     return next;
   });
-  const allSelected = resources.length > 0 && resources.every(r => selectedRows.has(rowKey(r)));
-  const someSelected = resources.some(r => selectedRows.has(rowKey(r)));
+  const { allSelected, someSelected } = useMemo(() => {
+    let selectedCount = 0;
+    for (const resource of resources) {
+      if (selectedRows.has(`${resource.namespace}/${resource.name}`)) selectedCount++;
+    }
+    return {
+      allSelected: resources.length > 0 && selectedCount === resources.length,
+      someSelected: selectedCount > 0
+    };
+  }, [resources, selectedRows]);
   const toggleAll = () => setSelectedRows(allSelected ? new Set() : new Set(resources.map(rowKey)));
 
   // reset selection when the view or namespace changes
@@ -275,16 +283,19 @@ export default function ResourceViewer({
   useEffect(() => {
     if (!active || resourceType !== 'pod') return;
     let live = true;
+    const metricsPath = namespace === 'all'
+      ? '/api/metrics/pods'
+      : `/api/metrics/pods/${encodeURIComponent(namespace)}`;
     const fetchMetrics = async () => {
       try {
-        const res = await axios.get('/api/metrics/pods');
+        const res = await axios.get(metricsPath);
         if (live) setPodMetrics(res.data.metrics || {});
       } catch (e) { /* metrics optional */ }
     };
     fetchMetrics();
     const iv = setInterval(fetchMetrics, 15000);
     return () => { live = false; clearInterval(iv); };
-  }, [active, resourceType]);
+  }, [active, resourceType, namespace]);
 
   const fmtCpu = (m) => (m >= 1000 ? `${(m / 1000).toFixed(2)}` : `${Math.round(m)}m`);
   const fmtMem = (b) => {
@@ -324,8 +335,8 @@ export default function ResourceViewer({
 
   // Ordering key for a column — a number where the column is numeric, a string
   // otherwise. Missing numbers sort last in ascending order.
-  const sortValue = (r, col) => {
-    const m = podMetrics[`${r.namespace}/${r.name}`];
+  const sortValue = useMemo(() => (r, col, metrics) => {
+    const m = metrics?.[`${r.namespace}/${r.name}`];
     switch (col) {
       case 'Name': return r.name || '';
       case 'Namespace': return r.namespace || '';
@@ -353,18 +364,19 @@ export default function ResourceViewer({
       case 'Binding Mode': return r.bindingMode || '';
       default: return '';
     }
-  };
+  }, []);
 
+  const metricsForSort = sort?.col === 'CPU' || sort?.col === 'Memory' ? podMetrics : null;
   const sortedResources = useMemo(() => {
     if (!sort) return resources;
     const dir = sort.dir === 'asc' ? 1 : -1;
     return [...resources].sort((a, b) => {
-      const va = sortValue(a, sort.col);
-      const vb = sortValue(b, sort.col);
+      const va = sortValue(a, sort.col, metricsForSort);
+      const vb = sortValue(b, sort.col, metricsForSort);
       if (typeof va === 'number' && typeof vb === 'number') return (va - vb) * dir;
       return String(va).localeCompare(String(vb), undefined, { numeric: true, sensitivity: 'base' }) * dir;
     });
-  }, [resources, sort, podMetrics]);
+  }, [resources, sort, metricsForSort]);
 
   const renderCell = (resource, column) => {
     switch (column) {
