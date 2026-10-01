@@ -736,13 +736,6 @@ body {
   letter-spacing: 0.2px;
 }
 
-.nav-brand-sub {
-  font-size: 10.5px;
-  color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.6px;
-}
-
 .nav-cluster {
   font-size: 10.5px;
   color: var(--text-muted);
