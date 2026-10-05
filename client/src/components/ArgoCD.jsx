@@ -1030,7 +1030,8 @@ function AppResourceGraph({ app, resources }) {
   // Build an ownership tree: App → workload controllers → ReplicaSets/Jobs → Pods,
   // plus Services/config/etc. hung directly off the App. ArgoCD's status.resources
   // has no parent links, so we infer them from Kubernetes' name-prefix convention.
-  const { positioned, links } = useMemo(() => {
+  const canvasRef = useRef(null);
+  const { positioned, links, width, height } = useMemo(() => {
     const keyOf = (kind, ns, nm) => `${kind}|${ns || ''}|${nm}`;
     const nodes = [{ id: '__app__', kind: 'Application', name: app.name, sync: app.syncStatus, health: app.healthStatus, isApp: true }];
     const rs = resources.map((r) => ({ ...r, id: keyOf(r.kind, r.namespace, r.name) }));
@@ -1067,11 +1068,20 @@ function AppResourceGraph({ app, resources }) {
     const queue = ['__app__'];
     while (queue.length) { const id = queue.shift(); (kids.get(id) || []).forEach((c) => { if (!depth.has(c)) { depth.set(c, depth.get(id) + 1); queue.push(c); } }); }
 
-    // y: pre-order DFS — the Application sits at the top, each resource stacked
-    // below it in tree order, so the view always starts at the app root.
-    const yPos = new Map(); let cursor = 0;
-    const walk = (id) => { yPos.set(id, cursor); cursor += GNODE_H + GGAP_Y; (kids.get(id) || []).forEach(walk); };
-    walk('__app__');
+    // y: tidy-tree layout (Reingold-Tilford style). Leaves stack vertically in
+    // tree order; each parent is centered on the vertical span of its children.
+    // This reads as a compact, aligned hierarchy instead of a diagonal cascade.
+    const ROW = GNODE_H + GGAP_Y;
+    const yPos = new Map(); let leafCursor = 0;
+    const place = (id) => {
+      const children = kids.get(id) || [];
+      if (!children.length) { yPos.set(id, leafCursor); leafCursor += ROW; return; }
+      children.forEach(place);
+      const first = yPos.get(children[0]);
+      const last = yPos.get(children[children.length - 1]);
+      yPos.set(id, (first + last) / 2);
+    };
+    place('__app__');
 
     const pos = new Map();
     nodes.forEach((n) => pos.set(n.id, { ...n, x: (depth.get(n.id) || 0) * (GNODE_W + GGAP_X), y: yPos.get(n.id) || 0 }));
@@ -1082,8 +1092,16 @@ function AppResourceGraph({ app, resources }) {
     return { positioned, links, width, height, appY: pos.get('__app__')?.y || 0 };
   }, [app, resources]);
 
-  // Reset to the top-left (the Application root) at a readable zoom.
-  const fitView = useCallback(() => { setZoom(1); setPan({ x: 40, y: 24 }); }, []);
+  // Scale the whole tree to fit the canvas (never upscale past 1:1) and center it.
+  const fitView = useCallback(() => {
+    const el = canvasRef.current;
+    const availW = (el?.clientWidth || 900) - 56;
+    const availH = (el?.clientHeight || 460) - 56;
+    const z = Math.max(0.3, Math.min(1, +Math.min(availW / width, availH / height).toFixed(2)));
+    setZoom(z);
+    const cw = el?.clientWidth || 900, ch = el?.clientHeight || 460;
+    setPan({ x: Math.max(28, (cw - width * z) / 2), y: Math.max(24, (ch - height * z) / 2) });
+  }, [width, height]);
   useEffect(() => { fitView(); }, [app.name, fitView]);
 
   const onMouseDown = (e) => { dragRef.current = { sx: e.clientX, sy: e.clientY, px: pan.x, py: pan.y }; setDragging(true); };
@@ -1102,7 +1120,7 @@ function AppResourceGraph({ app, resources }) {
   };
 
   return (
-    <div className={`topology-canvas argo-tree-canvas ${dragging ? 'dragging' : ''}`} style={{ minHeight: 460 }} onMouseDown={onMouseDown} onWheel={onWheel}>
+    <div ref={canvasRef} className={`topology-canvas argo-tree-canvas ${dragging ? 'dragging' : ''}`} style={{ minHeight: 460 }} onMouseDown={onMouseDown} onWheel={onWheel}>
       {positioned.length <= 1 && (
         <div className="topo-empty">This application reports no managed resources.</div>
       )}
