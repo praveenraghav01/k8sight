@@ -24,6 +24,13 @@ const fmtCpuUsage = (milli) => {
 
 const fmtMemoryUsage = (bytes) => bytes == null ? '—' : fmtBytes(bytes);
 
+function getClusterReference(value) {
+  const match = String(value).match(/^arn:aws:eks:([^:]+):(\d+):cluster\/(.+)$/);
+  return match
+    ? { name: match[3], details: `${match[1]} · ${match[2]}` }
+    : { name: value, details: '' };
+}
+
 function Donut({ segments, centerNum, centerLabel }) {
   const r = 54;
   const c = 2 * Math.PI * r;
@@ -74,7 +81,7 @@ function CapacityBar({ label, icon, used, total, unit, color }) {
   );
 }
 
-export default function Cluster({ refreshSignal = 0 }) {
+export default function Cluster({ refreshSignal = 0, configStatus = {}, onSwitchContext }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -85,7 +92,7 @@ export default function Cluster({ refreshSignal = 0 }) {
   useEffect(() => {
     fetchSummary({ silent: didMount.current });
     didMount.current = true;
-  }, [refreshSignal]);
+  }, [refreshSignal, configStatus.currentContext]);
 
   const fetchSummary = async ({ silent = false } = {}) => {
     if (!silent) setLoading(true);
@@ -121,21 +128,46 @@ export default function Cluster({ refreshSignal = 0 }) {
   const cap = data?.capacity || {};
   const resources = data?.resourceUsage || {};
   const roleEntries = Object.entries(data?.roles || {});
+  const contextsInfo = configStatus.contextsInfo || [];
+  const contextInfoByName = new Map(contextsInfo.map((context) => [context.name, context]));
+  const activeContext = configStatus.currentContext || data?.currentContext;
 
   const kpis = data ? [
-    { label: 'Nodes', value: `${data.nodes.ready}/${data.nodes.total}`, sub: 'ready', icon: 'nodes', tone: 'blue' },
+    {
+      label: 'Nodes', value: `${data.nodes.ready}/${data.nodes.total}`, sub: 'ready', icon: 'nodes', tone: 'blue',
+      detailLines: [`${data.nodes.notReady} not ready`], dataSource: 'Kubernetes API'
+    },
     {
       label: 'CPU Cores', value: cap.cpuCapacity, sub: `${cap.cpuAllocatable} allocatable`, icon: 'cpu', tone: 'green',
-      resourceLine: `Usage ${fmtCpuUsage(resources.cpuMilli)} · Request ${fmtCpuUsage(resources.cpuRequestsMilli)} · Limit ${fmtCpuUsage(resources.cpuLimitsMilli)}`,
-      resourceSource: resources.cpuSource
+      detailLines: [
+        `Usage ${fmtCpuUsage(resources.cpuMilli)}`,
+        `Request ${fmtCpuUsage(resources.cpuRequestsMilli)}`,
+        `Limit ${fmtCpuUsage(resources.cpuLimitsMilli)}`
+      ],
+      dataSource: resources.cpuSource
     },
     {
       label: 'Memory', value: fmtBytes(cap.memCapacityBytes), sub: `${fmtBytes(cap.memAllocatableBytes)} alloc`, icon: 'memory', tone: 'purple',
-      resourceLine: `Usage ${fmtMemoryUsage(resources.memBytes)} · Request ${fmtMemoryUsage(resources.memRequestsBytes)} · Limit ${fmtMemoryUsage(resources.memLimitsBytes)}`,
-      resourceSource: resources.memorySource
+      detailLines: [
+        `Usage ${fmtMemoryUsage(resources.memBytes)}`,
+        `Request ${fmtMemoryUsage(resources.memRequestsBytes)}`,
+        `Limit ${fmtMemoryUsage(resources.memLimitsBytes)}`
+      ],
+      dataSource: resources.memorySource
     },
-    { label: 'Pods', value: podTotal, sub: `${healthSegments[0].value} running`, icon: 'pod', tone: 'cyan' },
-    { label: 'Namespaces', value: data.namespaceCount, sub: 'total', icon: 'apps', tone: 'yellow' }
+    {
+      label: 'Pods', value: podTotal, sub: `${phases.Running || 0} running`, icon: 'pod', tone: 'cyan',
+      detailLines: [
+        `Pending ${phases.Pending || 0}`,
+        `Succeeded ${phases.Succeeded || 0}`,
+        `Failed ${(phases.Failed || 0) + (phases.Unknown || 0)}`
+      ],
+      dataSource: 'Kubernetes API'
+    },
+    {
+      label: 'Namespaces', value: data.namespaceCount, sub: 'total', icon: 'apps', tone: 'yellow',
+      detailLines: ['Scope: all namespaces'], dataSource: 'Kubernetes API'
+    }
   ] : [];
 
   return (
@@ -143,7 +175,7 @@ export default function Cluster({ refreshSignal = 0 }) {
       <div className="dashboard-header">
         <h2>
           <Icon name="cluster" size={19} />
-          {data?.currentContext || 'Cluster'}
+          {activeContext || 'Cluster'}
           {data?.serverVersion && data.serverVersion !== 'unknown' && (
             <span className="cluster-version-badge">{data.serverVersion}</span>
           )}
@@ -163,14 +195,12 @@ export default function Cluster({ refreshSignal = 0 }) {
                   <div className="kpi-value">{k.value}</div>
                   <div className="kpi-label">{k.label}</div>
                   <div className="kpi-sub">{k.sub}</div>
-                  {k.resourceLine && (
-                    <>
-                      <div className="kpi-resource-line">{k.resourceLine}</div>
-                      <div className="kpi-resource-source">
-                        Usage source: {k.resourceSource || 'unavailable'}
-                      </div>
-                    </>
-                  )}
+                  {k.detailLines.map((line, index) => (
+                    <div key={index} className="kpi-detail-line">{line}</div>
+                  ))}
+                  <div className="kpi-detail-source">
+                    Source: {k.dataSource || 'unavailable'}
+                  </div>
                 </div>
               </div>
             ))}
@@ -238,9 +268,9 @@ export default function Cluster({ refreshSignal = 0 }) {
 
           <div className="cluster-info-container">
             <div className="cluster-info-card">
-              <h3><Icon name="nodes" size={15} /> Node Roles</h3>
+              <h3><Icon name="nodes" size={15} /> Node Roles <span className="cluster-info-count">{roleEntries.length}</span></h3>
               {roleEntries.length === 0 ? (
-                <div className="info-item"><label>No roles reported</label></div>
+                <div className="info-item info-empty"><label>No roles reported</label></div>
               ) : roleEntries.map(([role, count]) => (
                 <div key={role} className="info-item">
                   <label>{role}</label>
@@ -270,22 +300,37 @@ export default function Cluster({ refreshSignal = 0 }) {
             </div>
 
             <div className="cluster-info-card">
-              <h3><Icon name="apps" size={15} /> Contexts ({data.contexts.length})</h3>
+              <h3><Icon name="cluster" size={15} /> Clusters &amp; contexts <span className="cluster-info-count">{data.contexts.length}</span></h3>
+              <p className="cluster-info-hint">Click a row to switch cluster</p>
               <div className="contexts-list">
-                {data.contexts.map((ctx, idx) => (
-                  <div key={idx} className="context-item">
-                    <span className={ctx === data.currentContext ? 'active' : ''}>{ctx}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div className="cluster-info-card">
-              <h3><Icon name="cluster" size={15} /> Clusters ({data.clusters.length})</h3>
-              <div className="clusters-list">
-                {data.clusters.map((cluster, idx) => (
-                  <div key={idx} className="cluster-item"><span>{cluster}</span></div>
-                ))}
+                {data.contexts.map((ctx) => {
+                  const contextInfo = contextInfoByName.get(ctx);
+                  const clusterName = contextInfo?.cluster || ctx;
+                  const clusterReference = getClusterReference(clusterName);
+                  const contextReference = getClusterReference(ctx);
+                  const showContextName = contextReference.name !== clusterReference.name;
+                  const isActive = ctx === activeContext;
+                  return (
+                    <button
+                      key={ctx}
+                      type="button"
+                      className={`context-entry${isActive ? ' is-active' : ''}`}
+                      title={`${ctx} → ${clusterName}${isActive ? ' (selected)' : ''}`}
+                      aria-label={`${isActive ? 'Selected' : 'Switch to'} ${clusterReference.name}${showContextName ? ` using context ${contextReference.name}` : ''}`}
+                      aria-pressed={isActive}
+                      disabled={isActive || !onSwitchContext}
+                      onClick={() => onSwitchContext?.(ctx, { preservePage: true })}
+                    >
+                      <span className="context-entry-dot" />
+                      <span className="context-entry-main">
+                        <span className="context-entry-name">{clusterReference.name}</span>
+                        {clusterReference.details && <span className="context-entry-meta">{clusterReference.details}</span>}
+                        {showContextName && <span className="context-entry-context">Context · {contextReference.name}</span>}
+                      </span>
+                      {isActive && <span className="context-current-badge"><Icon name="check" size={11} /> Selected</span>}
+                    </button>
+                  );
+                })}
               </div>
             </div>
           </div>

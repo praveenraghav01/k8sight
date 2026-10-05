@@ -273,7 +273,7 @@ function App() {
   }, [authState, authOk, authRetrying, autoRecovering, forceConfigModal, serverUnreachable, configStatus.currentContext]);
 
   // Switch the active cluster/context (from the pinned rail or the selector).
-  const switchContext = async (ctx) => {
+  const switchContext = async (ctx, { preservePage = false } = {}) => {
     if (!ctx || ctx === configStatus.currentContext) return;
     try {
       const resp = await fetch('/api/config/context', {
@@ -284,7 +284,7 @@ function App() {
       if (!resp.ok) throw new Error('switch failed');
       // Reset the view for the new cluster, then reload config + re-check auth.
       setConfigStatus((current) => ({ ...current, currentContext: ctx }));
-      setResourceType('overview');
+      if (!preservePage) setResourceType('overview');
       setSelectedResource(null);
       setSelectedResourceType(null);
       setSelectedNamespaces(['all']);
@@ -580,7 +580,7 @@ function App() {
         />
       );
     }
-    if (viewType === 'cluster') return <Cluster configStatus={configStatus} refreshSignal={refreshSignal} />;
+    if (viewType === 'cluster') return <Cluster configStatus={configStatus} onSwitchContext={switchContext} refreshSignal={refreshSignal} />;
     if (viewType === 'nodes') return <Nodes active={resourceType === viewType} focusNode={focusNode} onFocusHandled={() => setFocusNode(null)} onNavigate={nav} refreshSignal={refreshSignal} />;
     if (viewType === 'namespaces') return <Namespaces onNavigate={nav} onNamespaceDeleted={handleNamespaceDeleted} refreshSignal={refreshSignal} />;
     if (viewType === 'topology') return <Topology namespaces={namespaces} refreshSignal={refreshSignal} />;
