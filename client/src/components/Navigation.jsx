@@ -138,12 +138,6 @@ export default function Navigation({
           </div>
           <div className="nav-brand-text">
             <span className="nav-brand-title">k8sight</span>
-            <span className="nav-brand-sub">
-              Kubernetes
-              {typeof __APP_VERSION__ !== 'undefined' && (
-                <span className="nav-brand-version">v{__APP_VERSION__}</span>
-              )}
-            </span>
           </div>
           <button
             className="theme-toggle"
