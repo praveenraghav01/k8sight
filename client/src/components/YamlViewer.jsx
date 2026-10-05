@@ -1,14 +1,14 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, Suspense, lazy } from 'react';
 import axios from 'axios';
-import hljs from 'highlight.js';
-import 'highlight.js/styles/atom-one-dark.css';
 import Loader from './Loader';
 import Icon from './Icons';
 import { useToast } from './Toast';
 
-// Editable YAML editor: fetches the resource, lets the user edit, and applies
-// changes back to the cluster via `kubectl apply`. A transparent textarea sits
-// over a syntax-highlighted <pre> so editing keeps the colours.
+// Monaco is heavy, so load it only when a YAML editor is actually opened.
+const CodeEditor = lazy(() => import('./CodeEditor'));
+
+// Editable YAML editor: fetches the resource, lets the user edit it in a Monaco
+// (VSCode) editor, and applies changes back to the cluster via `kubectl apply`.
 export default function YamlViewer({ resource, namespace, resourceType, onApplied }) {
   const toast = useToast();
   const [yaml, setYaml] = useState('');
@@ -16,8 +16,7 @@ export default function YamlViewer({ resource, namespace, resourceType, onApplie
   const [loading, setLoading] = useState(false);
   const [applying, setApplying] = useState(false);
   const [error, setError] = useState(null);
-  const taRef = useRef(null);
-  const preRef = useRef(null);
+  const saveRef = useRef(() => {});
 
   const resourceNamespace = resource?.namespace || namespace;
 
@@ -36,19 +35,6 @@ export default function YamlViewer({ resource, namespace, resourceType, onApplie
     }
   };
 
-  const highlighted = () => {
-    try { return hljs.highlight(yaml || '', { language: 'yaml' }).value; }
-    catch { return (yaml || '').replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c])); }
-  };
-
-  // keep the highlight layer scrolled with the textarea
-  const syncScroll = () => {
-    if (preRef.current && taRef.current) {
-      preRef.current.scrollTop = taRef.current.scrollTop;
-      preRef.current.scrollLeft = taRef.current.scrollLeft;
-    }
-  };
-
   const apply = async () => {
     if (applying || yaml === original) return;
     setApplying(true);
@@ -64,17 +50,8 @@ export default function YamlViewer({ resource, namespace, resourceType, onApplie
     }
   };
 
-  // Tab inserts two spaces instead of moving focus
-  const onKeyDown = (e) => {
-    if (e.key === 'Tab') {
-      e.preventDefault();
-      const el = e.target, s = el.selectionStart, en = el.selectionEnd;
-      const next = yaml.slice(0, s) + '  ' + yaml.slice(en);
-      setYaml(next);
-      requestAnimationFrame(() => { el.selectionStart = el.selectionEnd = s + 2; });
-    }
-    if ((e.metaKey || e.ctrlKey) && e.key === 's') { e.preventDefault(); apply(); }
-  };
+  // Keep the ⌘S handler pointed at the latest apply (Monaco binds it once).
+  saveRef.current = apply;
 
   if (!resource) return null;
   const dirty = yaml !== original;
@@ -101,20 +78,9 @@ export default function YamlViewer({ resource, namespace, resourceType, onApplie
         ) : error ? (
           <div className="yaml-error">{error}</div>
         ) : (
-          <div className="yaml-edit-wrap">
-            <pre className="yaml-code hljs" ref={preRef} aria-hidden="true">
-              <code className="language-yaml" dangerouslySetInnerHTML={{ __html: highlighted() + '\n' }} />
-            </pre>
-            <textarea
-              ref={taRef}
-              className="yaml-textarea"
-              value={yaml}
-              spellCheck={false}
-              onChange={(e) => setYaml(e.target.value)}
-              onScroll={syncScroll}
-              onKeyDown={onKeyDown}
-            />
-          </div>
+          <Suspense fallback={<Loader label="Loading editor…" inline />}>
+            <CodeEditor value={yaml} onChange={setYaml} language="yaml" onSave={() => saveRef.current()} />
+          </Suspense>
         )}
       </div>
     </div>

@@ -178,8 +178,12 @@ function App() {
     scope: CLUSTER_SCOPED.includes(resourceType) ? 'cluster' : selectedNamespaceScope,
   });
   const allResources = resourceSnapshots[resourceDataKey] || {};
-  const hasCachedResourceData = Object.prototype.hasOwnProperty.call(resourceSnapshots, resourceDataKey);
-  const resourceLoading = usesSharedResources && !hasCachedResourceData
+  const hasCachedCurrentResourceData = resourceType === 'overview'
+    ? allResources.overviewByNamespace != null || Array.isArray(allResources.pods)
+    : resourceType === 'events'
+      ? true
+      : Array.isArray(allResources[pluralKey(resourceType)]);
+  const resourceLoading = usesSharedResources && !hasCachedCurrentResourceData
     && (loading || (authOk && resourceAttemptKey !== resourceDataKey));
 
   const storeResourceSnapshot = (key, data) => {
@@ -191,7 +195,7 @@ function App() {
 
   useEffect(() => {
     if (authOk && usesSharedResources) {
-      fetchResources({ silent: hasCachedResourceData });
+      fetchResources({ silent: hasCachedCurrentResourceData });
     }
   }, [selectedNamespaces, resourceType, authOk, namespaces, resourceDataKey, usesSharedResources]);
 
@@ -273,7 +277,7 @@ function App() {
   }, [authState, authOk, authRetrying, autoRecovering, forceConfigModal, serverUnreachable, configStatus.currentContext]);
 
   // Switch the active cluster/context (from the pinned rail or the selector).
-  const switchContext = async (ctx) => {
+  const switchContext = async (ctx, { preservePage = false } = {}) => {
     if (!ctx || ctx === configStatus.currentContext) return;
     try {
       const resp = await fetch('/api/config/context', {
@@ -284,7 +288,7 @@ function App() {
       if (!resp.ok) throw new Error('switch failed');
       // Reset the view for the new cluster, then reload config + re-check auth.
       setConfigStatus((current) => ({ ...current, currentContext: ctx }));
-      setResourceType('overview');
+      if (!preservePage) setResourceType('overview');
       setSelectedResource(null);
       setSelectedResourceType(null);
       setSelectedNamespaces(['all']);
@@ -433,7 +437,7 @@ function App() {
     setResourceAttemptKey(resourceDataKey);
     // A silent (background) fetch keeps whatever is already on screen — the list
     // is replaced once the data is in, so there's no "Loading pods…" flash.
-    if (!silent || !hasCachedResourceData) setLoading(true);
+    if (!silent || !hasCachedCurrentResourceData) setLoading(true);
     else setLoading(false);
     try {
       // Cluster-scoped types (PersistentVolumes, StorageClasses) are a single call
@@ -443,47 +447,104 @@ function App() {
         storeResourceSnapshot(resourceDataKey, res.data);
         return;
       }
+      if (resourceType === 'events') {
+        // Events have their own paginated view and do not use the resource cache.
+        setLoading(false);
+        return;
+      }
 
       const namespacesToFetch = resolveNamespaces();
-      const allData = {};
-      const failedNamespaces = new Set();
-
-      // Fetch namespaces in parallel with a bounded concurrency pool.
-      // The backend now uses in-process API calls (no process spawn), so we
-      // can afford a higher fan-out.
       const CONCURRENCY = 12;
-      let cursor = 0;
-      const worker = async () => {
-        while (cursor < namespacesToFetch.length) {
-          if (fetchId !== fetchIdRef.current) return; // a newer fetch started
-          const ns = namespacesToFetch[cursor++];
+
+      const fetchNamespaceData = async (pathSuffix = '') => {
+        const result = {};
+        const failedNamespaces = new Set();
+        const fetchAllNamespaces = selectedNamespaces.includes('all') || selectedNamespaces.length === 0;
+        if (fetchAllNamespaces) {
           try {
-            const response = await axios.get(`/api/resources/${ns}`);
-            if (fetchId !== fetchIdRef.current) return;
-            // Synchronous merge — safe on JS's single thread, no data race
-            Object.keys(response.data).forEach(key => {
-              if (!allData[key]) allData[key] = [];
-              allData[key].push(...response.data[key]);
-            });
-          } catch (e) {
-            // Skip a namespace that fails (e.g. RBAC) rather than failing all
-            if (silent) failedNamespaces.add(ns);
+            const response = await axios.get(`/api/resources/all${pathSuffix}`);
+            if (fetchId !== fetchIdRef.current) return { result, failedNamespaces };
+            return { result: response.data || {}, failedNamespaces };
+          } catch {
+            // Some RBAC setups allow namespace-scoped lists but deny the
+            // cluster-wide list verb. Fall back to the existing per-namespace
+            // requests so those users still see every namespace they can read.
           }
         }
+        let cursor = 0;
+        const worker = async () => {
+          while (cursor < namespacesToFetch.length) {
+            if (fetchId !== fetchIdRef.current) return;
+            const ns = namespacesToFetch[cursor++];
+            try {
+              const response = await axios.get(`/api/resources/${encodeURIComponent(ns)}${pathSuffix}`);
+              if (fetchId !== fetchIdRef.current) return;
+              Object.keys(response.data).forEach((key) => {
+                const value = response.data[key];
+                if (Array.isArray(value)) {
+                  if (!Array.isArray(result[key])) result[key] = [];
+                  result[key].push(...value);
+                } else if (value && typeof value === 'object') {
+                  if (!result[key] || typeof result[key] !== 'object' || Array.isArray(result[key])) result[key] = {};
+                  Object.assign(result[key], value);
+                } else {
+                  result[key] = value;
+                }
+              });
+            } catch {
+              if (silent) failedNamespaces.add(ns);
+            }
+          }
+        };
+        await Promise.all(
+          Array.from({ length: Math.min(CONCURRENCY, namespacesToFetch.length) }, worker)
+        );
+        return { result, failedNamespaces };
       };
 
-      await Promise.all(
-        Array.from({ length: Math.min(CONCURRENCY, namespacesToFetch.length) }, worker)
-      );
-
-      if (fetchId !== fetchIdRef.current) return;
-      if (silent && failedNamespaces.size) {
-        for (const [key, rows] of Object.entries(allResources)) {
-          const staleRows = rows.filter((row) => failedNamespaces.has(row.namespace));
-          if (staleRows.length) allData[key] = [...(allData[key] || []), ...staleRows];
+      if (resourceType === 'overview') {
+        const { result: overviewData, failedNamespaces } = await fetchNamespaceData('/overview');
+        if (fetchId !== fetchIdRef.current) return;
+        const overviewByNamespace = { ...(overviewData.overviewByNamespace || {}) };
+        if (silent && failedNamespaces.size) {
+          const previous = allResources.overviewByNamespace || {};
+          for (const ns of failedNamespaces) {
+            if (previous[ns]) overviewByNamespace[ns] = previous[ns];
+          }
         }
+        storeResourceSnapshot(resourceDataKey, { ...allResources, overviewByNamespace });
+        return;
       }
-      storeResourceSnapshot(resourceDataKey, allData);
+
+      if (resourceType === 'pod') {
+        const { result: podData, failedNamespaces } = await fetchNamespaceData('/pods');
+        if (fetchId !== fetchIdRef.current) return;
+        let currentPods = podData.pods || [];
+        if (silent && failedNamespaces.size) {
+          currentPods = [
+            ...currentPods,
+            ...(allResources.pods || []).filter((row) => failedNamespaces.has(row.namespace))
+          ];
+        }
+        storeResourceSnapshot(resourceDataKey, { ...allResources, pods: currentPods });
+        return;
+      }
+
+      if (resourceType !== 'overview') {
+        const resourceKey = pluralKey(resourceType);
+        const { result: resourceData, failedNamespaces } = await fetchNamespaceData(`/${resourceKey}`);
+        if (fetchId !== fetchIdRef.current) return;
+        let rows = resourceData[resourceKey] || [];
+        if (silent && failedNamespaces.size) {
+          rows = [
+            ...rows,
+            ...(allResources[resourceKey] || []).filter((row) => failedNamespaces.has(row.namespace))
+          ];
+        }
+        storeResourceSnapshot(resourceDataKey, { ...allResources, [resourceKey]: rows });
+        return;
+      }
+
     } catch (err) {
       if (fetchId === fetchIdRef.current && !silent) toast.error('Failed to fetch resources', { title: 'Resources' });
     } finally {
@@ -580,7 +641,7 @@ function App() {
         />
       );
     }
-    if (viewType === 'cluster') return <Cluster configStatus={configStatus} refreshSignal={refreshSignal} />;
+    if (viewType === 'cluster') return <Cluster configStatus={configStatus} onSwitchContext={switchContext} refreshSignal={refreshSignal} />;
     if (viewType === 'nodes') return <Nodes active={resourceType === viewType} focusNode={focusNode} onFocusHandled={() => setFocusNode(null)} onNavigate={nav} refreshSignal={refreshSignal} />;
     if (viewType === 'namespaces') return <Namespaces onNavigate={nav} onNamespaceDeleted={handleNamespaceDeleted} refreshSignal={refreshSignal} />;
     if (viewType === 'topology') return <Topology namespaces={namespaces} refreshSignal={refreshSignal} />;
@@ -620,7 +681,7 @@ function App() {
           namespaces={namespaces}
           onNamespaceChange={setSelectedNamespaces}
           loading={resourceLoading}
-          hasCachedData={hasCachedResourceData}
+          hasCachedData={hasCachedCurrentResourceData}
           searchQuery={searchQuery}
           onSearchChange={setSearchQuery}
           totalCount={getTotalCount()}

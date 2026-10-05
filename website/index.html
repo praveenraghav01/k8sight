@@ -143,7 +143,7 @@
           "name": "Do I need kubectl or the AWS/Azure CLI to use k8sight?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "k8sight needs kubectl on your PATH and a working kubeconfig. It does not need the aws, az or kubelogin CLIs: bundled token helpers authenticate imported EKS, AKS and GKE clusters at runtime, and Helm releases are read through the API. Only installing or upgrading charts uses your local helm."
+            "text": "k8sight needs kubectl on your PATH and a working kubeconfig. It does not need the aws, az or kubelogin CLIs: bundled token helpers authenticate imported EKS, AKS and GKE clusters at runtime, and Helm ships with the desktop app for installing charts (releases themselves are read through the API)."
           }
         },
         {
@@ -503,7 +503,7 @@
       </details>
       <details class="faq-item">
         <summary>Do I need kubectl or the AWS/Azure CLI?</summary>
-        <p class="faq-a">k8sight needs <code>kubectl</code> on your PATH and a working kubeconfig. It does not need the <code>aws</code>, <code>az</code> or <code>kubelogin</code> CLIs: bundled token helpers authenticate imported EKS, AKS and GKE clusters at runtime, and Helm releases are read through the API. Only installing or upgrading charts uses your local <code>helm</code>.</p>
+        <p class="faq-a">k8sight needs <code>kubectl</code> on your PATH and a working kubeconfig. It does not need the <code>aws</code>, <code>az</code> or <code>kubelogin</code> CLIs: bundled token helpers authenticate imported EKS, AKS and GKE clusters at runtime, and Helm ships with the desktop app for installing charts (releases themselves are read through the API).</p>
       </details>
       <details class="faq-item">
         <summary>Can I try k8sight without a Kubernetes cluster?</summary>

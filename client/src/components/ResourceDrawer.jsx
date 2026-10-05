@@ -2,9 +2,11 @@ import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import Icon from './Icons';
 import MetricsChart from './MetricsChart';
+import MetricHistoryControls from './MetricHistoryControls';
 import Loader from './Loader';
 import ServicePortForward from './ServicePortForward';
 import useClickOutside from '../hooks/useClickOutside';
+import useMetricHistory from '../hooks/useMetricHistory';
 import { effectivePodResource, parseCpuMilli, parseMemoryBytes } from '../utils/podResources';
 
 const fmtCpu = (m) => (m >= 1000 ? `${(m / 1000).toFixed(2)} cores` : `${Math.round(m)}m`);
@@ -141,6 +143,12 @@ export default function ResourceDrawer({ resource, namespace, resourceType, onCl
   useClickOutside(drawerRef, onClose);
 
   const isPodKind = resourceType === 'pod' || (resource?.kind || '').toLowerCase() === 'pod';
+  const metricHistory = useMetricHistory({
+    kind: 'pod',
+    namespace: resource?.namespace || namespace,
+    name: resource?.name,
+    enabled: Boolean(resource && isPodKind)
+  });
 
   useEffect(() => {
     if (resource) fetchDetail();
@@ -167,7 +175,7 @@ export default function ResourceDrawer({ resource, namespace, resourceType, onCl
 
     let pollTimer;
     const poll = async () => {
-      let nextPollDelay = 3000;
+      let nextPollDelay = 5000;
       try {
         const res = await axios.get(`/api/metrics/pod/${encodeURIComponent(ns)}/${encodeURIComponent(resource.name)}`);
         if (!active) return;
@@ -315,30 +323,40 @@ export default function ResourceDrawer({ resource, namespace, resourceType, onCl
                 </tr>
               </tbody>
             </table>
-            {!metricsAvail ? (
-              <div className="drawer-dim">Metrics not available</div>
-            ) : (
-              <div className="metric-charts">
-                <MetricsChart
-                  id="cpu"
-                  label="CPU"
-                  data={cpuHist}
-                  limit={cpuThreshold}
-                  thresholdLabel={cpuThreshKind}
-                  format={fmtCpu}
-                  fallbackColor="#58a6ff"
-                />
-                <MetricsChart
-                  id="mem"
-                  label="Memory"
-                  data={memHist.map(b => b / 1024 / 1024)}
-                  limit={memThreshold != null ? memThreshold / 1024 / 1024 : null}
-                  thresholdLabel={memThreshKind}
-                  format={fmtMemMi}
-                  fallbackColor="#bc8cff"
-                />
-              </div>
-            )}
+            <MetricHistoryControls
+              period={metricHistory.period}
+              onChange={metricHistory.setPeriod}
+              loading={metricHistory.loading}
+              available={metricHistory.available}
+              message={metricHistory.message}
+              source={metricHistory.source}
+              pointCount={metricHistory.points.length}
+            />
+            {!metricsAvail && <div className="drawer-dim">Current metrics unavailable.</div>}
+            <div className="metric-charts">
+              <MetricsChart
+                id="cpu"
+                label="CPU"
+                data={metricHistory.available
+                  ? metricHistory.points.map((point) => ({ timestamp: point.timestamp, value: point.cpuMilli }))
+                  : cpuHist}
+                limit={cpuThreshold}
+                thresholdLabel={cpuThreshKind}
+                format={fmtCpu}
+                fallbackColor="#58a6ff"
+              />
+              <MetricsChart
+                id="mem"
+                label="Memory"
+                data={metricHistory.available
+                  ? metricHistory.points.map((point) => ({ timestamp: point.timestamp, value: point.memBytes == null ? null : point.memBytes / 1024 / 1024 }))
+                  : memHist.map(b => b / 1024 / 1024)}
+                limit={memThreshold != null ? memThreshold / 1024 / 1024 : null}
+                thresholdLabel={memThreshKind}
+                format={fmtMemMi}
+                fallbackColor="#bc8cff"
+              />
+            </div>
           </div>
         )}
 

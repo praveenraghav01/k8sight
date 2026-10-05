@@ -1,6 +1,6 @@
 {
   "name": "k8sight",
-  "version": "1.6.0",
+  "version": "1.6.1",
   "description": "A native desktop UI for browsing and operating Kubernetes clusters",
   "author": {
     "name": "Praveen Kumar",
@@ -22,9 +22,9 @@
     "build": "node scripts/write-gke-oauth.mjs && npm run version:sync && cd client && npm run build",
     "start": "node server.js",
     "app": "electron .",
-    "app:pack": "npm run fetch:trivy && npm run build && npm run bundle:helpers && electron-builder --dir --mac",
-    "app:dist": "npm run fetch:trivy && npm run build && npm run bundle:helpers && electron-builder --mac",
-    "dist": "npm run fetch:trivy && npm run build && npm run bundle:helpers && electron-builder --publish never",
+    "app:pack": "npm run fetch:trivy && npm run fetch:helm && npm run build && npm run bundle:helpers && electron-builder --dir --mac",
+    "app:dist": "npm run fetch:trivy && npm run fetch:helm && npm run build && npm run bundle:helpers && electron-builder --mac",
+    "dist": "npm run fetch:trivy && npm run fetch:helm && npm run build && npm run bundle:helpers && electron-builder --publish never",
     "mcp": "node mcp-stdio.js",
     "bundle:helpers": "node scripts/bundle-token-helpers.mjs"
   },
@@ -48,7 +48,7 @@
     "electron-updater": "^6.8.9",
     "express": "^4.18.2",
     "express-rate-limit": "^8.7.0",
-    "js-yaml": "^5.4.1",
+    "js-yaml": "^4.1.0",
     "node-pty": "^1.1.0",
     "ws": "^8.21.1",
     "zod": "^4.4.3"
@@ -128,13 +128,14 @@
       ]
     },
     "dmg": {
-      "format": "ULFO"
+      "format": "ULFO",
+      "writeUpdateInfo": false
     },
     "linux": {
       "category": "Development",
       "icon": "build/icon.png",
       "synopsis": "A desktop UI for browsing and operating Kubernetes clusters",
-      "description": "k8sight is a native desktop app for browsing and operating any Kubernetes cluster from your local kubeconfig \u2014 live dashboards, logs, an in-pod shell, topology, Helm, Argo CD, a Security Center and one-click EKS/AKS onboarding.",
+      "description": "k8sight is a native desktop app for browsing and operating any Kubernetes cluster from your local kubeconfig — live dashboards, logs, an in-pod shell, topology, Helm, Argo CD, a Security Center and one-click EKS/AKS onboarding.",
       "maintainer": "Praveen Kumar <praveensinghraghav96@gmail.com>",
       "vendor": "Praveen Kumar",
       "syncDesktopName": true,

@@ -60,14 +60,41 @@ export default function Overview({
   onResourceTypeChange,
   loading
 }) {
-  const hasData = Object.keys(allResources || {}).length > 0;
+  const overviewByNamespace = allResources.overviewByNamespace || null;
+  const overviewRows = Object.values(overviewByNamespace || {});
+  const hasSummary = overviewByNamespace != null;
+  const hasData = hasSummary || Array.isArray(allResources.pods);
   const pods = allResources.pods || [];
   const deployments = allResources.deployments || [];
   const statefulSets = allResources.statefulSets || [];
   const daemonSets = allResources.daemonSets || [];
   const services = allResources.services || [];
+  const counts = hasSummary ? overviewRows.reduce((total, row) => ({
+    pods: total.pods + (row.pods?.total || 0),
+    deployments: total.deployments + (row.deployments || 0),
+    statefulSets: total.statefulSets + (row.statefulSets || 0),
+    daemonSets: total.daemonSets + (row.daemonSets || 0),
+    services: total.services + (row.services || 0)
+  }), { pods: 0, deployments: 0, statefulSets: 0, daemonSets: 0, services: 0 }) : {
+    pods: pods.length,
+    deployments: deployments.length,
+    statefulSets: statefulSets.length,
+    daemonSets: daemonSets.length,
+    services: services.length
+  };
+  const loaded = {
+    pods: hasSummary || Array.isArray(allResources.pods),
+    deployments: hasSummary || Array.isArray(allResources.deployments),
+    statefulSets: hasSummary || Array.isArray(allResources.statefulSets),
+    daemonSets: hasSummary || Array.isArray(allResources.daemonSets),
+    services: hasSummary || Array.isArray(allResources.services)
+  };
 
-  const podHealth = pods.reduce(
+  const podHealth = hasSummary ? overviewRows.reduce((total, row) => ({
+    running: total.running + (row.pods?.phases?.Running || 0) + (row.pods?.phases?.Succeeded || 0),
+    pending: total.pending + (row.pods?.phases?.Pending || 0),
+    failed: total.failed + (row.pods?.phases?.Failed || 0) + (row.pods?.phases?.Unknown || 0)
+  }), { running: 0, pending: 0, failed: 0 }) : pods.reduce(
     (acc, p) => {
       const s = (p.status || '').toLowerCase();
       if (s === 'running' || s === 'succeeded') acc.running++;
@@ -79,21 +106,21 @@ export default function Overview({
   );
 
   const kpis = [
-    { key: 'pod', label: 'Pods', value: pods.length, sub: `${podHealth.running} running`, icon: 'pod', tone: 'blue' },
-    { key: 'deployment', label: 'Deployments', value: deployments.length, sub: 'workloads', icon: 'deployment', tone: 'green' },
-    { key: 'statefulSet', label: 'StatefulSets', value: statefulSets.length, sub: 'stateful', icon: 'statefulSet', tone: 'purple' },
-    { key: 'daemonSet', label: 'DaemonSets', value: daemonSets.length, sub: 'per-node', icon: 'daemonSet', tone: 'cyan' },
-    { key: 'service', label: 'Services', value: services.length, sub: 'networking', icon: 'service', tone: 'yellow' }
+    { key: 'pod', dataKey: 'pods', label: 'Pods', value: counts.pods, sub: podHealth.running + ' running', icon: 'pod', tone: 'blue' },
+    { key: 'deployment', dataKey: 'deployments', label: 'Deployments', value: counts.deployments, sub: 'workloads', icon: 'deployment', tone: 'green' },
+    { key: 'statefulSet', dataKey: 'statefulSets', label: 'StatefulSets', value: counts.statefulSets, sub: 'stateful', icon: 'statefulSet', tone: 'purple' },
+    { key: 'daemonSet', dataKey: 'daemonSets', label: 'DaemonSets', value: counts.daemonSets, sub: 'per-node', icon: 'daemonSet', tone: 'cyan' },
+    { key: 'service', dataKey: 'services', label: 'Services', value: counts.services, sub: 'networking', icon: 'service', tone: 'yellow' }
   ];
 
   const workloadBars = [
-    { label: 'Pods', value: pods.length, icon: 'pod', color: '#58a6ff' },
-    { label: 'Deployments', value: deployments.length, icon: 'deployment', color: '#3fb950' },
-    { label: 'StatefulSets', value: statefulSets.length, icon: 'statefulSet', color: '#bc8cff' },
-    { label: 'DaemonSets', value: daemonSets.length, icon: 'daemonSet', color: '#39c5cf' },
-    { label: 'Services', value: services.length, icon: 'service', color: '#d29922' }
+    { label: 'Pods', value: counts.pods, loaded: loaded.pods, icon: 'pod', color: '#58a6ff' },
+    { label: 'Deployments', value: counts.deployments, loaded: loaded.deployments, icon: 'deployment', color: '#3fb950' },
+    { label: 'StatefulSets', value: counts.statefulSets, loaded: loaded.statefulSets, icon: 'statefulSet', color: '#bc8cff' },
+    { label: 'DaemonSets', value: counts.daemonSets, loaded: loaded.daemonSets, icon: 'daemonSet', color: '#39c5cf' },
+    { label: 'Services', value: counts.services, loaded: loaded.services, icon: 'service', color: '#d29922' }
   ];
-  const maxBar = Math.max(...workloadBars.map(b => b.value), 1);
+  const maxBar = Math.max(...workloadBars.filter((bar) => bar.loaded).map((bar) => bar.value), 1);
 
   const healthSegments = [
     { label: 'Running', value: podHealth.running, color: COLORS.running },
@@ -126,9 +153,9 @@ export default function Overview({
                 <Icon name={k.icon} size={22} />
               </div>
               <div className="kpi-meta">
-                <div className="kpi-value">{k.value}</div>
+                <div className="kpi-value">{loaded[k.dataKey] ? k.value : '…'}</div>
                 <div className="kpi-label">{k.label}</div>
-                <div className="kpi-sub">{k.sub}</div>
+                <div className="kpi-sub">{loaded[k.dataKey] ? k.sub : 'loading'}</div>
               </div>
             </div>
           ))}
@@ -138,12 +165,12 @@ export default function Overview({
           <div className="chart-card">
             <div className="chart-card-title">
               <h3>Pod Health</h3>
-              <span className="total">{pods.length} total</span>
+              <span className="total">{loaded.pods ? `${counts.pods} total` : 'loading'}</span>
             </div>
             <div className="donut-wrap">
               <Donut
                 segments={healthSegments}
-                centerNum={pods.length ? Math.round((podHealth.running / pods.length) * 100) + '%' : '0%'}
+                centerNum={counts.pods ? Math.round((podHealth.running / counts.pods) * 100) + '%' : '0%'}
                 centerLabel="healthy"
               />
               <div className="legend">
@@ -161,7 +188,11 @@ export default function Overview({
           <div className="chart-card">
             <div className="chart-card-title">
               <h3>Workloads by Type</h3>
-              <span className="total">{workloadBars.reduce((s, b) => s + b.value, 0)} objects</span>
+              <span className="total">
+                {workloadBars.every((bar) => bar.loaded)
+                  ? `${workloadBars.reduce((s, b) => s + b.value, 0)} objects`
+                  : 'loading'}
+              </span>
             </div>
             <div className="bars">
               {workloadBars.map(b => (
@@ -171,10 +202,10 @@ export default function Overview({
                       <Icon name={b.icon} size={14} />
                       {b.label}
                     </span>
-                    <span className="val">{b.value}</span>
+                    <span className="val">{b.loaded ? b.value : '…'}</span>
                   </div>
                   <div className="bar-track">
-                    <div className="bar-fill" style={{ width: `${(b.value / maxBar) * 100}%`, background: b.color }} />
+                    <div className="bar-fill" style={{ width: `${b.loaded ? (b.value / maxBar) * 100 : 0}%`, background: b.color }} />
                   </div>
                 </div>
               ))}
