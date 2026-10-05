@@ -1810,6 +1810,7 @@ span.xlink.resource-name-cell { color: var(--accent); }
 .yaml-btn.primary:hover:not(:disabled) { filter: brightness(1.08); color: #fff; }
 
 .yaml-content { flex: 1; position: relative; overflow: hidden; }
+.yaml-editor-loading { display: grid; place-items: center; height: 100%; color: var(--text-muted); font-size: 13px; }
 .yaml-edit-wrap { position: absolute; inset: 0; }
 .yaml-code, .yaml-textarea {
   margin: 0;
