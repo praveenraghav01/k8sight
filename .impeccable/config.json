@@ -20,6 +20,12 @@
         ],
         "createdAt": "2026-09-25T07:09:54.157Z",
         "reason": "the only wide-tracked text is the KUBERNETES, IN SIGHT brand sublabel — a short uppercase label, the sanctioned use for wide tracking"
+      },
+      {
+        "rule": "overused-font",
+        "value": "inter",
+        "createdAt": "2026-09-27T08:31:56.093Z",
+        "reason": "user asked to match lenshq.io's style, which uses Inter"
       }
     ]
   }

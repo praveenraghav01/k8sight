@@ -2,9 +2,45 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
     <loc>https://k8sight.in/</loc>
-    <lastmod>2026-09-22</lastmod>
+    <lastmod>2026-09-27</lastmod>
     <changefreq>weekly</changefreq>
     <priority>1.0</priority>
+  </url>
+  <url>
+    <loc>https://k8sight.in/operations</loc>
+    <lastmod>2026-09-27</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.9</priority>
+  </url>
+  <url>
+    <loc>https://k8sight.in/ai</loc>
+    <lastmod>2026-09-27</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.9</priority>
+  </url>
+  <url>
+    <loc>https://k8sight.in/cloud</loc>
+    <lastmod>2026-09-27</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.9</priority>
+  </url>
+  <url>
+    <loc>https://k8sight.in/argocd</loc>
+    <lastmod>2026-09-27</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.9</priority>
+  </url>
+  <url>
+    <loc>https://k8sight.in/security</loc>
+    <lastmod>2026-09-27</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.9</priority>
+  </url>
+  <url>
+    <loc>https://k8sight.in/costs</loc>
+    <lastmod>2026-09-27</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.9</priority>
   </url>
   <url>
     <loc>https://k8sight.in/docs</loc>

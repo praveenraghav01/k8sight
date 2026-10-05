@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
+<meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)" />
+<title>Add EKS, AKS and GKE clusters with no cloud CLI | k8sight</title>
+<meta name="description" content="Bring Amazon EKS, Azure AKS and Google GKE clusters into your kubeconfig from a desktop app, with no aws, az or gke-gcloud-auth-plugin CLI. Sign in the way each cloud expects." />
+<link rel="canonical" href="https://k8sight.in/cloud" />
+<meta property="og:type" content="website" />
+<meta property="og:site_name" content="k8sight" />
+<meta property="og:url" content="https://k8sight.in/cloud" />
+<meta property="og:title" content="Add EKS, AKS and GKE clusters with no cloud CLI | k8sight" />
+<meta property="og:description" content="Bring Amazon EKS, Azure AKS and Google GKE clusters into your kubeconfig from a desktop app, with no aws, az or gke-gcloud-auth-plugin CLI. Sign in the way each cloud expects." />
+<meta property="og:image" content="https://k8sight.in/assets/og-image.png" />
+<meta property="og:image:width" content="1200" />
+<meta property="og:image:height" content="630" />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="Add EKS, AKS and GKE clusters with no cloud CLI | k8sight" />
+<meta name="twitter:description" content="Bring Amazon EKS, Azure AKS and Google GKE clusters into your kubeconfig from a desktop app, with no aws, az or gke-gcloud-auth-plugin CLI. Sign in the way each cloud expects." />
+<meta name="twitter:image" content="https://k8sight.in/assets/og-image.png" />
+<meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1" />
+<link rel="icon" href="assets/icon.svg" type="image/svg+xml" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" />
+<link rel="stylesheet" href="assets/site.css" />
+<script>
+  // Set theme before first paint to avoid a flash.
+  try {
+    var t = localStorage.getItem('theme') || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+    document.documentElement.dataset.theme = t;
+  } catch (e) { document.documentElement.dataset.theme = 'dark'; }
+</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "WebPage",
+      "@id": "https://k8sight.in/cloud#webpage",
+      "url": "https://k8sight.in/cloud",
+      "name": "Add EKS, AKS and GKE clusters with no cloud CLI | k8sight",
+      "description": "Bring Amazon EKS, Azure AKS and Google GKE clusters into your kubeconfig from a desktop app, with no aws, az or gke-gcloud-auth-plugin CLI. Sign in the way each cloud expects.",
+      "isPartOf": {
+        "@id": "https://k8sight.in/#website"
+      },
+      "about": {
+        "@type": "SoftwareApplication",
+        "name": "k8sight",
+        "applicationCategory": "DeveloperApplication",
+        "operatingSystem": "macOS, Windows, Linux",
+        "offers": {
+          "@type": "Offer",
+          "price": "0",
+          "priceCurrency": "USD"
+        }
+      }
+    },
+    {
+      "@type": "BreadcrumbList",
+      "itemListElement": [
+        {
+          "@type": "ListItem",
+          "position": 1,
+          "name": "Home",
+          "item": "https://k8sight.in/"
+        },
+        {
+          "@type": "ListItem",
+          "position": 2,
+          "name": "Cloud clusters",
+          "item": "https://k8sight.in/cloud"
+        }
+      ]
+    }
+  ]
+}
+</script>
+</head>
+<body>
+<!-- ACADEMY PROMO -->
+<div class="promo-bar" id="promoBar">
+  <a class="promo-inner" href="https://learn.k8sight.in" target="_blank" rel="noopener">
+    <span class="promo-badge">New</span>
+    <span class="promo-text"><b>k8sight Academy</b> · hands-on Kubernetes courses. Start learning free.</span>
+    <span class="promo-arrow" aria-hidden="true">→</span>
+  </a>
+  <button class="promo-close" id="promoClose" type="button" aria-label="Dismiss">×</button>
+</div>
+<script>
+  (function () {
+    var bar = document.getElementById('promoBar');
+    if (!bar) return;
+    try { if (localStorage.getItem('k8s-promo-academy') === 'off') bar.hidden = true; } catch (e) {}
+    var btn = document.getElementById('promoClose');
+    if (btn) btn.addEventListener('click', function (e) {
+      e.preventDefault(); e.stopPropagation(); bar.hidden = true;
+      try { localStorage.setItem('k8s-promo-academy', 'off'); } catch (e) {}
+    });
+  })();
+</script>
+<a class="skip-link" href="#main">Skip to content</a>
+<header>
+  <div class="wrap">
+    <nav>
+      <a class="brand" href="index.html">
+        <img class="logo" src="assets/icon.svg" width="26" height="26" alt="k8sight logo" />
+        <span>k8sight<small>KUBERNETES, IN SIGHT</small></span>
+      </a>
+      <div class="nav-right">
+        <div class="nav-links" id="navLinks">
+          <a href="operations.html">Operations</a>
+          <a href="ai.html">AI</a>
+          <a href="cloud.html" class="current" aria-current="page">Cloud</a>
+          <a href="argocd.html">Argo CD</a>
+          <a href="security.html">Security</a>
+          <a href="costs.html">Costs</a>
+          <a href="docs.html">Docs</a>
+          <a class="nav-pill nav-ghost" href="https://learn.k8sight.in" target="_blank" rel="noopener">Learn</a>
+          <a class="nav-pill nav-cta" href="index.html#download">Download</a>
+        </div>
+        <button class="theme-btn" id="themeBtn" aria-label="Toggle light and dark theme">
+          <svg aria-hidden="true" focusable="false" class="ic-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4 12H2M22 12h-2M5 5l1.5 1.5M17.5 17.5 19 19M19 5l-1.5 1.5M6.5 17.5 5 19"/></svg>
+          <svg aria-hidden="true" focusable="false" class="ic-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+        </button>
+        <button class="menu-btn" id="menuBtn" aria-label="Menu">
+          <svg aria-hidden="true" focusable="false" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+        </button>
+      </div>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+<section class="hero page-hero" id="top">
+  <div class="wrap">
+    <span class="kicker">Managed Kubernetes</span>
+    <h1>Add cloud clusters without wrestling the CLI</h1>
+    <p class="sub">Bring your Amazon EKS, Azure AKS and Google GKE clusters into k8sight and it writes them straight into your kubeconfig, with no cloud CLI to install. Sign in the way each cloud expects: AWS credentials, an Azure <b>system browser</b> flow (works with device Conditional Access), or your existing <code>gcloud</code> login. Any other kubeconfig context works too.</p>
+    <div class="cta-row">
+      <a class="btn btn-primary" href="index.html#download">
+        <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg>
+        Download k8sight
+      </a>
+      <a class="btn btn-ghost" href="docs.html#aws">Read the docs</a>
+    </div>
+    <div class="cloud-grid">
+      <div class="cloud-card reveal">
+        <div class="logo-badge"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="#FF9900"><path d="m14.67 8.505-2.875 3.335 3.128 3.648h-1.168l-2.808-3.277v3.368h-.842V8.421h.842v2.947l2.603-2.863Zm7.225 6.751-3.369-2.021V8.421a.42.42 0 0 0-.209-.364l-4.843-2.825V1.159l8.42 4.976Zm.635-9.724L13.267.06a.422.422 0 0 0-.635.362v5.053c0 .15.08.288.208.363l4.844 2.826v4.81a.42.42 0 0 0 .205.362l4.21 2.526a.42.42 0 0 0 .638-.361V5.895a.42.42 0 0 0-.207-.363ZM11.977 23.1l-9.872-5.248V6.135l8.421-4.976v4.084L6.09 8.066a.422.422 0 0 0-.195.355v7.158a.42.42 0 0 0 .226.373l5.665 2.948a.42.42 0 0 0 .387 0l5.496-2.84 3.382 2.03Zm10.135-5.356-4.21-2.526a.42.42 0 0 0-.411-.013l-5.51 2.847-5.244-2.729v-6.67l4.436-2.824a.422.422 0 0 0 .195-.355V.42a.421.421 0 0 0-.635-.362L1.47 5.532a.421.421 0 0 0-.207.363v12.21c0 .156.086.299.223.372l10.297 5.474a.421.421 0 0 0 .401-.004l9.915-5.473a.422.422 0 0 0 .013-.73Z"/></svg></div>
+        <h3>Amazon EKS</h3>
+        <p>List clusters across regions, generate a short-lived access token and merge the kubeconfig entry, using your existing AWS credentials.</p>
+        <div class="tags"><span>SDK-based</span><span>token auth</span><span>multi-region</span></div>
+      </div>
+      <div class="cloud-card reveal">
+        <div class="logo-badge"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="#0089D6"><path d="M22.379 23.343a1.62 1.62 0 0 0 1.536-2.14v.002L17.35 1.76A1.62 1.62 0 0 0 15.816.657H8.184A1.62 1.62 0 0 0 6.65 1.76L.086 21.204a1.62 1.62 0 0 0 1.536 2.139h4.741a1.62 1.62 0 0 0 1.535-1.103l.977-2.892 4.947 3.675c.28.208.618.32.966.32m-3.084-12.531 3.624 10.739a.54.54 0 0 1-.51.713v-.001h-.03a.54.54 0 0 1-.322-.106l-9.287-6.9h4.853m6.313 7.006c.116-.326.13-.694.007-1.058L9.79 1.76a1.722 1.722 0 0 0-.007-.02h6.034a.54.54 0 0 1 .512.366l6.562 19.445a.54.54 0 0 1-.338.684"/></svg></div>
+        <h3>Azure AKS</h3>
+        <p>Discover clusters across subscriptions and pull user or admin credentials. Sign in through the browser (PKCE) or the Azure CLI (your choice, per add).</p>
+        <div class="tags"><span>Browser login</span><span>or az CLI</span><span>CA-compliant</span></div>
+      </div>
+      <div class="cloud-card reveal">
+        <div class="logo-badge"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path fill="#4285F4" d="M23.06 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h6.19a5.3 5.3 0 0 1-2.3 3.48v2.89h3.72c2.18-2 3.45-4.96 3.45-8.38z"/><path fill="#34A853" d="M12 24c3.24 0 5.96-1.08 7.94-2.91l-3.72-2.89c-1.03.69-2.35 1.1-4.22 1.1-3.24 0-5.99-2.19-6.97-5.13H1.19v2.98A12 12 0 0 0 12 24z"/><path fill="#FBBC05" d="M5.03 14.27a7.18 7.18 0 0 1 0-4.54V6.75H1.19a12 12 0 0 0 0 10.5z"/><path fill="#EA4335" d="M12 4.77c1.76 0 3.34.61 4.59 1.8l3.3-3.3C17.95 1.2 15.24 0 12 0A12 12 0 0 0 1.19 6.75l3.84 2.98C6.01 6.96 8.76 4.77 12 4.77z"/></svg></div>
+        <h3>Google GKE</h3>
+        <p>Sign in with your existing <code>gcloud</code> login (Application Default Credentials), a browser OAuth flow, or a service-account key, then discover clusters across your projects.</p>
+        <div class="tags"><span>gcloud ADC</span><span>or browser OAuth</span><span>no gke-auth-plugin</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="sec" id="details">
+  <div class="wrap">
+    <div class="sec-head reveal">
+      <span class="kicker">Setup guides</span>
+      <h2>Step-by-step for each cloud</h2>
+      <p>Each guide covers the sign-in options, the permissions you need, and what k8sight writes to your kubeconfig.</p>
+    </div>
+    <div class="guide-grid">
+      <a class="more-link reveal" href="docs.html#aws"><b>Amazon EKS guide <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M5 12h14M13 6l6 6-6 6"/></svg></b><span>AWS SSO, access keys or a profile, and how the token is generated.</span></a>
+      <a class="more-link reveal" href="docs.html#azure"><b>Azure AKS guide <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M5 12h14M13 6l6 6-6 6"/></svg></b><span>Browser sign-in or the Azure CLI, and user versus admin credentials.</span></a>
+      <a class="more-link reveal" href="docs.html#gke"><b>Google GKE guide <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M5 12h14M13 6l6 6-6 6"/></svg></b><span>gcloud credentials, browser OAuth or a service-account key.</span></a>
+    </div>
+  <div class="wrap">
+    
+    
+    <div class="prereq reveal">
+      <span class="tag"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15" style="flex:none"><path d="M17.5 19a4.5 4.5 0 0 0 0-9 6 6 0 0 0-11.7 1.5A4 4 0 0 0 6 19z"/></svg> EKS uses the AWS SDK, no <code>aws</code> CLI required</span>
+      <span class="tag"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15" style="flex:none"><path d="M12 3l7 3v6c0 4-3 7-7 8-4-1-7-4-7-8V6z"/><path d="M9 12l2 2 4-4"/></svg> Azure browser login satisfies device compliance policies</span>
+      <span class="tag"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15" style="flex:none"><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2z"/><path d="M2 12h20"/></svg> GKE via your <code>gcloud</code> login, browser OAuth or a service-account key</span>
+      <span class="tag"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15" style="flex:none"><path d="M6 2h8l5 5v14a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1z"/><path d="M14 2v6h5"/></svg> Credentials merged into your existing kubeconfig; kind, minikube &amp; on-prem contexts work too</span>
+    </div>
+  </div>
+  </div>
+</section>
+
+<section class="sec" id="more">
+  <div class="wrap">
+    <div class="sec-head reveal">
+      <span class="kicker">More in k8sight</span>
+      <h2>Explore the other features</h2>
+    </div>
+    <div class="more-grid reveal">
+      <a class="more-link" href="operations.html"><b>Operations <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M5 12h14M13 6l6 6-6 6"/></svg></b><span>Live dashboard, every workload type, logs, a real shell, topology, Helm and port forwarding.</span></a>
+      <a class="more-link" href="ai.html"><b>AI assistant <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M5 12h14M13 6l6 6-6 6"/></svg></b><span>Ask about your cluster in plain English, and dock your own coding agents beside it.</span></a>
+      <a class="more-link" href="argocd.html"><b>Argo CD <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M5 12h14M13 6l6 6-6 6"/></svg></b><span>Applications, resource trees, sync and refresh, with no argocd CLI.</span></a>
+      <a class="more-link" href="security.html"><b>Security Center <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M5 12h14M13 6l6 6-6 6"/></svg></b><span>Image CVEs, config audits, RBAC checks and exposed secrets, powered by Trivy.</span></a>
+      <a class="more-link" href="costs.html"><b>Costs <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M5 12h14M13 6l6 6-6 6"/></svg></b><span>Spend by namespace, workload and node from OpenCost or Kubecost.</span></a>
+    </div>
+  </div>
+</section>
+
+<section class="sec last final-cta" id="get">
+  <div class="wrap reveal">
+    <h2>See it on your own cluster</h2>
+    <p>Free and open source for macOS, Windows and Linux. No cluster handy? The built-in demo works with nothing but the app.</p>
+    <div class="cta-row">
+      <a class="btn btn-primary" href="index.html#download">
+        <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg>
+        Download k8sight
+      </a>
+      <a class="btn btn-ghost" href="https://github.com/praveenraghav01/k8sight" target="_blank" rel="noopener">View on GitHub</a>
+    </div>
+  </div>
+</section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <a class="brand" href="#top">
+      <img class="logo" src="assets/icon.svg" width="26" height="26" alt="" />
+      <span>k8sight<small>© 2026 · MIT-style open source</small></span>
+    </a>
+    <div class="links">
+      <a href="operations.html">Operations</a>
+      <a href="ai.html">AI</a>
+      <a href="cloud.html">Cloud</a>
+      <a href="argocd.html">Argo CD</a>
+      <a href="security.html">Security</a>
+      <a href="costs.html">Costs</a>
+      <a href="index.html#download">Download</a>
+      <a href="docs.html">Docs</a>
+      <a href="privacy.html">Privacy</a>
+      <a href="terms.html">Terms</a>
+      <a href="https://github.com/praveenraghav01/k8sight" target="_blank" rel="noopener">GitHub</a>
+      <a href="https://www.youtube.com/@k8sight" target="_blank" rel="noopener">YouTube</a>
+    </div>
+    <div class="copy">Built for developers and platform teams. Requires a Kubernetes cluster and a valid kubeconfig. Not affiliated with the Kubernetes project or the CNCF.</div>
+    <div class="made">
+      <a href="https://madewithloveinindia.org" target="_blank" rel="noopener">Made with <span aria-label="Love" style="color: #f43f5e">&hearts;</span> in India</a>
+    </div>
+  </div>
+</footer>
+
+<script src="assets/site.js"></script>
+</body>
+</html>
