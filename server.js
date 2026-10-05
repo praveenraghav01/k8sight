@@ -20,6 +20,7 @@ import { registerAssistant } from './assistant.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
 import { randomUUID } from 'crypto';
+import { AsyncLocalStorage } from 'async_hooks';
 import { createMcpServer } from './mcp.js';
 import * as awsEks from './aws-eks.js';
 import * as gke from './gke.js';
@@ -46,6 +47,7 @@ try {
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
+const requestContext = new AsyncLocalStorage();
 // Fixed backend port. In dev, Vite (3000) proxies /api and /ws here; in the
 // Docker image this same server also serves the built UI. Map it at runtime
 // with `docker run -p <host>:3001`.
@@ -59,6 +61,8 @@ const AZURE_TOKEN_HELPER = tokenHelperPath(import.meta.url, 'azure-token');
 // Response caching with TTL
 const cache = new Map();
 const inFlight = new Map();
+const MAX_CACHE_ENTRIES = 500;
+const MAX_CACHE_BYTES = 64 * 1024 * 1024;
 const metricResponseCache = createMetricResponseCache({
   refreshAfterMs: 2_000,
   staleAfterMs: 8_000,
@@ -73,9 +77,47 @@ const CACHE_TTL = {
   yaml: 60000        // 60 seconds
 };
 
-const getCacheKey = (prefix, params) => `${prefix}:${JSON.stringify(params)}`;
+// Include the context at the moment the caller creates its key. Both response
+// cache and single-flight callers use this helper, so a request from a previous
+// cluster cannot be reused by a request after a context switch.
+const getActiveContext = () => requestContext.getStore() ?? currentContext ?? '';
+const getCacheKey = (prefix, params = {}) => `${prefix}:${JSON.stringify({ ...params, context: getActiveContext() })}`;
+const pruneExpiredCache = (now = Date.now()) => {
+  let retainedBytes = 0;
+  for (const [key, item] of cache) {
+    if (now > item.expiry) cache.delete(key);
+    else retainedBytes += item.sizeBytes || 0;
+  }
+  return retainedBytes;
+};
 const setCache = (key, value, ttl) => {
-  cache.set(key, { value, expiry: Date.now() + ttl });
+  let serialized;
+  try {
+    serialized = JSON.stringify(value);
+  } catch {
+    return; // A non-serializable value should not make a successful response fail.
+  }
+  if (typeof serialized !== 'string') return;
+
+  const sizeBytes = Buffer.byteLength(key, 'utf8') + Buffer.byteLength(serialized, 'utf8') + 64;
+  if (sizeBytes > MAX_CACHE_BYTES) {
+    cache.delete(key);
+    return;
+  }
+
+  const now = Date.now();
+  let cacheBytes = pruneExpiredCache(now);
+  const previous = cache.get(key);
+  if (previous) cacheBytes -= previous.sizeBytes || 0;
+  cache.delete(key); // Refresh insertion order for LRU eviction.
+  cache.set(key, { value, expiry: now + ttl, sizeBytes });
+  cacheBytes += sizeBytes;
+  while (cache.size > MAX_CACHE_ENTRIES || cacheBytes > MAX_CACHE_BYTES) {
+    const oldestKey = cache.keys().next().value;
+    const oldest = cache.get(oldestKey);
+    cache.delete(oldestKey);
+    cacheBytes -= oldest?.sizeBytes || 0;
+  }
 };
 const getCache = (key) => {
   const item = cache.get(key);
@@ -84,15 +126,20 @@ const getCache = (key) => {
     cache.delete(key);
     return null;
   }
+  // Map iteration order is insertion order; moving a hit to the end makes the
+  // first key the least recently used entry when the cap is reached.
+  cache.delete(key);
+  cache.set(key, item);
   return item.value;
 };
 const runSingleFlight = (key, operation) => {
-  const pending = inFlight.get(key);
+  const scopedKey = `${getActiveContext()}::${key}`;
+  const pending = inFlight.get(scopedKey);
   if (pending) return pending;
   const promise = Promise.resolve().then(operation).finally(() => {
-    if (inFlight.get(key) === promise) inFlight.delete(key);
+    if (inFlight.get(scopedKey) === promise) inFlight.delete(scopedKey);
   });
-  inFlight.set(key, promise);
+  inFlight.set(scopedKey, promise);
   return promise;
 };
 const getMetricResponse = (key, loader) => metricResponseCache.get(key, loader);
@@ -153,6 +200,10 @@ app.use('/api', apiLimiter);
 app.use('/mcp', apiLimiter);
 
 app.use(express.json());
+
+// Keep the selected Kubernetes context stable for the full lifetime of each
+// request, including helpers that form cache keys after an await.
+app.use((req, res, next) => requestContext.run(currentContext || '', next));
 
 // ------------------------------------------------------------------
 // Demo mode — when the active context is the synthetic 'demo-cluster',
@@ -223,7 +274,10 @@ let kubeConfig = null;
 // different cluster after the user switches. kctl() builds the argv form — the
 // only form used now, so the context name is never interpolated into a shell
 // string (which would allow injection from a hostile kubeconfig's context name).
-const kctl = (...args) => (currentContext ? ['--context', currentContext, ...args] : args);
+const kctl = (...args) => {
+  const context = getActiveContext();
+  return context ? ['--context', context, ...args] : args;
+};
 
 const getKubeConfigPath = () => {
   const envPath = process.env.KUBECONFIG;
@@ -1065,30 +1119,112 @@ app.get('/api/config/auth', async (req, res) => {
   }
 });
 
+const loadNamespaceData = (coreApi) => {
+  const cacheKey = getCacheKey('namespaces', {});
+  const cached = getCache(cacheKey);
+  if (cached) return Promise.resolve({ data: cached, cacheHit: true });
+
+  return runSingleFlight(cacheKey, async () => {
+    const refreshed = getCache(cacheKey);
+    if (refreshed) return { data: refreshed, cacheHit: true };
+    const response = await coreApi.listNamespace();
+    const items = response.items || [];
+    const data = {
+      namespaces: items.map(ns => ns.metadata.name),
+      details: items.map(ns => ({
+        name: ns.metadata.name,
+        status: ns.status?.phase || 'Active',
+        createdAt: ns.metadata.creationTimestamp,
+        labels: ns.metadata.labels || {}
+      }))
+    };
+    setCache(cacheKey, data, CACHE_TTL.namespaces);
+    return { data, cacheHit: false };
+  });
+};
+
 app.get('/api/namespaces', async (req, res) => {
   try {
     if (!kubeConfig) return res.status(400).json({ error: 'No kubeconfig loaded' });
+    const { data, cacheHit } = await loadNamespaceData(kubeConfig.makeApiClient(k8s.CoreV1Api));
+    res.set('X-Cache', cacheHit ? 'HIT' : 'MISS');
+    res.json(data);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
 
-    const cacheKey = 'namespaces';
-    const cachedData = getCache(cacheKey);
-    if (cachedData) {
+// Overview only needs counts and Pod phases. Avoid serializing all workload
+// objects (and the unrelated ConfigMaps, Secrets, PVCs, etc.) on the first view.
+app.get('/api/resources/:namespace/overview', async (req, res) => {
+  try {
+    if (!kubeConfig) return res.status(400).json({ error: 'No kubeconfig loaded' });
+
+    const { namespace } = req.params;
+    const cacheKey = getCacheKey('resource-overview-summary', { namespace });
+    const cached = getCache(cacheKey);
+    if (cached) {
       res.set('X-Cache', 'HIT');
-      return res.json(cachedData);
+      return res.json(cached);
     }
 
-    const api = kubeConfig.makeApiClient(k8s.CoreV1Api);
-    const response = await api.listNamespace();
-    const items = response.items;
-    const namespaces = items.map(ns => ns.metadata.name);
-    const details = items.map(ns => ({
-      name: ns.metadata.name,
-      status: ns.status?.phase || 'Active',
-      createdAt: ns.metadata.creationTimestamp,
-      labels: ns.metadata.labels || {}
-    }));
-    const result = { namespaces, details };
+    const result = await runSingleFlight(cacheKey, async () => {
+      const cachedResult = getCache(cacheKey);
+      if (cachedResult) return cachedResult;
 
-    setCache(cacheKey, result, CACHE_TTL.namespaces);
+      const coreApi = kubeConfig.makeApiClient(k8s.CoreV1Api);
+      const appsApi = kubeConfig.makeApiClient(k8s.AppsV1Api);
+      const empty = () => ({ items: [] });
+      const list = (api, namespacedMethod, allNamespacesMethod) => namespace === 'all'
+        ? api[allNamespacesMethod]()
+        : api[namespacedMethod]({ namespace }).catch(empty);
+      const [pods, deployments, statefulSets, daemonSets, services] = await Promise.all([
+        namespace === 'all'
+          ? listClusterPodsInFlight(coreApi).then((items) => ({ items }))
+          : coreApi.listNamespacedPod({ namespace }).catch(empty),
+        list(appsApi, 'listNamespacedDeployment', 'listDeploymentForAllNamespaces'),
+        list(appsApi, 'listNamespacedStatefulSet', 'listStatefulSetForAllNamespaces'),
+        list(appsApi, 'listNamespacedDaemonSet', 'listDaemonSetForAllNamespaces'),
+        list(coreApi, 'listNamespacedService', 'listServiceForAllNamespaces')
+      ]);
+
+      const overviewByNamespace = {};
+      const ensureNamespace = (name) => {
+        if (!name) return null;
+        if (!overviewByNamespace[name]) {
+          overviewByNamespace[name] = {
+            pods: { total: 0, phases: { Running: 0, Pending: 0, Succeeded: 0, Failed: 0, Unknown: 0 } },
+            deployments: 0,
+            statefulSets: 0,
+            daemonSets: 0,
+            services: 0
+          };
+        }
+        return overviewByNamespace[name];
+      };
+      if (namespace !== 'all') ensureNamespace(namespace);
+      for (const pod of pods.items || []) {
+        const summary = ensureNamespace(pod.metadata?.namespace || namespace);
+        if (!summary) continue;
+        const phase = pod.status?.phase || 'Unknown';
+        summary.pods.total++;
+        summary.pods.phases[phase in summary.pods.phases ? phase : 'Unknown']++;
+      }
+      const addCounts = (response, key) => {
+        for (const item of response.items || []) {
+          const summary = ensureNamespace(item.metadata?.namespace || namespace);
+          if (summary) summary[key]++;
+        }
+      };
+      addCounts(deployments, 'deployments');
+      addCounts(statefulSets, 'statefulSets');
+      addCounts(daemonSets, 'daemonSets');
+      addCounts(services, 'services');
+
+      const data = { overviewByNamespace };
+      setCache(cacheKey, data, CACHE_TTL.resources);
+      return data;
+    });
     res.set('X-Cache', 'MISS');
     res.json(result);
   } catch (error) {
@@ -1110,45 +1246,104 @@ app.get('/api/resources/:namespace', async (req, res) => {
       return res.json(cachedData);
     }
 
-    const coreApi = kubeConfig.makeApiClient(k8s.CoreV1Api);
-    const appsApi = kubeConfig.makeApiClient(k8s.AppsV1Api);
-    const netApi = kubeConfig.makeApiClient(k8s.NetworkingV1Api);
+    const resources = await runSingleFlight(cacheKey, async () => {
+      const cached = getCache(cacheKey);
+      if (cached) return cached;
 
-    const empty = () => ({ items: [] });
+      const coreApi = kubeConfig.makeApiClient(k8s.CoreV1Api);
+      const appsApi = kubeConfig.makeApiClient(k8s.AppsV1Api);
+      const netApi = kubeConfig.makeApiClient(k8s.NetworkingV1Api);
+      const empty = () => ({ items: [] });
 
-    // All in-process API calls (no kubectl process spawn), fetched in parallel
-    const [pods, services, deployments, statefulSets, daemonSets, configMaps, secrets, serviceAccounts, ingresses, networkPolicies, pvcs] = await Promise.all([
-      coreApi.listNamespacedPod({ namespace }).catch(empty),
-      coreApi.listNamespacedService({ namespace }).catch(empty),
-      appsApi.listNamespacedDeployment({ namespace }).catch(empty),
-      appsApi.listNamespacedStatefulSet({ namespace }).catch(empty),
-      appsApi.listNamespacedDaemonSet({ namespace }).catch(empty),
-      coreApi.listNamespacedConfigMap({ namespace }).catch(empty),
-      coreApi.listNamespacedSecret({ namespace }).catch(empty),
-      coreApi.listNamespacedServiceAccount({ namespace }).catch(empty),
-      netApi.listNamespacedIngress({ namespace }).catch(empty),
-      netApi.listNamespacedNetworkPolicy({ namespace }).catch(empty),
-      coreApi.listNamespacedPersistentVolumeClaim({ namespace }).catch(empty)
-    ]);
+      // All in-process API calls for the Overview run concurrently.
+      const list = (api, namespacedMethod, allNamespacesMethod) => namespace === 'all'
+        ? api[allNamespacesMethod]()
+        : api[namespacedMethod]({ namespace }).catch(empty);
+      const [services, deployments, statefulSets, daemonSets, configMaps, secrets, serviceAccounts, ingresses, networkPolicies, pvcs] = await Promise.all([
+        list(coreApi, 'listNamespacedService', 'listServiceForAllNamespaces'),
+        list(appsApi, 'listNamespacedDeployment', 'listDeploymentForAllNamespaces'),
+        list(appsApi, 'listNamespacedStatefulSet', 'listStatefulSetForAllNamespaces'),
+        list(appsApi, 'listNamespacedDaemonSet', 'listDaemonSetForAllNamespaces'),
+        list(coreApi, 'listNamespacedConfigMap', 'listConfigMapForAllNamespaces'),
+        list(coreApi, 'listNamespacedSecret', 'listSecretForAllNamespaces'),
+        list(coreApi, 'listNamespacedServiceAccount', 'listServiceAccountForAllNamespaces'),
+        list(netApi, 'listNamespacedIngress', 'listIngressForAllNamespaces'),
+        list(netApi, 'listNamespacedNetworkPolicy', 'listNetworkPolicyForAllNamespaces'),
+        list(coreApi, 'listNamespacedPersistentVolumeClaim', 'listPersistentVolumeClaimForAllNamespaces')
+      ]);
 
-    const resources = {
-      pods: pods.items.map(item => formatResource(item, 'Pod')),
-      services: services.items.map(item => formatResource(item, 'Service')),
-      deployments: deployments.items.map(item => formatResource(item, 'Deployment')),
-      statefulSets: statefulSets.items.map(item => formatResource(item, 'StatefulSet')),
-      daemonSets: daemonSets.items.map(item => formatResource(item, 'DaemonSet')),
-      configMaps: configMaps.items.map(item => formatResource(item, 'ConfigMap')),
-      secrets: secrets.items.map(item => formatResource(item, 'Secret')),
-      serviceAccounts: serviceAccounts.items.map(item => formatResource(item, 'ServiceAccount')),
-      ingresses: ingresses.items.map(item => formatResource(item, 'Ingress')),
-      networkPolicies: networkPolicies.items.map(item => formatResource(item, 'NetworkPolicy')),
-      persistentVolumeClaims: pvcs.items.map(item => formatResource(item, 'PersistentVolumeClaim'))
-    };
-
-    // Cache the response
-    setCache(cacheKey, resources, CACHE_TTL.resources);
+      const data = {
+        services: services.items.map(item => formatResource(item, 'Service')),
+        deployments: deployments.items.map(item => formatResource(item, 'Deployment')),
+        statefulSets: statefulSets.items.map(item => formatResource(item, 'StatefulSet')),
+        daemonSets: daemonSets.items.map(item => formatResource(item, 'DaemonSet')),
+        configMaps: configMaps.items.map(item => formatResource(item, 'ConfigMap')),
+        secrets: secrets.items.map(item => formatResource(item, 'Secret')),
+        serviceAccounts: serviceAccounts.items.map(item => formatResource(item, 'ServiceAccount')),
+        ingresses: ingresses.items.map(item => formatResource(item, 'Ingress')),
+        networkPolicies: networkPolicies.items.map(item => formatResource(item, 'NetworkPolicy')),
+        persistentVolumeClaims: pvcs.items.map(item => formatResource(item, 'PersistentVolumeClaim'))
+      };
+      setCache(cacheKey, data, CACHE_TTL.resources);
+      return data;
+    });
     res.set('X-Cache', 'MISS');
     res.json(resources);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+const NAMESPACED_RESOURCE_LOADERS = {
+  pods: { api: k8s.CoreV1Api, method: 'listNamespacedPod', allMethod: 'listPodForAllNamespaces', kind: 'Pod' },
+  services: { api: k8s.CoreV1Api, method: 'listNamespacedService', allMethod: 'listServiceForAllNamespaces', kind: 'Service' },
+  deployments: { api: k8s.AppsV1Api, method: 'listNamespacedDeployment', allMethod: 'listDeploymentForAllNamespaces', kind: 'Deployment' },
+  statefulSets: { api: k8s.AppsV1Api, method: 'listNamespacedStatefulSet', allMethod: 'listStatefulSetForAllNamespaces', kind: 'StatefulSet' },
+  daemonSets: { api: k8s.AppsV1Api, method: 'listNamespacedDaemonSet', allMethod: 'listDaemonSetForAllNamespaces', kind: 'DaemonSet' },
+  replicaSets: { api: k8s.AppsV1Api, method: 'listNamespacedReplicaSet', allMethod: 'listReplicaSetForAllNamespaces', kind: 'ReplicaSet' },
+  replicationControllers: { api: k8s.CoreV1Api, method: 'listNamespacedReplicationController', allMethod: 'listReplicationControllerForAllNamespaces', kind: 'ReplicationController' },
+  jobs: { api: k8s.BatchV1Api, method: 'listNamespacedJob', allMethod: 'listJobForAllNamespaces', kind: 'Job' },
+  cronJobs: { api: k8s.BatchV1Api, method: 'listNamespacedCronJob', allMethod: 'listCronJobForAllNamespaces', kind: 'CronJob' },
+  configMaps: { api: k8s.CoreV1Api, method: 'listNamespacedConfigMap', allMethod: 'listConfigMapForAllNamespaces', kind: 'ConfigMap' },
+  secrets: { api: k8s.CoreV1Api, method: 'listNamespacedSecret', allMethod: 'listSecretForAllNamespaces', kind: 'Secret' },
+  serviceAccounts: { api: k8s.CoreV1Api, method: 'listNamespacedServiceAccount', allMethod: 'listServiceAccountForAllNamespaces', kind: 'ServiceAccount' },
+  ingresses: { api: k8s.NetworkingV1Api, method: 'listNamespacedIngress', allMethod: 'listIngressForAllNamespaces', kind: 'Ingress' },
+  networkPolicies: { api: k8s.NetworkingV1Api, method: 'listNamespacedNetworkPolicy', allMethod: 'listNetworkPolicyForAllNamespaces', kind: 'NetworkPolicy' },
+  persistentVolumeClaims: { api: k8s.CoreV1Api, method: 'listNamespacedPersistentVolumeClaim', allMethod: 'listPersistentVolumeClaimForAllNamespaces', kind: 'PersistentVolumeClaim' }
+};
+
+// Load one resource kind per request. In particular, Pods never wait for the
+// other Kubernetes list calls made by the Overview endpoint.
+app.get('/api/resources/:namespace/:resourceType', async (req, res) => {
+  try {
+    if (!kubeConfig) return res.status(400).json({ error: 'No kubeconfig loaded' });
+
+    const { namespace, resourceType } = req.params;
+    const loader = NAMESPACED_RESOURCE_LOADERS[resourceType];
+    if (!loader) return res.status(404).json({ error: `Unsupported resource type: ${resourceType}` });
+
+    const cacheKey = getCacheKey('resource-kind', { namespace, resourceType });
+    const cachedData = getCache(cacheKey);
+    if (cachedData) {
+      res.set('X-Cache', 'HIT');
+      return res.json(cachedData);
+    }
+
+    const result = await runSingleFlight(cacheKey, async () => {
+      const cached = getCache(cacheKey);
+      if (cached) return cached;
+      const api = kubeConfig.makeApiClient(loader.api);
+      const response = namespace === 'all' && resourceType === 'pods'
+        ? { items: await listClusterPodsInFlight(api) }
+        : namespace === 'all'
+          ? await api[loader.allMethod]()
+          : await api[loader.method]({ namespace });
+      const data = { [resourceType]: (response.items || []).map(item => formatResource(item, loader.kind)) };
+      setCache(cacheKey, data, CACHE_TTL.resources);
+      return data;
+    });
+    res.set('X-Cache', 'MISS');
+    res.json(result);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -1159,7 +1354,7 @@ app.get('/api/storage', async (req, res) => {
   try {
     if (!kubeConfig) return res.status(400).json({ error: 'No kubeconfig loaded' });
 
-    const cacheKey = 'storage';
+    const cacheKey = getCacheKey('storage', {});
     const cachedData = getCache(cacheKey);
     if (cachedData) {
       res.set('X-Cache', 'HIT');
@@ -1193,7 +1388,7 @@ app.get('/api/rbac', async (req, res) => {
   try {
     if (!kubeConfig) return res.status(400).json({ error: 'No kubeconfig loaded' });
 
-    const cacheKey = 'rbac';
+    const cacheKey = getCacheKey('rbac', {});
     const cachedData = getCache(cacheKey);
     if (cachedData) {
       res.set('X-Cache', 'HIT');
@@ -1551,14 +1746,15 @@ const CLUSTER_SCOPED_KINDS = new Set([
 // in-memory (kubeConfig.setCurrentContext), which the on-disk kubeconfig
 // kubectl reads by default does NOT reflect. Without --context, kubectl would
 // operate on whatever context is current on disk (a different cluster).
-const runKubectl = (args, input) => new Promise((resolve, reject) => {
-  const ctxArgs = currentContext ? ['--context', currentContext] : [];
+const runKubectl = (args, input, timeoutMs = 25000) => new Promise((resolve, reject) => {
+  const context = getActiveContext();
+  const ctxArgs = context ? ['--context', context] : [];
   const child = spawn('kubectl', [...ctxArgs, ...args], { stdio: ['pipe', 'pipe', 'pipe'] });
   let out = '', err = '';
-  const timer = setTimeout(() => { child.kill('SIGKILL'); reject(new Error('kubectl timed out')); }, 25000);
+  const timer = setTimeout(() => { child.kill('SIGKILL'); reject(new Error('kubectl timed out')); }, timeoutMs);
   child.stdout.on('data', d => { out += d; });
   child.stderr.on('data', d => { err += d; });
-  child.on('error', reject);
+  child.on('error', (error) => { clearTimeout(timer); reject(error); });
   child.on('close', (code) => {
     clearTimeout(timer);
     if (code === 0) resolve(out.trim());
@@ -1714,21 +1910,6 @@ app.get('/api/events/:namespace?', async (req, res) => {
   }
 });
 
-const fetchNodesWithKubectl = () => {
-  try {
-    const output = execFileSync('kubectl', kctl('get', 'nodes', '-o', 'json'), {
-      encoding: 'utf-8',
-      maxBuffer: 10 * 1024 * 1024,
-      timeout: 5000
-    });
-    const data = JSON.parse(output);
-    return data.items || [];
-  } catch (error) {
-    console.error(`Error fetching nodes with kubectl: ${error.message}`);
-    return [];
-  }
-};
-
 function formatNode(item) {
   const conditions = item.status?.conditions || [];
   const readyCondition = conditions.find(c => c.type === 'Ready');
@@ -1770,15 +1951,15 @@ app.get('/api/nodes', async (req, res) => {
   try {
     if (!kubeConfig) return res.status(400).json({ error: 'No kubeconfig loaded' });
 
-    const cacheKey = 'nodes';
+    const cacheKey = getCacheKey('nodes', {});
     const cachedData = getCache(cacheKey);
     if (cachedData) {
       res.set('X-Cache', 'HIT');
       return res.json(cachedData);
     }
 
-    const kubectlNodes = fetchNodesWithKubectl();
-    const nodes = kubectlNodes.map(formatNode);
+    const response = await kubeConfig.makeApiClient(k8s.CoreV1Api).listNode();
+    const nodes = (response.items || []).map(formatNode);
     const result = { nodes };
 
     setCache(cacheKey, result, CACHE_TTL.resources);
@@ -1788,25 +1969,6 @@ app.get('/api/nodes', async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
-
-const fetchPodsForNodeWithKubectl = (nodeName) => {
-  try {
-    const output = execFileSync(
-      'kubectl',
-      ['get', 'pods', '--all-namespaces', `--field-selector=spec.nodeName=${nodeName}`, '-o', 'json'],
-      {
-        encoding: 'utf-8',
-        maxBuffer: 10 * 1024 * 1024,
-        timeout: 5000
-      }
-    );
-    const data = JSON.parse(output);
-    return data.items || [];
-  } catch (error) {
-    console.error(`Error fetching pods for node with kubectl: ${error.message}`);
-    return [];
-  }
-};
 
 function formatPodForNode(item) {
   const containerStatuses = item.status?.containerStatuses || [];
@@ -1836,14 +1998,75 @@ app.get('/api/nodes/:name/pods', async (req, res) => {
       return res.json(cachedData);
     }
 
-    const kubectlPods = fetchPodsForNodeWithKubectl(name);
-    const pods = kubectlPods.map(formatPodForNode);
+    const coreApi = kubeConfig.makeApiClient(k8s.CoreV1Api);
+    const items = [];
+    let continuation = '';
+    do {
+      const page = await coreApi.listPodForAllNamespaces({
+        fieldSelector: `spec.nodeName=${name}`,
+        limit: 5000,
+        ...(continuation ? { _continue: continuation } : {})
+      });
+      items.push(...(page.items || []));
+      continuation = page.metadata?._continue || '';
+    } while (continuation);
+    const pods = items.map(formatPodForNode);
     const result = { pods };
 
     setCache(cacheKey, result, CACHE_TTL.resources);
     res.set('X-Cache', 'MISS');
     res.json(result);
   } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+const isValidNodeName = (name) => typeof name === 'string'
+  && name.length <= 253
+  && /^(?=.{1,253}$)[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?)*$/.test(name);
+
+app.post('/api/nodes/:name/cordon', async (req, res) => {
+  const { name } = req.params;
+  if (!isValidNodeName(name)) return res.status(400).json({ error: 'Invalid node name' });
+  try {
+    if (!kubeConfig) return res.status(400).json({ error: 'No kubeconfig loaded' });
+    const out = await runKubectl(['cordon', name]);
+    cache.clear();
+    res.json({ success: true, message: out || `Node ${name} cordoned` });
+  } catch (error) {
+    cache.clear();
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/nodes/:name/uncordon', async (req, res) => {
+  const { name } = req.params;
+  if (!isValidNodeName(name)) return res.status(400).json({ error: 'Invalid node name' });
+  try {
+    if (!kubeConfig) return res.status(400).json({ error: 'No kubeconfig loaded' });
+    const out = await runKubectl(['uncordon', name]);
+    cache.clear();
+    res.json({ success: true, message: out || `Node ${name} uncordoned` });
+  } catch (error) {
+    cache.clear();
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/nodes/:name/drain', async (req, res) => {
+  const { name } = req.params;
+  if (!isValidNodeName(name)) return res.status(400).json({ error: 'Invalid node name' });
+  try {
+    if (!kubeConfig) return res.status(400).json({ error: 'No kubeconfig loaded' });
+    const args = ['drain', name, '--ignore-daemonsets', '--timeout=5m'];
+    if (req.body?.deleteEmptyDirData === true) args.push('--delete-emptydir-data');
+    const out = await runKubectl(args, undefined, 330000);
+    cache.clear();
+    res.json({ success: true, message: out || `Node ${name} drained` });
+  } catch (error) {
+    // drain cordons the node before evicting pods; even a failed drain can
+    // leave it unschedulable, so discard cached node state on both paths.
+    cache.clear();
     res.status(500).json({ error: error.message });
   }
 });
@@ -1919,7 +2142,7 @@ app.get('/api/helm/releases', async (req, res) => {
   try {
     if (!kubeConfig) return res.status(400).json({ error: 'No kubeconfig loaded' });
 
-    const cacheKey = 'helm-releases';
+    const cacheKey = getCacheKey('helm-releases', {});
     const cachedData = getCache(cacheKey);
     if (cachedData) {
       res.set('X-Cache', 'HIT');
@@ -2007,7 +2230,10 @@ const helmBin = () => {
 };
 
 // helm accepts --kube-context to pin the app's current context, mirroring kctl().
-const helmCtx = (...args) => (currentContext ? ['--kube-context', currentContext, ...args] : args);
+const helmCtx = (...args) => {
+  const context = getActiveContext();
+  return context ? ['--kube-context', context, ...args] : args;
+};
 
 // DNS-1123-style validation for the release/namespace/repo names we hand to helm.
 const isHelmName = (s) => typeof s === 'string' && /^[a-z0-9]([-a-z0-9]{0,251}[a-z0-9])?$/.test(s);
@@ -2100,7 +2326,7 @@ async function runHelmDeploy(req, res, { install, verb }) {
     }
 
     const { stdout } = await execFileAsync(bin, args, { encoding: 'utf-8', maxBuffer: 16 * 1024 * 1024, timeout: 300000 });
-    cache.delete('helm-releases'); // surface the change on the next list.
+    cache.delete(getCacheKey('helm-releases', {})); // surface the change on the next list.
     res.json({ ok: true, output: stdout, release: releaseName, namespace });
   } catch (error) {
     const detail = (error.stderr || error.message || '').toString().trim();
@@ -2142,7 +2368,7 @@ const fetchCrdsWithKubectl = async () => {
 
 app.get('/api/customresources', async (req, res) => {
   try {
-    const cacheKey = 'crds';
+    const cacheKey = getCacheKey('crds', {});
     const cachedData = getCache(cacheKey);
     if (cachedData) {
       res.set('X-Cache', 'HIT');
@@ -2888,31 +3114,47 @@ const parseMemBytes = (s) => {
   return val * (mult[unit] || 1);
 };
 
+const emptyClusterResourceUsage = () => ({
+  source: null,
+  cpuSource: null,
+  memorySource: null,
+  cpuMilli: null,
+  memBytes: null,
+  cpuRequestsMilli: null,
+  cpuLimitsMilli: null,
+  memRequestsBytes: null,
+  memLimitsBytes: null
+});
+
 app.get('/api/cluster/summary', async (req, res) => {
   try {
     if (!kubeConfig) return res.status(400).json({ error: 'No kubeconfig loaded' });
 
-    const cacheKey = 'cluster-summary';
+    const cacheKey = getCacheKey('cluster-summary', {});
     const cachedData = getCache(cacheKey);
     if (cachedData) {
       res.set('X-Cache', 'HIT');
       return res.json(cachedData);
     }
 
-    // Kubernetes version — read it in-process via the API server's /version
-    // endpoint instead of shelling out to `kubectl version`, which prints a
-    // "client/server version skew" warning when the local kubectl binary is more
-    // than one minor off the cluster, and needs a matching kubectl at all.
+    // Kubernetes version and core objects are independent reads. Metrics are
+    // served separately, so their availability does not affect this response.
     let serverVersion = 'unknown';
     let platform = '';
-    try {
-      const info = await kubeConfig.makeApiClient(k8s.VersionApi).getCode();
-      serverVersion = info.gitVersion || 'unknown';
-      platform = info.platform || '';
-    } catch (e) { /* version is best-effort */ }
+    const coreApi = kubeConfig.makeApiClient(k8s.CoreV1Api);
+    const namespacesPromise = loadNamespaceData(coreApi).then(({ data }) => data.namespaces || []);
+    const [versionResult, nodesResult, namespacesResult] = await Promise.allSettled([
+      kubeConfig.makeApiClient(k8s.VersionApi).getCode(),
+      coreApi.listNode(),
+      namespacesPromise
+    ]);
+    if (versionResult.status === 'fulfilled') {
+      serverVersion = versionResult.value.gitVersion || 'unknown';
+      platform = versionResult.value.platform || '';
+    }
+    const nodes = nodesResult.status === 'fulfilled' ? (nodesResult.value.items || []).map(formatNode) : [];
+    const namespaceItems = namespacesResult.status === 'fulfilled' ? namespacesResult.value : [];
 
-    // Nodes (reuse existing helpers)
-    const nodes = fetchNodesWithKubectl().map(formatNode);
     const nodeSummary = {
       total: nodes.length,
       ready: nodes.filter(n => n.status === 'Ready').length,
@@ -2935,44 +3177,12 @@ app.get('/api/cluster/summary', async (req, res) => {
       if (n.os) osImages.add(n.os);
     }
 
-    const resourceUsage = await getClusterResourceUsage().catch(() => ({
-      source: null,
-      cpuSource: null,
-      memorySource: null,
-      cpuMilli: null,
-      memBytes: null,
-      cpuRequestsMilli: null,
-      cpuLimitsMilli: null,
-      memRequestsBytes: null,
-      memLimitsBytes: null
-    }));
-
-    // Pod phases
-    const podPhases = { Running: 0, Pending: 0, Succeeded: 0, Failed: 0, Unknown: 0 };
-    let podTotal = 0;
-    try {
-      const out = execFileSync(
-        'kubectl',
-        kctl('get', 'pods', '-A', '-o', 'jsonpath={range .items[*]}{.status.phase}{"\\n"}{end}'),
-        { encoding: 'utf-8', maxBuffer: 10 * 1024 * 1024, timeout: 12000 }
-      );
-      out.split('\n').filter(Boolean).forEach(p => {
-        podPhases[p] = (podPhases[p] || 0) + 1;
-        podTotal++;
-      });
-    } catch (e) { /* ignore */ }
-
-    // Namespace count
-    let namespaceCount = 0;
-    try {
-      const out = execFileSync(
-        'kubectl',
-        kctl('get', 'ns', '-o', 'jsonpath={range .items[*]}{.metadata.name}{"\\n"}{end}'),
-        { encoding: 'utf-8', maxBuffer: 4 * 1024 * 1024, timeout: 8000 }
-      );
-      namespaceCount = out.split('\n').filter(Boolean).length;
-    } catch (e) { /* ignore */ }
-
+    // Keep response shape compatible when pod counts are already warm, without
+    // waiting for a cluster-wide Pod list on this core summary request.
+    const resourceUsage = getCache(getCacheKey('cluster-resource-usage', { context: currentContext || '' }))
+      || emptyClusterResourceUsage();
+    const pods = getCache(getCacheKey('cluster-pods-summary', { context: currentContext || '' }))
+      || { total: null, phases: null };
     const result = {
       currentContext: currentContext,
       serverVersion,
@@ -2990,8 +3200,8 @@ app.get('/api/cluster/summary', async (req, res) => {
       resourceUsage,
       versions: Array.from(versions),
       osImages: Array.from(osImages),
-      pods: { total: podTotal, phases: podPhases },
-      namespaceCount
+      pods,
+      namespaceCount: namespaceItems.length
     };
 
     setCache(cacheKey, result, CACHE_TTL.resources);
@@ -2999,6 +3209,56 @@ app.get('/api/cluster/summary', async (req, res) => {
     res.json(result);
   } catch (error) {
     res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/cluster/pods-summary', async (req, res) => {
+  try {
+    if (!kubeConfig) return res.status(400).json({ error: 'No kubeconfig loaded' });
+
+    const cacheKey = getCacheKey('cluster-pods-summary', { context: currentContext || '' });
+    const cachedData = getCache(cacheKey);
+    if (cachedData) {
+      res.set('X-Cache', 'HIT');
+      return res.json({ pods: cachedData });
+    }
+
+    const pods = await runSingleFlight(cacheKey, async () => {
+      const cached = getCache(cacheKey);
+      if (cached) return cached;
+      const items = await listClusterPodsInFlight(kubeConfig.makeApiClient(k8s.CoreV1Api));
+      const phases = { Running: 0, Pending: 0, Succeeded: 0, Failed: 0, Unknown: 0 };
+      for (const pod of items) {
+        const phase = pod.status?.phase || 'Unknown';
+        phases[phase] = (phases[phase] || 0) + 1;
+      }
+      const summary = { total: items.length, phases };
+      setCache(cacheKey, summary, 10_000);
+      return summary;
+    });
+    res.set('X-Cache', 'MISS');
+    res.json({ pods });
+  } catch (error) {
+    res.status(500).json({ error: error.message, pods: null });
+  }
+});
+
+app.get('/api/cluster/metrics', async (req, res) => {
+  try {
+    if (!kubeConfig) return res.status(400).json({ error: 'No kubeconfig loaded' });
+
+    const cacheKey = getCacheKey('cluster-resource-usage', { context: currentContext || '' });
+    const cachedData = getCache(cacheKey);
+    if (cachedData) {
+      res.set('X-Cache', 'HIT');
+      return res.json({ resourceUsage: cachedData });
+    }
+
+    const resourceUsage = await runSingleFlight(cacheKey, () => getClusterResourceUsage());
+    res.set('X-Cache', 'MISS');
+    res.json({ resourceUsage });
+  } catch (error) {
+    res.status(500).json({ error: error.message, resourceUsage: emptyClusterResourceUsage() });
   }
 });
 
@@ -3011,22 +3271,30 @@ const parseCpuMilli = (s) => {
   return parseFloat(s) * 1000;                        // cores
 };
 
-const fetchMetricsRaw = (path) => {
-  const out = execFileSync('kubectl', kctl('get', '--raw', path), {
-    encoding: 'utf-8',
-    maxBuffer: 30 * 1024 * 1024,
-    timeout: 10000
+const fetchMetricsObject = async (plural, namespace, name) => {
+  const api = kubeConfig.makeApiClient(k8s.CustomObjectsApi);
+  const resource = { group: 'metrics.k8s.io', version: 'v1beta1', plural };
+  let request;
+  if (name && namespace) {
+    request = api.getNamespacedCustomObject({ ...resource, namespace, name });
+  } else if (name) {
+    request = api.getClusterCustomObject({ ...resource, name });
+  } else if (namespace) {
+    request = api.listNamespacedCustomObject({ ...resource, namespace });
+  } else {
+    request = api.listClusterCustomObject(resource);
+  }
+  let timeoutId;
+  const timeout = new Promise((resolve, reject) => {
+    timeoutId = setTimeout(() => reject(new Error('Metrics API request timed out')), 10_000);
   });
-  return JSON.parse(out);
-};
-
-const fetchMetricsRawAsync = async (path) => {
-  const { stdout } = await execFileAsync('kubectl', kctl('get', '--raw', path), {
-    encoding: 'utf-8',
-    maxBuffer: 30 * 1024 * 1024,
-    timeout: 10000
-  });
-  return JSON.parse(stdout);
+  let response;
+  try {
+    response = await Promise.race([request, timeout]);
+  } finally {
+    clearTimeout(timeoutId);
+  }
+  return response?.body ?? response;
 };
 
 // Optional cost integrations are discovered in the active kube context. The
@@ -3421,6 +3689,38 @@ const queryPrometheusInstant = async (expression) => {
   });
 };
 
+const queryPrometheusRange = async (expression, { start, end, step }, prometheus) => {
+  if (!prometheus?.installed || !prometheus.apiReachable) return null;
+  const cacheKey = getCacheKey('prometheus-range-query', {
+    context: currentContext || '', namespace: prometheus.namespace,
+    service: prometheus.service, port: prometheus.port,
+    expression, start, end, step
+  });
+  const cached = getCache(cacheKey);
+  if (cached) return cached.result;
+
+  return runSingleFlight(cacheKey, async () => {
+    const refreshedCache = getCache(cacheKey);
+    if (refreshedCache) return refreshedCache.result;
+    try {
+      const query = new URLSearchParams({ query: expression, start: String(start), end: String(end), step: String(step) }).toString();
+      const proxyPath = `/api/v1/namespaces/${prometheus.namespace}/services/${prometheus.service}:${prometheus.port}/proxy/api/v1/query_range?${query}`;
+      const { stdout } = await execFileAsync('kubectl', kctl('get', '--raw', proxyPath), {
+        encoding: 'utf-8', maxBuffer: 16 * 1024 * 1024, timeout: 10000
+      });
+      const payload = JSON.parse(stdout);
+      const result = payload.status === 'success' && Array.isArray(payload.data?.result)
+        ? payload.data.result
+        : null;
+      setCache(cacheKey, { result }, result?.length ? Math.min(30_000, step * 1000) : 10_000);
+      return result;
+    } catch {
+      setCache(cacheKey, { result: null }, 10_000);
+      return null;
+    }
+  });
+};
+
 const prometheusSampleValue = (sample) => {
   const value = Number(sample?.value?.[1]);
   return Number.isFinite(value) ? value : null;
@@ -3520,6 +3820,143 @@ const getPrometheusNodeUsage = async (node, name) => {
     memorySource: memBytes == null ? null : values.get('memoryKubelet')?.length ? 'Prometheus · kubelet' : 'Prometheus · node-exporter'
   };
 };
+
+const METRIC_HISTORY_PERIODS = {
+  '15m': 15 * 60,
+  '1h': 60 * 60,
+  '6h': 6 * 60 * 60,
+  '24h': 24 * 60 * 60,
+  '7d': 7 * 24 * 60 * 60
+};
+
+const metricHistoryWindow = (period) => {
+  const durationSeconds = METRIC_HISTORY_PERIODS[period];
+  if (!durationSeconds) return null;
+  const step = Math.max(15, Math.ceil(durationSeconds / 180));
+  const end = Math.floor(Math.floor(Date.now() / 1000) / step) * step;
+  return { start: end - durationSeconds, end, step };
+};
+
+const metricHistoryExpression = (kind, namespace, name, node) => {
+  if (kind === 'pod') {
+    const selector = `namespace=${prometheusString(namespace)},pod=${prometheusString(name)},container!="",container!="POD"`;
+    return [
+      `label_replace(sum by (namespace) (max by (container, namespace) (rate(container_cpu_usage_seconds_total{${selector}}[5m]))) * 1000, "resource", "cpu", "namespace", ".+")`,
+      `label_replace(sum by (namespace) (max by (container, namespace) (container_memory_working_set_bytes{${selector}})), "resource", "memory", "namespace", ".+")`
+    ].join(' or ');
+  }
+
+  const addresses = (node?.status?.addresses || []).map((address) => address.address).filter(Boolean);
+  const targets = [...new Set([name, ...addresses])];
+  const instanceRegex = `^(${targets.map((value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})(:10250|:9100)?$`;
+  const selector = `instance=~${prometheusString(instanceRegex)}`;
+  const withResource = (query, resource) => `label_replace(${query}, "resource", "${resource}", "instance", ".+")`;
+  return [
+    withResource(`sum by (instance) (rate(node_cpu_usage_seconds_total{${selector}}[5m])) * 1000`, 'cpuKubelet'),
+    withResource(`max by (instance) (node_memory_working_set_bytes{${selector}})`, 'memoryKubelet'),
+    withResource(`sum by (instance) (rate(node_cpu_seconds_total{${selector},mode!="idle",mode!="iowait"}[5m])) * 1000`, 'cpuNodeExporter'),
+    withResource(`max by (instance) (node_memory_MemTotal_bytes{${selector}} - node_memory_MemAvailable_bytes{${selector}})`, 'memoryNodeExporter')
+  ].join(' or ');
+};
+
+const normalizeMetricHistory = (kind, series) => {
+  const byTimestamp = new Map();
+  for (const row of series || []) {
+    const resource = row.metric?.resource;
+    if (!resource) continue;
+    for (const [timestamp, rawValue] of row.values || []) {
+      const value = Number(rawValue);
+      if (!Number.isFinite(value)) continue;
+      const key = Number(timestamp);
+      const values = byTimestamp.get(key) || new Map();
+      const samples = values.get(resource) || [];
+      samples.push(value);
+      values.set(resource, samples);
+      byTimestamp.set(key, values);
+    }
+  }
+
+  const maxValue = (values) => values?.length ? Math.max(...values) : null;
+  return [...byTimestamp.entries()].sort(([a], [b]) => a - b).map(([timestamp, values]) => {
+    const best = (primary, fallback) => maxValue(values.get(primary)) ?? maxValue(values.get(fallback));
+    return {
+      timestamp: new Date(timestamp * 1000).toISOString(),
+      cpuMilli: kind === 'pod' ? maxValue(values.get('cpu')) : best('cpuKubelet', 'cpuNodeExporter'),
+      memBytes: kind === 'pod' ? maxValue(values.get('memory')) : best('memoryKubelet', 'memoryNodeExporter')
+    };
+  });
+};
+
+const loadMetricHistory = async ({ kind, namespace, name, period }) => {
+  const window = metricHistoryWindow(period);
+  if (!window) return { available: false, points: [], message: 'Unsupported time range.' };
+  const prometheus = await detectPrometheusService().catch(() => null);
+  if (!prometheus?.installed || !prometheus.apiReachable) {
+    return {
+      available: false,
+      points: [],
+      message: 'Historical metrics require a reachable Prometheus. Metrics API only provides current values.'
+    };
+  }
+
+  let node = null;
+  if (kind === 'node') {
+    try {
+      node = await kubeConfig.makeApiClient(k8s.CoreV1Api).readNode({ name });
+    } catch {
+      return { available: false, points: [], message: 'Unable to read node metadata for its metrics query.' };
+    }
+  }
+
+  const expression = metricHistoryExpression(kind, namespace, name, node);
+  const series = await queryPrometheusRange(expression, window, prometheus);
+  if (!series) {
+    return { available: false, points: [], message: 'Prometheus did not return historical metrics.' };
+  }
+  const points = normalizeMetricHistory(kind, series);
+  return {
+    available: true,
+    source: 'Prometheus',
+    period,
+    stepSeconds: window.step,
+    points,
+    message: points.length ? null : 'No samples found for this resource in the selected period.'
+  };
+};
+
+const sendMetricHistory = async (req, res, kind, namespace, name) => {
+  if (!kubeConfig) return res.status(400).json({ available: false, points: [], message: 'No kubeconfig loaded.' });
+  const period = String(req.query.period || '1h');
+  if (!METRIC_HISTORY_PERIODS[period]) {
+    return res.status(400).json({ available: false, points: [], message: 'Unsupported time range.' });
+  }
+  const cacheKey = getCacheKey('metric-history', {
+    context: currentContext || '', kind, namespace: namespace || '', name, period
+  });
+  const cached = getCache(cacheKey);
+  if (cached) return res.json(cached);
+
+  try {
+    const history = await runSingleFlight(cacheKey, async () => {
+      const refreshed = getCache(cacheKey);
+      if (refreshed) return refreshed;
+      const result = await loadMetricHistory({ kind, namespace, name, period });
+      setCache(cacheKey, result, result.available ? 20_000 : 10_000);
+      return result;
+    });
+    res.json(history);
+  } catch (error) {
+    res.status(500).json({ available: false, points: [], message: error.message });
+  }
+};
+
+app.get('/api/metrics/history/pod/:namespace/:pod', (req, res) => (
+  sendMetricHistory(req, res, 'pod', req.params.namespace, req.params.pod)
+));
+
+app.get('/api/metrics/history/node/:name', (req, res) => (
+  sendMetricHistory(req, res, 'node', null, req.params.name)
+));
 
 const getPrometheusClusterUsage = async () => {
   const expression = [
@@ -3720,25 +4157,29 @@ app.get('/api/metrics/pods/:namespace?', async (req, res) => {
       return res.json(cachedData);
     }
 
-    const path = namespace && namespace !== 'all'
-      ? `/apis/metrics.k8s.io/v1beta1/namespaces/${namespace}/pods`
-      : `/apis/metrics.k8s.io/v1beta1/pods`;
+    const result = await runSingleFlight(cacheKey, async () => {
+      const cached = getCache(cacheKey);
+      if (cached) return cached;
 
-    let data;
-    try {
-      data = fetchMetricsRaw(path);
-    } catch (err) {
-      return res.json({ metrics: {}, available: false });
-    }
+      let data;
+      try {
+        data = await fetchMetricsObject('pods', namespace && namespace !== 'all' ? namespace : undefined);
+      } catch {
+        const unavailable = { metrics: {}, available: false };
+        setCache(cacheKey, unavailable, 3000);
+        return unavailable;
+      }
 
-    const metrics = {};
-    (data.items || []).forEach(item => {
-      const key = `${item.metadata.namespace}/${item.metadata.name}`;
-      metrics[key] = summarizePodMetrics(item);
+      const metrics = {};
+      (data.items || []).forEach(item => {
+        const key = `${item.metadata.namespace}/${item.metadata.name}`;
+        metrics[key] = summarizePodMetrics(item);
+      });
+
+      const snapshot = { metrics, available: true };
+      setCache(cacheKey, snapshot, 8000);
+      return snapshot;
     });
-
-    const result = { metrics, available: true };
-    setCache(cacheKey, result, 8000);
     res.set('X-Cache', 'MISS');
     res.json(result);
   } catch (error) {
@@ -3755,9 +4196,7 @@ app.get('/api/metrics/pod/:namespace/:pod', async (req, res) => {
     const snapshot = await getMetricResponse(cacheKey, async () => {
       const metricSources = await raceMetricsSources({
         prometheusPromise: getPrometheusPodUsage(namespace, pod),
-        loadMetricsApi: async () => summarizePodMetrics(await fetchMetricsRawAsync(
-          `/apis/metrics.k8s.io/v1beta1/namespaces/${namespace}/pods/${pod}`
-        )),
+        loadMetricsApi: async () => summarizePodMetrics(await fetchMetricsObject('pods', namespace, pod)),
         isPrometheusComplete: (metrics) => Boolean(metrics?.hasCpu && metrics?.hasMemory),
         isMetricsApiUsable: (metrics) => metrics?.cpuMilli != null || metrics?.memBytes != null
       });
@@ -3858,6 +4297,28 @@ const listAllClusterPods = async (coreApi) => {
   return items;
 };
 
+const clusterPodsInFlight = new Map();
+const listClusterPodsInFlight = (coreApi) => {
+  const context = getActiveContext();
+  const cacheKey = getCacheKey('cluster-pods-list', {});
+  const cached = getCache(cacheKey);
+  if (cached) return Promise.resolve(cached);
+
+  const existing = clusterPodsInFlight.get(context);
+  if (existing) return existing;
+
+  const pending = listAllClusterPods(coreApi).then((items) => {
+    // The key captures the selected context before the request starts, so a
+    // context switch cannot make these Pods visible under the new context.
+    setCache(cacheKey, items, 10_000);
+    return items;
+  }).finally(() => {
+    if (clusterPodsInFlight.get(context) === pending) clusterPodsInFlight.delete(context);
+  });
+  clusterPodsInFlight.set(context, pending);
+  return pending;
+};
+
 const getClusterResourceUsage = async () => {
   const cacheKey = getCacheKey('cluster-resource-usage', { context: currentContext || '' });
   const cached = getCache(cacheKey);
@@ -3876,7 +4337,7 @@ const getClusterResourceUsage = async () => {
   };
   const coreApi = kubeConfig.makeApiClient(k8s.CoreV1Api);
   const [podResult, prometheusResult] = await Promise.allSettled([
-    listAllClusterPods(coreApi),
+    listClusterPodsInFlight(coreApi),
     getPrometheusClusterUsage()
   ]);
   const pods = podResult.status === 'fulfilled' ? podResult.value : null;
@@ -3888,7 +4349,7 @@ const getClusterResourceUsage = async () => {
   let metricsApi = null;
   if (prometheus?.cpuMilli == null || prometheus?.memBytes == null) {
     try {
-      const metrics = fetchMetricsRaw('/apis/metrics.k8s.io/v1beta1/nodes');
+      const metrics = await fetchMetricsObject('nodes');
       metricsApi = (metrics.items || []).reduce((total, node) => ({
         cpuMilli: total.cpuMilli + parseCpuMilli(node.usage?.cpu),
         memBytes: total.memBytes + parseMemBytes(node.usage?.memory)
@@ -3938,7 +4399,7 @@ app.get('/api/metrics/node/:name', async (req, res) => {
       const metricSourcesPromise = raceMetricsSources({
         prometheusPromise: nodePromise.then((node) => getPrometheusNodeUsage(node, name)),
         loadMetricsApi: async () => {
-          const metrics = await fetchMetricsRawAsync(`/apis/metrics.k8s.io/v1beta1/nodes/${name}`);
+          const metrics = await fetchMetricsObject('nodes', undefined, name);
           return {
             cpuMilli: parseCpuMilli(metrics.usage?.cpu),
             memBytes: parseMemBytes(metrics.usage?.memory)
@@ -4340,12 +4801,19 @@ function getResourceStatus(item, kind) {
   if (kind === 'Pod') {
     return status.phase || 'Unknown';
   }
-  if (kind === 'Deployment' || kind === 'StatefulSet' || kind === 'DaemonSet') {
+  if (['Deployment', 'StatefulSet', 'DaemonSet', 'ReplicaSet', 'ReplicationController'].includes(kind)) {
     const ready = status.readyReplicas != null ? status.readyReplicas
       : (status.numberReady != null ? status.numberReady : 0);
     const desired = status.replicas != null ? status.replicas
-      : (status.desiredNumberScheduled != null ? status.desiredNumberScheduled : 0);
+      : (status.desiredNumberScheduled != null ? status.desiredNumberScheduled : item.spec?.replicas || 0);
     return `${ready}/${desired}`;
+  }
+  if (kind === 'Job') {
+    return `${status.succeeded || 0}/${item.spec?.completions ?? 1}`;
+  }
+  if (kind === 'CronJob') {
+    if (item.spec?.suspend) return 'Suspended';
+    return (status.active || []).length ? `${status.active.length} active` : 'Active';
   }
   if (kind === 'Service') {
     return item.spec?.type || 'Unknown';
@@ -4441,6 +4909,7 @@ wss.on('connection', async (browserWs, req) => {
       agent: durl.searchParams.get('agent'),
       namespace: durl.searchParams.get('namespace'),
       pod: durl.searchParams.get('pod'),
+      node: durl.searchParams.get('node'),
       container: durl.searchParams.get('container'),
     });
     return;
@@ -4461,6 +4930,11 @@ wss.on('connection', async (browserWs, req) => {
 
   const agentId = url.searchParams.get('agent');
   let term, cleanup = () => {};
+  let nodeDebugSession = false;
+  let nodeDebugOutput = '';
+  let nodeDebugPodName = null;
+  let nodeDebugCleanupRequested = false;
+  let nodeDebugCleanupStarted = false;
 
   if (agentId) {
     // ---- AI agent terminal: a login shell with the app's current cluster
@@ -4491,27 +4965,67 @@ wss.on('connection', async (browserWs, req) => {
     const launch = prompt ? `${command} ${shq(prompt)}\r` : `${command}\r`;
     setTimeout(() => { try { term.write(launch); } catch { /* ignore */ } }, 700);
   } else {
-    // ---- pod exec: bridge to `kubectl exec -it` in a real PTY (robust against
-    // exec-credential auth plugins that break client-node's WebSocket exec). ----
-    const namespace = url.searchParams.get('namespace');
-    const pod = url.searchParams.get('pod');
-    const container = url.searchParams.get('container') || undefined;
-    if (!namespace || !pod) { browserWs.close(1008, 'Missing namespace or pod'); return; }
-    const args = kctl('exec', '-it', '-n', namespace, ...(container ? ['-c', container] : []), pod, '--', 'sh', '-c', 'exec $(command -v bash || command -v sh || echo /bin/sh)');
+    const nodeName = url.searchParams.get('node');
     const kubectlBin = resolveBinSync('kubectl');
-    try {
-      term = pty.spawn(kubectlBin, args, { name: 'xterm-256color', cols: 80, rows: 24, cwd: process.env.HOME || '/', env: process.env });
-    } catch (err) {
-      const hint = kubectlBin === 'kubectl'
-        ? ' (kubectl was not found — install it or add it to PATH)'
-        : '';
-      send(`\r\n\x1b[31mFailed to start shell: ${err.message}${hint}\x1b[0m\r\n`);
-      browserWs.close();
-      return;
+    if (nodeName) {
+      if (!isValidNodeName(nodeName)) { browserWs.close(1008, 'Invalid node name'); return; }
+      // `kubectl debug node` creates a temporary privileged debug pod with the
+      // host root mounted at /host. Keep the generated name from its output so
+      // the pod can be deleted when the browser session ends.
+      nodeDebugSession = true;
+      const args = kctl(
+        'debug', `node/${nodeName}`, '-n', 'default', '-it',
+        '--image=ubuntu:24.04', '--profile=sysadmin', '--', 'chroot', '/host', '/bin/sh'
+      );
+      try {
+        term = pty.spawn(kubectlBin, args, { name: 'xterm-256color', cols: 80, rows: 24, cwd: process.env.HOME || '/', env: process.env });
+      } catch (err) {
+        const hint = kubectlBin === 'kubectl'
+          ? ' (kubectl was not found — install it or add it to PATH)'
+          : '';
+        send(`\r\n\x1b[31mFailed to start node shell: ${err.message}${hint}\x1b[0m\r\n`);
+        browserWs.close();
+        return;
+      }
+      cleanup = () => {
+        nodeDebugCleanupRequested = true;
+        if (!nodeDebugPodName || nodeDebugCleanupStarted) return;
+        nodeDebugCleanupStarted = true;
+        const deleter = spawn(kubectlBin, kctl('delete', 'pod', nodeDebugPodName, '-n', 'default', '--ignore-not-found=true', '--wait=false'), { stdio: 'ignore' });
+        deleter.on('error', () => {});
+      };
+    } else {
+      // ---- pod exec: bridge to `kubectl exec -it` in a real PTY (robust against
+      // exec-credential auth plugins that break client-node's WebSocket exec). ----
+      const namespace = url.searchParams.get('namespace');
+      const pod = url.searchParams.get('pod');
+      const container = url.searchParams.get('container') || undefined;
+      if (!namespace || !pod) { browserWs.close(1008, 'Missing namespace or pod'); return; }
+      const args = kctl('exec', '-it', '-n', namespace, ...(container ? ['-c', container] : []), pod, '--', 'sh', '-c', 'exec $(command -v bash || command -v sh || echo /bin/sh)');
+      try {
+        term = pty.spawn(kubectlBin, args, { name: 'xterm-256color', cols: 80, rows: 24, cwd: process.env.HOME || '/', env: process.env });
+      } catch (err) {
+        const hint = kubectlBin === 'kubectl'
+          ? ' (kubectl was not found — install it or add it to PATH)'
+          : '';
+        send(`\r\n\x1b[31mFailed to start shell: ${err.message}${hint}\x1b[0m\r\n`);
+        browserWs.close();
+        return;
+      }
     }
   }
 
-  term.onData((data) => send(data));
+  term.onData((data) => {
+    if (nodeDebugSession && !nodeDebugPodName) {
+      nodeDebugOutput = (nodeDebugOutput + data).slice(-2000).replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, '');
+      const match = nodeDebugOutput.match(/Creating debugging pod\s+([a-z0-9](?:[-a-z0-9.]*[a-z0-9])?)\s+with container\b/i);
+      if (match && isValidNodeName(match[1])) {
+        nodeDebugPodName = match[1];
+        if (nodeDebugCleanupRequested) cleanup();
+      }
+    }
+    send(data);
+  });
   term.onExit(({ exitCode }) => {
     if (browserWs.readyState === 1 && exitCode) send(`\r\n\x1b[90m[process exited with code ${exitCode}]\x1b[0m\r\n`);
     try { browserWs.close(); } catch (e) {}

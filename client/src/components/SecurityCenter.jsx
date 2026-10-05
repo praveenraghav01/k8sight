@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import axios from 'axios';
 import Icon from './Icons';
 import Loader from './Loader';
@@ -340,11 +341,29 @@ function Prop({ k, children }) { return <div className="sec-prop"><span classNam
 
 function ImageDetail({ d, onNavigate }) {
   const [sevFilter, setSevFilter] = useState(null);
+  const [reportSeverity, setReportSeverity] = useState('ALL');
+  const [printing, setPrinting] = useState(false);
   const controlledBy = d.workloads[0];
   const donutSeg = SEVERITIES.filter((k) => k !== 'UNKNOWN').map((k) => ({ key: k, label: k[0] + k.slice(1).toLowerCase(), value: d.summary[k] || 0, color: SEV_COLOR[k] }));
   const worst = SEVERITIES.find((k) => d.summary[k]) || 'LOW';
   const toggleSev = (k) => setSevFilter((f) => (f === k ? null : k));
   const shownVulns = sevFilter ? d.vulnerabilities.filter((v) => v.severity === sevFilter) : d.vulnerabilities;
+
+  useEffect(() => {
+    if (!printing) return undefined;
+    const previousTitle = document.title;
+    const imageSlug = String(d.image || 'image').replace(/[^a-zA-Z0-9._-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 100);
+    document.title = `${imageSlug || 'image'}-vulnerability-report`;
+    const finishPrint = () => setPrinting(false);
+    const timer = window.setTimeout(() => window.print(), 80);
+    window.addEventListener('afterprint', finishPrint, { once: true });
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener('afterprint', finishPrint);
+      document.title = previousTitle;
+    };
+  }, [printing, d.image]);
+
   return (
     <>
       <div className="sec-drawer-section">Properties</div>
@@ -366,7 +385,24 @@ function ImageDetail({ d, onNavigate }) {
         </span>
       </Prop>
 
-      <div className="sec-drawer-section">Vulnerabilities</div>
+      <div className="sec-vulnerability-head">
+        <div className="sec-drawer-section">Vulnerabilities</div>
+        <div className="sec-report-actions">
+          <label className="sec-report-filter">
+            <span>PDF report</span>
+            <select value={reportSeverity} onChange={(event) => setReportSeverity(event.target.value)} aria-label="Filter PDF report by severity">
+              <option value="ALL">All severities</option>
+              <option value="CRITICAL">Critical</option>
+              <option value="HIGH">High</option>
+              <option value="MEDIUM">Medium</option>
+              <option value="LOW">Low</option>
+            </select>
+          </label>
+          <button className="sec-report-btn" onClick={() => setPrinting(true)} disabled={printing} title="Open the print dialog to save this report as PDF">
+            <Icon name="download" size={14} /> Export PDF
+          </button>
+        </div>
+      </div>
       <div className="sec-drawer-donut"><Donut title="" segments={donutSeg} size={120} onSegmentClick={toggleSev} activeKey={sevFilter} /></div>
       <div className="sec-sevfilter">
         {SEVERITIES.filter((k) => d.summary[k]).map((k) => (
@@ -420,7 +456,89 @@ function ImageDetail({ d, onNavigate }) {
           </div>
         ))}
       </div>
+      {printing && createPortal(<ImageVulnerabilityReport image={d} severityFilter={reportSeverity} />, document.body)}
     </>
+  );
+}
+
+function reportDate(value) {
+  if (!value) return '—';
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
+}
+
+function ImageVulnerabilityReport({ image, severityFilter }) {
+  const allVulnerabilities = image.vulnerabilities || [];
+  const vulnerabilities = severityFilter === 'ALL'
+    ? allVulnerabilities
+    : allVulnerabilities.filter((vulnerability) => vulnerability.severity === severityFilter);
+  const workloads = image.workloads || [];
+  const summary = SEVERITIES.reduce((counts, severity) => {
+    counts[severity] = vulnerabilities.filter((vulnerability) => vulnerability.severity === severity).length;
+    return counts;
+  }, {});
+  return (
+    <article className="sec-image-report">
+      <header className="sec-report-header">
+        <div className="sec-report-brand">k8sight · Security Center</div>
+        <h1>Container Image Vulnerability Report</h1>
+        <div className="sec-report-image">{image.image}</div>
+      </header>
+
+      <section className="sec-report-meta">
+        <div><b>Status</b><span>{image.status || 'Scanned'}</span></div>
+        <div><b>Namespace</b><span>{image.namespace || '—'}</span></div>
+        <div><b>Scanned</b><span>{reportDate(image.scannedAt)}</span></div>
+        <div><b>Scanner</b><span>{image.scanner || 'Trivy'}</span></div>
+        <div><b>OS / platform</b><span>{image.platform || image.os || '—'}</span></div>
+        <div><b>Tag</b><span>{image.tag || '—'}</span></div>
+        <div><b>Severity filter</b><span>{severityFilter === 'ALL' ? 'All severities' : severityFilter}</span></div>
+        {image.digest && <div className="sec-report-digest"><b>Digest</b><span>{image.digest}</span></div>}
+        <div className="sec-report-workloads">
+          <b>Used by</b>
+          <span>{workloads.length ? workloads.slice(0, 20).map((workload) => `${workload.namespace || 'default'}/${workload.name}`).join(', ') : '—'}{workloads.length > 20 ? `, and ${workloads.length - 20} more` : ''}</span>
+        </div>
+      </section>
+
+      <section className="sec-report-summary">
+        <h2>Severity summary</h2>
+        <div className="sec-report-severities">
+          {SEVERITIES.map((severity) => (
+            <div key={severity} className="sec-report-severity" style={{ borderTopColor: SEV_COLOR[severity] }}>
+              <b>{summary[severity] || 0}</b><span>{severity}</span>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className="sec-report-findings-section">
+        <h2>Vulnerabilities ({vulnerabilities.length})</h2>
+        {image.scanError && <p className="sec-report-error">Scan error: {image.scanError}</p>}
+        {vulnerabilities.length ? (
+          <table className="sec-report-findings">
+            <thead><tr><th>CVE</th><th>Severity</th><th>Package</th><th>Installed</th><th>Fixed in</th><th>CVSS</th><th>Details</th></tr></thead>
+            <tbody>
+              {vulnerabilities.map((vulnerability, index) => (
+                <tr key={`${vulnerability.id || 'finding'}-${vulnerability.pkg || ''}-${index}`}>
+                  <td className="sec-report-cve">{vulnerability.link ? <a href={vulnerability.link}>{vulnerability.id || '—'}</a> : vulnerability.id || '—'}</td>
+                  <td><span className="sec-report-sev" style={{ color: SEV_COLOR[vulnerability.severity] || SEV_COLOR.UNKNOWN }}>{vulnerability.severity || 'UNKNOWN'}</span></td>
+                  <td className="sec-report-code">{vulnerability.pkg || '—'}</td>
+                  <td className="sec-report-code">{vulnerability.installedVersion || '—'}</td>
+                  <td className="sec-report-code">{vulnerability.fixedVersion || '—'}</td>
+                  <td>{vulnerability.score ?? '—'}</td>
+                  <td className="sec-report-details">
+                    <div>{vulnerability.title || '—'}</div>
+                    {vulnerability.link && <a href={vulnerability.link}>{vulnerability.link}</a>}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ) : <p className="sec-report-empty">No {severityFilter === 'ALL' ? '' : `${severityFilter.toLowerCase()} `}vulnerabilities were reported for this image.</p>}
+      </section>
+
+      <footer className="sec-report-footer">Generated {new Date().toLocaleString()} by k8sight</footer>
+    </article>
   );
 }
 
