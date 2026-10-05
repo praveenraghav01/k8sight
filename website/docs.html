@@ -850,6 +850,18 @@ export GOOGLE_CLIENT_SECRET='GOCSPX-...'</code></pre>
       <h2>Release notes</h2>
       <div class="tagline">What's new in each version. Installers for every release are on the <a href="https://github.com/praveenraghav01/k8sight/releases" target="_blank" rel="noopener">Releases</a> page.</div>
 
+      <h3>v1.6.0 <span class="rel-date">Sep 26, 2026</span> — Costs, Helm charts &amp; auto-update</h3>
+      <p>See what your cluster spends, install Helm charts from the UI, and let the app keep itself up to date.</p>
+      <ul>
+        <li><strong>Costs Center</strong> — totals, idle cost, allocation count and the biggest spender from <strong>OpenCost</strong> or <strong>Kubecost</strong>, for the last 24 hours, 7 or 30 days, or month to date. A stacked <strong>cost over time</strong> chart shows spend per namespace (hover a bar for its breakdown), with per-namespace, workload and node tables underneath. It finds the provider automatically, suggests a lightweight OpenCost install when none is present, and works in demo mode.</li>
+        <li><strong>Helm charts from the UI</strong> — search Artifact Hub, pick a version, adjust values, and install or upgrade a release. Installs use the <code>helm</code> on your <code>PATH</code> in this release.</li>
+        <li><strong>Auto-update</strong> — the desktop app checks for new versions on launch, downloads them in the background and asks you to restart. Turn it off or check manually in <strong>Preferences → General</strong>. This is the first version with the updater, so install 1.6.0 by hand once; it updates itself after that.</li>
+        <li><strong>More accurate resource metrics</strong> — pod-level requests/limits are respected and every Kubernetes memory unit is parsed correctly.</li>
+        <li><strong>Security</strong> — resolved CodeQL findings (server-side request forgery, unsafe URL checks), removed a hard-coded secret from the assistant (CWE-798), and hardened the Trivy download (CWE-494).</li>
+        <li><strong>Fixes</strong> — Costs no longer show $0 for 7/30-day windows on a young provider, the Costs tabs no longer hang on a busy OpenCost, and the cost chart tooltip is readable in light mode.</li>
+      </ul>
+      <p><a href="https://github.com/praveenraghav01/k8sight/releases/tag/v1.6.0" target="_blank" rel="noopener">Release on GitHub ↗</a></p>
+
       <h3>v1.5.3 <span class="rel-date">Sep 25, 2026</span> — Leaner installs &amp; a fully-notarized macOS download</h3>
       <p>Packaging and trust improvements across every platform.</p>
       <ul>

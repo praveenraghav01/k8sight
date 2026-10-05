@@ -52,6 +52,10 @@ export default function Assistant({ context }) {
     if (!baseUrl || !model || !apiKey || savingKey) return;
     setSavingKey(true);
     setKeyError(null);
+    // Clear the key out of React state/memory immediately after capturing the
+    // local copy needed for the request, rather than waiting for the request
+    // to settle, to minimize how long it lingers in the browser heap.
+    setKeyInput('');
     try {
       const resp = await fetch('/api/assistant/config', {
         method: 'POST',
@@ -64,9 +68,6 @@ export default function Assistant({ context }) {
     } catch (err) {
       setKeyError(err.message || 'Could not save the connection');
     } finally {
-      // Clear the key from React state/memory as soon as the request settles,
-      // whether it succeeded or failed, to minimize the time it lingers in the browser.
-      setKeyInput('');
       setSavingKey(false);
     }
   };
