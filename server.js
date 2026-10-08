@@ -3120,6 +3120,7 @@ const FLUX_KINDS = {
   helmrepository:        { kind: 'HelmRepository',        resource: `helmrepositories.${FLUX_GROUPS.source}`,          category: 'sources', suspendable: true },
   bucket:                { kind: 'Bucket',                resource: `buckets.${FLUX_GROUPS.source}`,                   category: 'sources', suspendable: true },
   helmchart:             { kind: 'HelmChart',             resource: `helmcharts.${FLUX_GROUPS.source}`,                category: 'sources', suspendable: true },
+  externalartifact:      { kind: 'ExternalArtifact',      resource: `externalartifacts.${FLUX_GROUPS.source}`,         category: 'sources', suspendable: false },
   alert:                 { kind: 'Alert',                 resource: `alerts.${FLUX_GROUPS.notification}`,              category: 'notifications', suspendable: true },
   provider:              { kind: 'Provider',              resource: `providers.${FLUX_GROUPS.notification}`,           category: 'notifications', suspendable: false },
   receiver:              { kind: 'Receiver',              resource: `receivers.${FLUX_GROUPS.notification}`,           category: 'notifications', suspendable: true },
@@ -3174,9 +3175,13 @@ const parseFlux = (item, kindKey) => {
     interval: spec.interval || '',
     // kind-specific extras surfaced in list/detail
     url: spec.url || '',
+    type: spec.type || '',
     chart: spec.chart?.spec?.chart || (typeof spec.chart === 'string' ? spec.chart : '') || '',
+    chartVersion: st.history?.[0]?.chartVersion || spec.chart?.spec?.version || '',
     path: spec.path || '',
+    prune: spec.prune === true,
     targetNamespace: spec.targetNamespace || spec.chart?.spec?.targetNamespace || '',
+    lastAppliedRevision: st.lastAppliedRevision || st.lastAttemptedRevision || '',
   };
 };
 
@@ -3255,10 +3260,16 @@ app.get('/api/flux/overview', async (req, res) => {
     const summary = {};
     for (const r of all) {
       const c = r.category;
-      (summary[c] = summary[c] || { total: 0, ready: 0 }).total++;
-      if (r.state === 'Ready') summary[c].ready++;
+      const s = (summary[c] = summary[c] || { total: 0, ready: 0, reconciling: 0, failed: 0, suspended: 0 });
+      s.total++;
+      if (r.state === 'Ready') s.ready++;
+      else if (r.state === 'Reconciling') s.reconciling++;
+      else if (r.state === 'Failed') s.failed++;
+      else if (r.state === 'Suspended') s.suspended++;
     }
-    const attention = all.filter((r) => r.state === 'Failed' || r.state === 'Suspended');
+    // "Needs attention" = anything not Ready (reconciling, failed, suspended), as in Lens.
+    const attention = all.filter((r) => r.state !== 'Ready')
+      .sort((a, b) => (a.state === 'Failed' ? -1 : 1) - (b.state === 'Failed' ? -1 : 1));
     const total = all.length;
     const ready = all.filter((r) => r.state === 'Ready').length;
     const healthy = !all.some((r) => r.state === 'Failed');
@@ -3302,6 +3313,14 @@ app.get('/api/flux/resource/:kindKey/:namespace/:name', async (req, res) => {
         .map((e) => ({ type: e.type, reason: e.reason, message: e.message, count: e.count || 1, at: e.lastTimestamp || e.eventTime }))
         .sort((a, b) => new Date(b.at) - new Date(a.at)).slice(0, 30);
     } catch { /* events optional */ }
+    // Managed resources — the inventory a Kustomization / HelmRelease applies.
+    // Kustomization: status.inventory.entries[].id = "ns_name_group_kind".
+    // HelmRelease:   status.history[0].* has no inventory; left empty.
+    const managed = (item.status?.inventory?.entries || []).map((e) => {
+      const parts = String(e.id || '').split('_');
+      const [ns, nm, grp, knd] = parts.length >= 4 ? parts : ['', parts[0] || '', '', parts[1] || ''];
+      return { namespace: ns, name: nm, group: grp, kind: knd };
+    });
     res.json({
       summary: parseFlux(item, kindKey),
       spec: item.spec || {},
@@ -3311,9 +3330,23 @@ app.get('/api/flux/resource/:kindKey/:namespace/:name', async (req, res) => {
         annotations: item.metadata?.annotations || {}, labels: item.metadata?.labels || {},
         finalizers: item.metadata?.finalizers || [], creationTimestamp: item.metadata?.creationTimestamp,
       },
+      managed,
       events,
     });
   } catch (e) { res.status(500).json({ error: (e.stderr || e.message || '').trim() }); }
+});
+
+// Delete a Flux resource.
+app.delete('/api/flux/resource/:kindKey/:namespace/:name', async (req, res) => {
+  try {
+    if (!kubeConfig) return res.status(400).json({ error: 'No kubeconfig loaded' });
+    const { kindKey, namespace, name } = req.params;
+    const def = FLUX_KINDS[kindKey];
+    if (!def) return res.status(400).json({ error: 'Unknown Flux kind' });
+    const out = await runKubectl(['delete', def.resource, name, '-n', namespace]);
+    cache.clear();
+    res.json({ success: true, message: out || 'Deleted' });
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // Trigger an immediate reconciliation (equivalent to `flux reconcile`).

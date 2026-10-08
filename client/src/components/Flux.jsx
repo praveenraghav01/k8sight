@@ -8,9 +8,9 @@ import { askLabel } from '../aiConfig';
 import useClickOutside from '../hooks/useClickOutside';
 
 // Flux CD — auto-detected from the *.toolkit.fluxcd.io CRDs. A dashboard plus a
-// list + detail view per Flux kind, with Reconcile / Suspend / Resume actions
-// and an "Ask AI → Summarize" hand-off to the assistant. Reads straight from the
-// cluster via the backend's kubectl shell-out; reuses the Argo CD styles.
+// list + detail view per Flux kind, with Reconcile / Suspend / Resume / Delete
+// actions and an "Ask AI → Summarize" hand-off. Reads from the backend's kubectl
+// shell-out; reuses the Argo CD styles. Modelled on the Lens Flux CD UX.
 
 const enc = encodeURIComponent;
 const formatAge = (t) => {
@@ -22,6 +22,7 @@ const formatAge = (t) => {
   if (s < 86400) return `${Math.floor(s / 3600)}h`;
   return `${Math.floor(s / 86400)}d`;
 };
+const shortRev = (rev) => { if (!rev) return '-'; const tail = String(rev).split(/[:@/]/).pop() || rev; return tail.slice(0, 8); };
 
 const KINDS = {
   kustomization: { kind: 'Kustomization', label: 'Kustomizations', category: 'kustomizations' },
@@ -31,17 +32,30 @@ const KINDS = {
   helmrepository: { kind: 'HelmRepository', label: 'Helm Repositories', category: 'sources' },
   bucket: { kind: 'Bucket', label: 'Buckets', category: 'sources' },
   helmchart: { kind: 'HelmChart', label: 'Helm Charts', category: 'sources' },
+  externalartifact: { kind: 'ExternalArtifact', label: 'External Artifacts', category: 'sources' },
   alert: { kind: 'Alert', label: 'Alerts', category: 'notifications' },
   provider: { kind: 'Provider', label: 'Providers', category: 'notifications' },
   receiver: { kind: 'Receiver', label: 'Receivers', category: 'notifications' },
-  imagerepository: { kind: 'ImageRepository', label: 'Image Repositories', category: 'image' },
-  imagepolicy: { kind: 'ImagePolicy', label: 'Image Policies', category: 'image' },
-  imageupdateautomation: { kind: 'ImageUpdateAutomation', label: 'Image Update Automations', category: 'image' },
 };
-const KIND_TO_KEY = Object.fromEntries(Object.entries(KINDS).map(([k, v]) => [v.kind, k]));
-const SOURCE_KIND_KEY = { GitRepository: 'gitrepository', OCIRepository: 'ocirepository', HelmRepository: 'helmrepository', Bucket: 'bucket', HelmChart: 'helmchart' };
+const SOURCE_KIND_KEY = { GitRepository: 'gitrepository', OCIRepository: 'ocirepository', HelmRepository: 'helmrepository', Bucket: 'bucket', HelmChart: 'helmchart', ExternalArtifact: 'externalartifact' };
+
+// Per-kind extra list columns (after Status, before Age), matching Lens.
+const LIST_COLS = {
+  kustomization: [['Source', (r) => (r.source ? `${r.source.kind}/${r.source.name}` : '-')], ['Revision', (r) => shortRev(r.revision)]],
+  helmrelease: [['Chart', (r) => (r.chart ? `${r.chart}${r.chartVersion ? `@${r.chartVersion}` : ''}` : '-')], ['Revision', (r) => shortRev(r.revision)]],
+  gitrepository: [['URL', (r) => r.url || '-'], ['Revision', (r) => shortRev(r.revision)]],
+  ocirepository: [['URL', (r) => r.url || '-'], ['Revision', (r) => shortRev(r.revision)]],
+  helmrepository: [['URL', (r) => r.url || '-'], ['Type', (r) => r.type || 'default']],
+  bucket: [['Endpoint', (r) => r.url || '-'], ['Revision', (r) => shortRev(r.revision)]],
+  helmchart: [['Chart', (r) => r.chart || '-'], ['Revision', (r) => shortRev(r.revision)]],
+  externalartifact: [['Revision', (r) => shortRev(r.revision)]],
+  alert: [['Type', (r) => r.type || '-']],
+  provider: [['Type', (r) => r.type || '-']],
+  receiver: [['Type', (r) => r.type || '-']],
+};
 
 const STATE_CLASS = { Ready: 'ok', Reconciling: 'info', Suspended: 'purple', Failed: 'bad', Unknown: 'muted' };
+const STATE_WORD = { Ready: 'Ready', Reconciling: 'Reconciling', Suspended: 'Suspended', Failed: 'Not ready', Unknown: 'Unknown' };
 const Badge = ({ cls, children }) => <span className={`argo-badge ${cls}`}>{children}</span>;
 const StateBadge = ({ s }) => <Badge cls={STATE_CLASS[s] || 'muted'}>{s}</Badge>;
 
@@ -56,10 +70,11 @@ export default function Flux({ refreshSignal = 0, view, onViewChange, onNavigate
   const [error, setError] = useState(null);
   const [q, setQ] = useState('');
   const [ns, setNs] = useState('all');
-  const [selected, setSelected] = useState(null); // { kindKey, name, namespace }
+  const [selected, setSelected] = useState(null);
   const [detail, setDetail] = useState(null);
   const [menu, setMenu] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [confirmDel, setConfirmDel] = useState(null);
   const drawerRef = useRef(null);
   useClickOutside(drawerRef, () => setSelected(null));
 
@@ -97,7 +112,6 @@ export default function Flux({ refreshSignal = 0, view, onViewChange, onNavigate
 
   const reload = () => { if (sub === 'dashboard') loadOverview(true); else loadKind(sub, true); if (selected) setSelected({ ...selected }); };
 
-  // ---- actions ----
   const reconcile = async (r) => {
     setBusy(true);
     try { await axios.post(`/api/flux/resource/${r.kindKey}/${enc(r.namespace)}/${enc(r.name)}/reconcile`); toast.success('Reconciliation requested', { title: r.name }); reload(); }
@@ -109,6 +123,12 @@ export default function Flux({ refreshSignal = 0, view, onViewChange, onNavigate
     setBusy(true);
     try { await axios.post(`/api/flux/resource/${r.kindKey}/${enc(r.namespace)}/${enc(r.name)}/${action}`); toast.success(r.suspended ? 'Resumed' : 'Suspended', { title: r.name }); reload(); }
     catch (e) { toast.error(e.response?.data?.error || e.message || 'Action failed', { title: action }); }
+    finally { setBusy(false); }
+  };
+  const doDelete = async (r) => {
+    setBusy(true);
+    try { await axios.delete(`/api/flux/resource/${r.kindKey}/${enc(r.namespace)}/${enc(r.name)}`); toast.success('Deleted', { title: r.name }); setConfirmDel(null); setSelected(null); reload(); }
+    catch (e) { toast.error(e.response?.data?.error || e.message || 'Delete failed', { title: 'Delete' }); }
     finally { setBusy(false); }
   };
   const summarize = async (r) => {
@@ -136,10 +156,10 @@ export default function Flux({ refreshSignal = 0, view, onViewChange, onNavigate
       { icon: 'refresh', label: 'Reconcile', onClick: () => reconcile(r) },
     ];
     if (r.suspendable) items.push({ icon: r.suspended ? 'play' : 'pause', label: r.suspended ? 'Resume' : 'Suspend', onClick: () => toggleSuspend(r) });
+    items.push({ icon: 'delete', label: 'Delete', danger: true, onClick: () => setConfirmDel(r) });
     return items;
   };
 
-  // ---- derived ----
   const namespaces = useMemo(() => [...new Set(resources.map((r) => r.namespace).filter(Boolean))].sort(), [resources]);
   const filtered = useMemo(() => resources.filter((r) =>
     (ns === 'all' || r.namespace === ns)
@@ -147,7 +167,6 @@ export default function Flux({ refreshSignal = 0, view, onViewChange, onNavigate
 
   const goToResource = (kindKey, r) => { onViewChange?.(kindKey); setSelected({ kindKey, name: r.name, namespace: r.namespace }); };
 
-  // =========================================================== render
   return (
     <div className="resource-viewer argo-view">
       {loading && !overview && resources.length === 0 ? (
@@ -168,11 +187,21 @@ export default function Flux({ refreshSignal = 0, view, onViewChange, onNavigate
         <FluxDrawer
           ref={drawerRef} selected={selected} detail={detail} busy={busy}
           onClose={() => setSelected(null)} onNavigate={onNavigate} onViewChange={onViewChange}
-          onReconcile={reconcile} onSuspend={toggleSuspend} onSummarize={summarize}
+          onReconcile={reconcile} onSuspend={toggleSuspend} onSummarize={summarize} onDelete={() => setConfirmDel(detail?.summary || selected)}
         />
       )}
-      {menu && (
-        <ContextMenu x={menu.x} y={menu.y} items={menuItems(menu.r)} onClose={() => setMenu(null)} />
+      {menu && <ContextMenu x={menu.x} y={menu.y} items={menuItems(menu.r)} onClose={() => setMenu(null)} />}
+      {confirmDel && (
+        <div className="action-modal-backdrop" onClick={() => !busy && setConfirmDel(null)}>
+          <div className="action-modal" onClick={(e) => e.stopPropagation()}>
+            <h3 className="action-modal-title"><Icon name="delete" size={16} /> Delete {confirmDel.kind}</h3>
+            <p className="action-modal-body">Delete <b>{confirmDel.name}</b> in <b>{confirmDel.namespace}</b>? Flux will stop reconciling it; this cannot be undone.</p>
+            <div className="action-modal-actions">
+              <button className="action-modal-btn" disabled={busy} onClick={() => setConfirmDel(null)}>Cancel</button>
+              <button className="action-modal-btn danger" disabled={busy} onClick={() => doDelete(confirmDel)}>{busy ? 'Deleting…' : 'Delete'}</button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
@@ -185,12 +214,18 @@ function FluxDashboard({ overview, onOpen }) {
   if (!overview) return <div className="resource-table-wrapper"><Loader label="Loading Flux…" /></div>;
   const sum = overview.summary || {};
   const card = (key, label, icon) => {
-    const c = sum[key] || { total: 0, ready: 0 };
+    const c = sum[key] || { total: 0, ready: 0, reconciling: 0, failed: 0 };
     return (
       <div className="argo-card" key={key}>
         <div className="argo-card-head"><Icon name={icon} size={16} /> {label}</div>
-        <div className="argo-card-big">{c.ready}<span>/{c.total}</span></div>
-        <div className="argo-card-sub">{c.total === 0 ? 'none' : c.ready === c.total ? 'all ready' : `${c.total - c.ready} not ready`}</div>
+        <div className="argo-card-big">{c.ready}<span>/{c.total} ready</span></div>
+        <div className="flux-substat">
+          {c.reconciling > 0 && <span className="reconciling"><Icon name="refresh" size={12} /> {c.reconciling} reconciling</span>}
+          {c.failed > 0 && <span className="failed"><Icon name="warning" size={12} /> {c.failed} failed</span>}
+          {c.suspended > 0 && <span className="suspended">{c.suspended} suspended</span>}
+          {c.total > 0 && c.reconciling === 0 && c.failed === 0 && !c.suspended && <span className="argo-card-sub">all ready</span>}
+          {c.total === 0 && <span className="argo-card-sub">none</span>}
+        </div>
       </div>
     );
   };
@@ -204,7 +239,7 @@ function FluxDashboard({ overview, onOpen }) {
       <div className={`flux-banner ${overview.healthy ? 'ok' : 'bad'}`}>
         <Icon name={overview.healthy ? 'check' : 'warning'} size={16} />
         <b>{overview.healthy ? 'Healthy' : 'Attention needed'}</b>
-        {overview.healthy ? 'All Flux resources are reconciled.' : `${(overview.attention || []).filter((a) => a.state === 'Failed').length} failing, ${(overview.attention || []).filter((a) => a.state === 'Suspended').length} suspended.`}
+        {overview.healthy ? 'All Flux workloads are reconciled.' : `${(overview.attention || []).filter((a) => a.state === 'Failed').length} failing.`}
       </div>
 
       <div className="argo-cards">
@@ -212,7 +247,6 @@ function FluxDashboard({ overview, onOpen }) {
         {card('helmreleases', 'Helm Releases', 'helm')}
         {card('sources', 'Sources', 'flux')}
         {(sum.notifications?.total > 0) && card('notifications', 'Notifications', 'events')}
-        {(sum.image?.total > 0) && card('image', 'Image Automation', 'box')}
       </div>
 
       <div className="flux-dash-cols">
@@ -221,12 +255,12 @@ function FluxDashboard({ overview, onOpen }) {
           {(overview.attention || []).length === 0 ? (
             <div className="argo-panel-empty"><Icon name="check" size={15} /> Everything is reconciled.</div>
           ) : (
-            <div className="argo-mini-table">
+            <div className="flux-attn">
               {overview.attention.slice(0, 20).map((r) => (
-                <div key={`${r.kindKey}/${r.namespace}/${r.name}`} className="argo-mini-row" onClick={() => onOpen(r.kindKey, r)}>
-                  <StateBadge s={r.state} />
-                  <span className="argo-mini-name">{r.name}</span>
-                  <span className="argo-mini-ns">{r.kind} · {r.namespace}</span>
+                <div key={`${r.kindKey}/${r.namespace}/${r.name}`} className={`flux-attn-row ${STATE_CLASS[r.state] || 'muted'}`} onClick={() => onOpen(r.kindKey, r)}>
+                  <span className="flux-attn-name">{r.namespace}/{r.name}</span>
+                  <span className="flux-attn-kind">{r.kind}</span>
+                  <span className={`flux-attn-state ${STATE_CLASS[r.state] || 'muted'}`}>{STATE_WORD[r.state] || r.state}{r.lastReconciled ? ` · ${formatAge(r.lastReconciled)}` : ''}</span>
                 </div>
               ))}
             </div>
@@ -234,19 +268,21 @@ function FluxDashboard({ overview, onOpen }) {
         </div>
 
         <div className="argo-panel">
-          <div className="argo-panel-title">Recent activity {(overview.activity || []).length > 0 && <span className="argo-panel-count">{overview.activity.length}</span>}</div>
-          <div className="argo-filterbar" style={{ padding: '2px 0 10px' }}>
+          <div className="argo-panel-title">Recent activity {(overview.activity || []).length > 0 && <span className="argo-panel-count">{overview.activity.length}</span>}<span className="flux-activity-when">last ~1h</span></div>
+          <div className="flux-activity-bar">
             <input className="flux-filter-input" placeholder="Filter by kind, namespace or name…" value={filter} onChange={(e) => setFilter(e.target.value)} />
-            <button className={`argo-chip ${warnOnly ? 'active bad' : 'muted'}`} onClick={() => setWarnOnly((w) => !w)}>Warnings<b>{warnings}</b></button>
+            <button className={`argo-chip ${warnOnly ? 'active bad' : 'muted'}`} onClick={() => setWarnOnly((w) => !w)}><Icon name="warning" size={12} /> Warnings<b>{warnings}</b></button>
           </div>
           {activity.length === 0 ? <div className="argo-panel-empty">No recent activity.</div> : (
-            <div className="argo-mini-table flux-activity">
-              {activity.slice(0, 50).map((a, i) => (
-                <div key={i} className="argo-mini-row">
-                  <span className={`argo-dot ${a.type === 'Warning' ? 'bad' : 'ok'}`} />
-                  <span className="argo-mini-name">{a.kind} {a.namespace}/{a.name}</span>
-                  <span className="argo-mini-msg">{a.reason} · {a.message}</span>
-                  <span className="argo-mini-age">{a.count > 1 ? `×${a.count} ` : ''}{formatAge(a.at)}</span>
+            <div className="flux-activity">
+              {activity.slice(0, 60).map((a, i) => (
+                <div key={i} className="flux-act-row">
+                  <span className={`flux-act-dot ${a.type === 'Warning' ? 'bad' : 'ok'}`}><Icon name={a.type === 'Warning' ? 'warning' : 'check'} size={13} /></span>
+                  <div className="flux-act-main">
+                    <div className="flux-act-title"><span className="flux-act-kind">{a.kind}</span> <b>{a.namespace}/{a.name}</b></div>
+                    <div className="flux-act-msg">{a.reason} · {a.message}</div>
+                  </div>
+                  <div className="flux-act-meta">{a.count > 1 ? <span>×{a.count}</span> : null}<span>{formatAge(a.at)}</span></div>
                 </div>
               ))}
             </div>
@@ -260,6 +296,7 @@ function FluxDashboard({ overview, onOpen }) {
 /* ---------------- List ---------------- */
 function FluxList({ kindKey, resources, total, q, setQ, ns, setNs, namespaces, onSelect, onMenu }) {
   const label = KINDS[kindKey]?.label || kindKey;
+  const cols = LIST_COLS[kindKey] || [];
   return (
     <>
       <div className="resource-header argo-sub-header">
@@ -276,7 +313,9 @@ function FluxList({ kindKey, resources, total, q, setQ, ns, setNs, namespaces, o
       <div className="resource-table-wrapper">
         {resources.length === 0 ? <div className="loading-indicator">No {label} found.</div> : (
           <table className="resource-table">
-            <thead><tr><th>Name</th><th>Namespace</th><th>Ready</th><th>Status</th><th>Age</th><th></th></tr></thead>
+            <thead><tr>
+              <th>Name</th><th>Namespace</th><th>Status</th>{cols.map(([h]) => <th key={h}>{h}</th>)}<th>Age</th><th></th>
+            </tr></thead>
             <tbody>
               {resources.map((r) => (
                 <tr key={`${r.namespace}/${r.name}`} className="resource-table-row"
@@ -284,7 +323,7 @@ function FluxList({ kindKey, resources, total, q, setQ, ns, setNs, namespaces, o
                   <td><span className="resource-name-cell">{r.name}</span></td>
                   <td>{r.namespace}</td>
                   <td><StateBadge s={r.state} /></td>
-                  <td className="flux-msg" title={r.message}>{r.message || '-'}</td>
+                  {cols.map(([h, fn]) => <td key={h} className="flux-cell" title={fn(r)}>{fn(r)}</td>)}
                   <td>{formatAge(r.createdAt)}</td>
                   <td className="actions" onClick={(e) => onMenu(e, r)}><Icon name="more" size={16} /></td>
                 </tr>
@@ -298,11 +337,13 @@ function FluxList({ kindKey, resources, total, q, setQ, ns, setNs, namespaces, o
 }
 
 /* ---------------- Detail drawer ---------------- */
-const FluxDrawer = React.forwardRef(({ selected, detail, busy, onClose, onNavigate, onViewChange, onReconcile, onSuspend, onSummarize }, ref) => {
+const FluxDrawer = React.forwardRef(({ selected, detail, busy, onClose, onNavigate, onViewChange, onReconcile, onSuspend, onSummarize, onDelete }, ref) => {
   const s = detail?.summary || selected;
   const conds = detail?.conditions || [];
   const spec = detail?.spec || {};
   const meta = detail?.metadata || {};
+  const managed = detail?.managed || [];
+  const annCount = Object.keys(meta.annotations || {}).length;
   const row = (label, value) => (value || value === 0) ? <div><span>{label}</span><code>{value}</code></div> : null;
   return (
     <div className="resource-drawer argo-drawer" ref={ref}>
@@ -318,6 +359,7 @@ const FluxDrawer = React.forwardRef(({ selected, detail, busy, onClose, onNaviga
           <button className="drawer-action-btn" title={`Summarize (${askLabel()})`} onClick={() => onSummarize(s)}><Icon name="sparkles" size={16} /></button>
           <button className="drawer-action-btn" title="Reconcile" disabled={busy} onClick={() => onReconcile(s)}><Icon name="refresh" size={16} /></button>
           {s.suspendable && <button className="drawer-action-btn" title={s.suspended ? 'Resume' : 'Suspend'} disabled={busy} onClick={() => onSuspend(s)}><Icon name={s.suspended ? 'play' : 'pause'} size={16} /></button>}
+          <button className="drawer-action-btn danger" title="Delete" disabled={busy} onClick={onDelete}><Icon name="delete" size={16} /></button>
           <button className="drawer-action-btn" title="Close" onClick={onClose}><Icon name="close" size={17} /></button>
         </div>
       </div>
@@ -326,19 +368,12 @@ const FluxDrawer = React.forwardRef(({ selected, detail, busy, onClose, onNaviga
         {!detail ? <Loader label="Loading…" inline /> : (
           <>
             <div className="drawer-section">
-              <div className="argo-status-row">
-                <StateBadge s={s.state} />
-                {s.suspended && <span className="argo-badge purple">suspended</span>}
-              </div>
-              {s.message && <div className="argo-msg">{s.message}</div>}
-            </div>
-
-            <div className="drawer-section">
               <div className="drawer-section-title">Properties</div>
               <div className="argo-kv">
-                {row('Created', meta.creationTimestamp ? new Date(meta.creationTimestamp).toLocaleString() : '-')}
+                {row('Created', meta.creationTimestamp ? `${formatAge(meta.creationTimestamp)} ago (${new Date(meta.creationTimestamp).toLocaleString()})` : '-')}
                 {row('Name', s.name)}
                 <div><span>Namespace</span><code className="flux-link" onClick={() => onNavigate?.toNamespace?.(s.namespace)}>{s.namespace}</code></div>
+                {annCount > 0 && row('Annotations', `${annCount} annotation${annCount === 1 ? '' : 's'}`)}
                 {(meta.finalizers || []).length > 0 && row('Finalizers', meta.finalizers.join(', '))}
               </div>
             </div>
@@ -346,9 +381,9 @@ const FluxDrawer = React.forwardRef(({ selected, detail, busy, onClose, onNaviga
             <div className="drawer-section">
               <div className="drawer-section-title">Reconciliation</div>
               <div className="argo-kv">
+                <div><span>Status</span><code><span className={`flux-status-word ${STATE_CLASS[s.state] || 'muted'}`}>{STATE_WORD[s.state] || s.state}</span>{s.message ? ` — ${s.message}` : ''}</code></div>
                 {row('Interval', spec.interval)}
-                {row('Last reconciled', s.lastReconciled ? new Date(s.lastReconciled).toLocaleString() : null)}
-                {row('Revision', s.revision)}
+                {row('Last reconciled', s.lastReconciled ? `${formatAge(s.lastReconciled)} ago` : null)}
               </div>
               {conds.length > 0 && (
                 <div className="argo-status-row" style={{ marginTop: 8, flexWrap: 'wrap' }}>
@@ -357,15 +392,38 @@ const FluxDrawer = React.forwardRef(({ selected, detail, busy, onClose, onNaviga
               )}
             </div>
 
-            {(s.source || s.chart || spec.url || s.path || s.targetNamespace) && (
+            {(s.source || s.chart || spec.url || s.path || s.targetNamespace || s.lastAppliedRevision) && (
               <div className="drawer-section">
                 <div className="drawer-section-title">Source</div>
                 <div className="argo-kv">
                   {s.source && <div><span>Source</span><code className="flux-link" onClick={() => onViewChange?.(SOURCE_KIND_KEY[s.source.kind] || '')}>{s.source.kind}/{s.source.name}</code></div>}
                   {row('URL', spec.url)}
+                  {row('Type', s.type)}
                   {row('Chart', s.chart)}
                   {row('Path', s.path)}
                   {row('Target namespace', s.targetNamespace)}
+                  {s.kindKey === 'kustomization' && <div><span>Prune</span><code>{s.prune ? 'Yes' : 'No'}</code></div>}
+                  {row('Last applied revision', s.lastAppliedRevision)}
+                </div>
+              </div>
+            )}
+
+            {managed.length > 0 && (
+              <div className="drawer-section">
+                <div className="drawer-section-title">Managed resources ({managed.length})</div>
+                <div className="resource-table-wrapper" style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)' }}>
+                  <table className="resource-table">
+                    <thead><tr><th>Kind</th><th>Name</th><th>Namespace</th></tr></thead>
+                    <tbody>
+                      {managed.slice(0, 50).map((m, i) => (
+                        <tr key={i} className="resource-table-row" onClick={() => onNavigate?.toResource?.({ type: (m.kind || '').toLowerCase(), namespace: m.namespace, name: m.name })}>
+                          <td>{m.kind}</td>
+                          <td><span className="flux-link">{m.name}</span></td>
+                          <td>{m.namespace || '-'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               </div>
             )}

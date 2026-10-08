@@ -3473,14 +3473,52 @@ h5.md-h, h6.md-h { font-size: 12.5px; color: var(--text-secondary); }
 .flux-banner.bad .icon { color: #e5484d; }
 .flux-dash-cols { display: grid; grid-template-columns: 1fr 1.3fr; gap: 16px; align-items: start; }
 @media (max-width: 1000px) { .flux-dash-cols { grid-template-columns: 1fr; } }
+
+/* dashboard card sub-stats */
+.flux-substat { display: flex; gap: 14px; margin-top: 8px; font-size: 12px; align-items: center; }
+.flux-substat .icon { vertical-align: -1px; margin-right: 3px; }
+.flux-substat .reconciling { color: #4c9be8; }
+.flux-substat .failed { color: #e5484d; }
+.flux-substat .suspended { color: #bc8cff; }
+
+/* needs-attention cards */
+.flux-attn { display: flex; flex-direction: column; gap: 10px; }
+.flux-attn-row { display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; background: var(--bg-surface); border: 1px solid var(--border); border-left: 3px solid var(--border-strong); border-radius: var(--radius-sm); cursor: pointer; transition: background .12s; }
+.flux-attn-row:hover { background: var(--bg-hover); }
+.flux-attn-row.info { border-left-color: #4c9be8; }
+.flux-attn-row.bad { border-left-color: #e5484d; }
+.flux-attn-row.purple { border-left-color: #bc8cff; }
+.flux-attn-name { font-size: 13px; font-weight: 600; color: var(--text); }
+.flux-attn-kind { font-size: 11.5px; color: var(--text-muted); }
+.flux-attn-state { font-size: 12px; margin-top: 2px; }
+.flux-attn-state.info { color: #4c9be8; } .flux-attn-state.bad { color: #e5484d; } .flux-attn-state.purple { color: #bc8cff; } .flux-attn-state.ok { color: #3fb950; }
+
+/* recent activity */
+.flux-activity-when { margin-left: auto; font-size: 11px; color: var(--text-muted); font-weight: 400; }
+.flux-activity-bar { display: flex; gap: 10px; align-items: center; padding: 2px 0 12px; }
+.flux-activity { max-height: 460px; overflow: auto; display: flex; flex-direction: column; }
+.flux-act-row { display: flex; gap: 10px; align-items: flex-start; padding: 9px 2px; border-top: 1px solid var(--border); }
+.flux-act-row:first-child { border-top: 0; }
+.flux-act-dot { flex: none; display: grid; place-items: center; width: 18px; height: 18px; margin-top: 1px; }
+.flux-act-dot.ok { color: #3fb950; } .flux-act-dot.bad { color: #e5484d; }
+.flux-act-main { min-width: 0; flex: 1; }
+.flux-act-title { font-size: 13px; color: var(--text); }
+.flux-act-kind { color: var(--text-muted); font-size: 12px; }
+.flux-act-msg { font-size: 11.5px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.flux-act-meta { flex: none; display: flex; gap: 8px; font-size: 11px; color: var(--text-muted); font-family: var(--mono); }
+
+/* list */
 .flux-filter-input { flex: 1; min-width: 0; height: 30px; padding: 0 10px; font-size: 12.5px; color: var(--text); background: var(--bg-base); border: 1px solid var(--border); border-radius: 7px; }
 .flux-filter-input:focus { outline: none; border-color: var(--accent); }
-.flux-activity { max-height: 420px; overflow: auto; }
 .flux-ns-select { height: 30px; padding: 0 8px; font-size: 12.5px; color: var(--text); background: var(--bg-surface); border: 1px solid var(--border); border-radius: 7px; }
 .flux-count { font-size: 12px; color: var(--text-muted); margin-left: auto; white-space: nowrap; }
-.flux-msg { max-width: 420px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-secondary); }
+.flux-cell { max-width: 360px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-secondary); font-size: 12.5px; }
+
+/* drawer links + status word */
 .flux-link { color: var(--link, var(--accent)); cursor: pointer; }
 .flux-link:hover { text-decoration: underline; }
+.flux-status-word.ok { color: #3fb950; } .flux-status-word.bad { color: #e5484d; } .flux-status-word.info { color: #4c9be8; } .flux-status-word.purple { color: #bc8cff; } .flux-status-word.muted { color: var(--text-muted); }
+
 .nav-new-badge { margin-left: auto; font-size: 9px; font-weight: 700; letter-spacing: .06em; padding: 1px 6px; border-radius: 999px; background: color-mix(in srgb, #3fb950 22%, transparent); color: #3fb950; border: 1px solid color-mix(in srgb, #3fb950 40%, transparent); }
 .argo-statusbar { display: flex; align-items: center; flex-wrap: wrap; gap: 14px; padding: 10px 14px; background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius-sm); }
 .argo-stat { font-size: 12px; color: var(--text-secondary); display: inline-flex; align-items: center; gap: 6px; }

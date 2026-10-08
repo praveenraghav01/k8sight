@@ -124,12 +124,7 @@ export default function Navigation({
     { key: 'ocirepository', label: 'OCI Repositories', icon: 'box' },
     { key: 'helmrepository', label: 'Helm Repositories', icon: 'helm' },
     { key: 'bucket', label: 'Buckets', icon: 'storage' },
-    { key: 'helmchart', label: 'Helm Charts', icon: 'helm' },
-  ];
-  const fluxImageTypes = [
-    { key: 'imagerepository', label: 'Image Repositories', icon: 'box' },
-    { key: 'imagepolicy', label: 'Image Policies', icon: 'accessControl' },
-    { key: 'imageupdateautomation', label: 'Image Update Automations', icon: 'refresh' },
+    { key: 'externalartifact', label: 'External Artifacts', icon: 'box' },
   ];
   const fluxItem = (type) => (
     <div
@@ -305,7 +300,6 @@ export default function Navigation({
                 {fluxMainTypes.map(fluxItem)}
                 {fluxSubsection('fluxNotifications', 'Notifications', fluxNotificationTypes)}
                 {fluxSubsection('fluxSources', 'Sources', fluxSourceTypes)}
-                {fluxSubsection('fluxImage', 'Image Automation', fluxImageTypes)}
               </div>
             )}
           </div>
