@@ -56,6 +56,8 @@ const LIST_COLS = {
 
 const STATE_CLASS = { Ready: 'ok', Reconciling: 'info', Suspended: 'purple', Failed: 'bad', Unknown: 'muted' };
 const STATE_WORD = { Ready: 'Ready', Reconciling: 'Reconciling', Suspended: 'Suspended', Failed: 'Not ready', Unknown: 'Unknown' };
+const STATE_ICON = { Ready: 'check', Reconciling: 'refresh', Suspended: 'pause', Failed: 'warning', Unknown: 'warning' };
+const KIND_TO_KEY = Object.fromEntries(Object.entries(KINDS).map(([k, v]) => [v.kind, k]));
 const Badge = ({ cls, children }) => <span className={`argo-badge ${cls}`}>{children}</span>;
 const StateBadge = ({ s }) => <Badge cls={STATE_CLASS[s] || 'muted'}>{s}</Badge>;
 
@@ -76,6 +78,7 @@ export default function Flux({ refreshSignal = 0, view, onViewChange, onNavigate
   const [busy, setBusy] = useState(false);
   const [confirmDel, setConfirmDel] = useState(null);
   const drawerRef = useRef(null);
+  const pendingOpen = useRef(null); // resource to open once a dashboard click has switched the view
   useClickOutside(drawerRef, () => setSelected(null));
 
   const loadOverview = async (silent = false) => {
@@ -92,7 +95,7 @@ export default function Flux({ refreshSignal = 0, view, onViewChange, onNavigate
   };
 
   useEffect(() => {
-    setSelected(null); setQ(''); setNs('all');
+    setSelected(pendingOpen.current); pendingOpen.current = null; setQ(''); setNs('all');
     if (sub === 'dashboard') loadOverview(); else if (isKind) loadKind(sub);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sub]);
@@ -165,7 +168,12 @@ export default function Flux({ refreshSignal = 0, view, onViewChange, onNavigate
     (ns === 'all' || r.namespace === ns)
     && (!q || `${r.name} ${r.namespace} ${r.message}`.toLowerCase().includes(q.toLowerCase()))), [resources, ns, q]);
 
-  const goToResource = (kindKey, r) => { onViewChange?.(kindKey); setSelected({ kindKey, name: r.name, namespace: r.namespace }); };
+  const goToResource = (kindKey, r) => {
+    const target = { kindKey, name: r.name, namespace: r.namespace };
+    if (kindKey === sub) { setSelected(target); return; }
+    pendingOpen.current = target;
+    onViewChange?.(kindKey);
+  };
 
   return (
     <div className="resource-viewer argo-view">
@@ -256,13 +264,26 @@ function FluxDashboard({ overview, onOpen }) {
             <div className="argo-panel-empty"><Icon name="check" size={15} /> Everything is reconciled.</div>
           ) : (
             <div className="flux-attn">
-              {overview.attention.slice(0, 20).map((r) => (
-                <div key={`${r.kindKey}/${r.namespace}/${r.name}`} className={`flux-attn-row ${STATE_CLASS[r.state] || 'muted'}`} onClick={() => onOpen(r.kindKey, r)}>
-                  <span className="flux-attn-name">{r.namespace}/{r.name}</span>
-                  <span className="flux-attn-kind">{r.kind}</span>
-                  <span className={`flux-attn-state ${STATE_CLASS[r.state] || 'muted'}`}>{STATE_WORD[r.state] || r.state}{r.lastReconciled ? ` · ${formatAge(r.lastReconciled)}` : ''}</span>
-                </div>
-              ))}
+              {overview.attention.slice(0, 20).map((r) => {
+                const cls = STATE_CLASS[r.state] || 'muted';
+                return (
+                  <button type="button" key={`${r.kindKey}/${r.namespace}/${r.name}`} className={`flux-attn-row ${cls}`}
+                    onClick={() => onOpen(r.kindKey, r)} title={`Open ${r.kind} ${r.namespace}/${r.name}`}>
+                    <span className={`flux-attn-icon ${cls}`}><Icon name={STATE_ICON[r.state] || 'warning'} size={14} /></span>
+                    <span className="flux-attn-body">
+                      <span className="flux-attn-top">
+                        <span className="flux-attn-name"><span className="flux-ns">{r.namespace}/</span>{r.name}</span>
+                        {r.lastReconciled && <span className="flux-attn-age">{formatAge(r.lastReconciled)}</span>}
+                      </span>
+                      <span className="flux-attn-meta">
+                        <span className="flux-kind-chip">{r.kind}</span>
+                        <span className={`flux-attn-state ${cls}`}>{STATE_WORD[r.state] || r.state}</span>
+                      </span>
+                      {r.message && <span className="flux-attn-msg" title={r.message}>{r.message}</span>}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
           )}
         </div>
@@ -270,21 +291,37 @@ function FluxDashboard({ overview, onOpen }) {
         <div className="argo-panel">
           <div className="argo-panel-title">Recent activity {(overview.activity || []).length > 0 && <span className="argo-panel-count">{overview.activity.length}</span>}<span className="flux-activity-when">last ~1h</span></div>
           <div className="flux-activity-bar">
-            <input className="flux-filter-input" placeholder="Filter by kind, namespace or name…" value={filter} onChange={(e) => setFilter(e.target.value)} />
-            <button className={`argo-chip ${warnOnly ? 'active bad' : 'muted'}`} onClick={() => setWarnOnly((w) => !w)}><Icon name="warning" size={12} /> Warnings<b>{warnings}</b></button>
+            <label className="flux-filter">
+              <Icon name="search" size={13} />
+              <input className="flux-filter-input" placeholder="Filter by kind, namespace or name…" value={filter} onChange={(e) => setFilter(e.target.value)} />
+              {filter && <button type="button" className="flux-filter-clear" onClick={() => setFilter('')} title="Clear"><Icon name="close" size={12} /></button>}
+            </label>
+            <button type="button" className={`flux-warn-toggle ${warnOnly ? 'active' : ''}`} onClick={() => setWarnOnly((w) => !w)} disabled={!warnings && !warnOnly}>
+              <Icon name="warning" size={12} /> Warnings <b>{warnings}</b>
+            </button>
           </div>
-          {activity.length === 0 ? <div className="argo-panel-empty">No recent activity.</div> : (
+          {activity.length === 0 ? (
+            <div className="argo-panel-empty">{filter || warnOnly ? 'No events match the filter.' : 'No recent activity.'}</div>
+          ) : (
             <div className="flux-activity">
-              {activity.slice(0, 60).map((a, i) => (
-                <div key={i} className="flux-act-row">
-                  <span className={`flux-act-dot ${a.type === 'Warning' ? 'bad' : 'ok'}`}><Icon name={a.type === 'Warning' ? 'warning' : 'check'} size={13} /></span>
-                  <div className="flux-act-main">
-                    <div className="flux-act-title"><span className="flux-act-kind">{a.kind}</span> <b>{a.namespace}/{a.name}</b></div>
-                    <div className="flux-act-msg">{a.reason} · {a.message}</div>
-                  </div>
-                  <div className="flux-act-meta">{a.count > 1 ? <span>×{a.count}</span> : null}<span>{formatAge(a.at)}</span></div>
-                </div>
-              ))}
+              {activity.slice(0, 60).map((a, i) => {
+                const warn = a.type === 'Warning';
+                const key = KIND_TO_KEY[a.kind];
+                return (
+                  <button type="button" key={i} className={`flux-act-row ${warn ? 'warn' : ''}`} disabled={!key}
+                    onClick={() => key && onOpen(key, { name: a.name, namespace: a.namespace })}>
+                    <span className={`flux-act-dot ${warn ? 'bad' : 'ok'}`}><Icon name={warn ? 'warning' : 'check'} size={13} /></span>
+                    <span className="flux-act-main">
+                      <span className="flux-act-title"><span className="flux-kind-chip">{a.kind}</span><span className="flux-act-name"><span className="flux-ns">{a.namespace}/</span>{a.name}</span></span>
+                      <span className="flux-act-msg" title={`${a.reason}: ${a.message}`}><b className="flux-act-reason">{a.reason}</b> {a.message}</span>
+                    </span>
+                    <span className="flux-act-meta">
+                      {a.count > 1 && <span className="flux-act-count" title={`Seen ${a.count} times`}>×{a.count}</span>}
+                      <span className="flux-act-age">{formatAge(a.at)}</span>
+                    </span>
+                  </button>
+                );
+              })}
             </div>
           )}
         </div>

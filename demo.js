@@ -40,6 +40,10 @@ export function demoContextInfo() {
 const nowISO = () => new Date().toISOString();
 // A timestamp `mins` minutes in the past (creationTimestamps etc).
 const ago = (mins) => new Date(Date.now() - mins * 60_000).toISOString();
+// Flux demo clock: seeded timestamps drift forward with uptime (see fluxEvent).
+let fluxSeededAt = Date.now();
+let fluxSeeding = false;
+const fluxDrift = (iso) => (iso ? new Date(new Date(iso).getTime() + Date.now() - fluxSeededAt).toISOString() : iso);
 
 // Flux CD demo constants — declared up here because build() seeds the cluster at
 // module load, before declarations further down the file are initialized.
@@ -782,11 +786,17 @@ function fluxRes(kindKey, namespace, name, o = {}) {
   };
   return r;
 }
+// Seeded Flux timestamps are shifted forward by however long the demo has been
+// running, so "2m ago" stays "2m ago" and seeded events never age out of the
+// dashboard's 1h activity window. Anything created at runtime is left as-is.
 function fluxEvent(r, type, reason, message, count, minsAgo) {
-  r._events.push({ type, reason, message, count, at: ago(minsAgo) });
+  r._events.push({ type, reason, message, count, at: ago(minsAgo), seed: fluxSeeding });
 }
+function fluxEventOut({ seed, ...e }) { return seed ? { ...e, at: fluxDrift(e.at) } : e; }
 
 function buildFlux() {
+  fluxSeededAt = Date.now();
+  fluxSeeding = true;
   const fs = 'flux-system';
   const svc = (ns, n) => ({ kind: 'Service', name: n, namespace: ns, group: '' });
   const dep = (ns, n) => ({ kind: 'Deployment', name: n, namespace: ns, group: 'apps' });
@@ -874,9 +884,16 @@ function buildFlux() {
   });
 
   cluster.flux = [gitRepo, ociRepo, helmRepo, ksPodinfo, ksOci, ksApp2, ksApp1, hrA, hrB, provider, alert, receiver];
+  cluster.flux.forEach((r) => { r._seedReconciled = true; });
+  fluxSeeding = false;
 }
 
-function fluxRow(r) { return Object.fromEntries(Object.entries(r).filter(([k]) => !k.startsWith('_'))); }
+function fluxRow(r) {
+  const row = Object.fromEntries(Object.entries(r).filter(([k]) => !k.startsWith('_')));
+  row.createdAt = fluxDrift(r.createdAt);
+  if (r._seedReconciled) row.lastReconciled = fluxDrift(r.lastReconciled);
+  return row;
+}
 function findFlux(kindKey, ns, name) { return cluster.flux.find((r) => r.kindKey === kindKey && r.namespace === ns && r.name === name); }
 
 function fluxOverview() {
@@ -892,7 +909,7 @@ function fluxOverview() {
   }
   const attention = all.filter((r) => r.state !== 'Ready').map(fluxRow)
     .sort((a, b) => (a.state === 'Failed' ? -1 : 1) - (b.state === 'Failed' ? -1 : 1));
-  const activity = all.flatMap((r) => r._events.map((e) => ({ kind: r.kind, name: r.name, namespace: r.namespace, ...e })))
+  const activity = all.flatMap((r) => r._events.map((e) => ({ kind: r.kind, name: r.name, namespace: r.namespace, ...fluxEventOut(e) })))
     .filter((e) => Date.now() - new Date(e.at).getTime() < 60 * 60_000) // last ~1h, like Lens
     .sort((a, b) => new Date(b.at) - new Date(a.at));
   return {
@@ -910,10 +927,10 @@ function fluxDetail(r) {
       ...(r.chart ? { chart: { spec: { chart: r.chart, version: r.chartVersion } } } : {}),
     },
     status: { lastAppliedRevision: r.lastAppliedRevision },
-    conditions: r._conditions,
-    metadata: { annotations: r._annotations, labels: {}, finalizers: r._finalizers, creationTimestamp: r.createdAt },
+    conditions: r._conditions.map((c) => (r._seedReconciled ? { ...c, lastTransitionTime: fluxDrift(c.lastTransitionTime) } : c)),
+    metadata: { annotations: r._annotations, labels: {}, finalizers: r._finalizers, creationTimestamp: fluxDrift(r.createdAt) },
     managed: r._managed,
-    events: [...r._events].sort((a, b) => new Date(b.at) - new Date(a.at)),
+    events: r._events.map(fluxEventOut).sort((a, b) => new Date(b.at) - new Date(a.at)),
   };
 }
 
@@ -1812,6 +1829,10 @@ export function handle(req, res) {
       }
       if (method === 'POST' && action === 'reconcile') {
         r.lastReconciled = nowISO();
+        if (r._seedReconciled) {
+          r._conditions = r._conditions.map((c) => ({ ...c, lastTransitionTime: fluxDrift(c.lastTransitionTime) }));
+          r._seedReconciled = false;
+        }
         if (r.state === 'Ready') {
           fluxEvent(r, 'Normal', r.category === 'sources' ? 'ArtifactUpToDate' : 'ReconciliationSucceeded',
             r.category === 'sources' ? `artifact up-to-date with remote revision: '${r.revision}'` : 'Reconciliation finished, next run in ' + (r.interval || '5m'), 1, 0);
