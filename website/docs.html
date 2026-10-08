@@ -908,6 +908,15 @@ export GOOGLE_CLIENT_SECRET='GOCSPX-...'</code></pre>
       <p>k8sight is also an <strong>MCP server</strong>: it exposes its Kubernetes capabilities as tools so any MCP client (Claude Code, Claude Desktop, Cursor, …) can operate the cluster it's connected to, using the same kubeconfig and selected context. It's served over <strong>Streamable HTTP</strong> at <code>/mcp</code> and over <strong>stdio</strong>.</p>
       <p>Add it to Claude Code:</p>
       <pre><code>claude mcp add --transport http k8sight http://localhost:3001/mcp</code></pre>
+      <h3>What agents can use</h3>
+      <ul>
+        <li><strong>Cluster</strong>: contexts, namespaces, every resource kind, YAML, logs, events, topology, nodes and live metrics, storage, RBAC, Helm releases and custom resources.</li>
+        <li><strong>Costs</strong>: provider status, allocations by namespace, workload, node or cluster, and cost over time.</li>
+        <li><strong>Security Center</strong>: image CVE counts (<code>list_vulnerable_images</code>), the CVEs in one image with severity and fix filters (<code>get_image_vulnerabilities</code>), config and RBAC findings with remediation (<code>list_security_checks</code>), and a built-in Trivy scan (<code>start_security_scan</code>).</li>
+        <li><strong>Argo CD</strong>: status, Applications, projects, ApplicationSets, repositories and clusters; sync (with prune, dry run or a revision) and refresh.</li>
+        <li><strong>Flux CD</strong>: an overview of what isn&rsquo;t ready and recent events, every Flux kind and one resource in full; reconcile, suspend and resume.</li>
+        <li><strong>Flagger</strong>: canaries with phase, strategy and progress, one canary in full (metrics, webhooks, generated objects, events); restart, suspend and skip analysis.</li>
+      </ul>
       <p><strong>Read tools are always available; write/destructive tools are off by default</strong>: enable them with <code>MCP_ALLOW_WRITE=1</code> (or the Preferences toggle) only when you want an agent to be able to mutate the cluster.</p>
     </article>
 
