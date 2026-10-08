@@ -13,7 +13,7 @@
 ## How k8sight compares
 
 - **vs Rancher:** Rancher is a multi-cluster platform you deploy inside clusters to provision and govern a fleet for a team. k8sight is a local desktop app that reads your kubeconfig and needs nothing in-cluster. Use Rancher to govern a fleet; use k8sight as a fast local cockpit for clusters you already run.
-- **vs Lens / k9s:** k8sight is in the same category (a client-side UI). It adds a built-in security scanner (bundled Trivy), an AI assistant that reads your live cluster, and a demo mode that works with no cluster. k9s is a terminal UI; Lens now requires a sign-in.
+- **vs Lens / k9s:** k8sight is in the same category (a client-side UI). It adds a built-in security scanner (bundled Trivy), Argo CD, Flux and Flagger views, an AI assistant and MCP server that work with any OpenAI-compatible model and need no account, and a demo mode that works with no cluster. k9s is a terminal UI with no built-in AI; Lens requires a Lens ID sign-in and has its own AI assistant (Lens Prism) and MCP server. Rancher Prime has an AI assistant (Liz).
 
 ## Key features
 
