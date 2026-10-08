@@ -86,7 +86,7 @@ export default function MetricsChart({ id, label, data, limit, format, fallbackC
       <div className="metric-chart-head">
         <span className="metric-chart-label">{label}</span>
         <span className="metric-chart-value" style={{ color }}>
-          {current == null ? '—' : fmt(current)}
+          {current == null ? '-' : fmt(current)}
           {limit ? (
             <span className="metric-chart-sub">
               {' / '}{fmt(limit)} {thresholdLabel}

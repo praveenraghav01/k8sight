@@ -434,11 +434,11 @@ export default function ResourceViewer({
       }
       case 'CPU': {
         const m = podMetrics[`${resource.namespace}/${resource.name}`];
-        return m ? <span style={{ color: '#58a6ff', fontFamily: 'var(--mono)' }}>{fmtCpu(m.cpuMilli)}</span> : '—';
+        return m ? <span style={{ color: '#58a6ff', fontFamily: 'var(--mono)' }}>{fmtCpu(m.cpuMilli)}</span> : '-';
       }
       case 'Memory': {
         const m = podMetrics[`${resource.namespace}/${resource.name}`];
-        return m ? <span style={{ color: '#bc8cff', fontFamily: 'var(--mono)' }}>{fmtMem(m.memBytes)}</span> : '—';
+        return m ? <span style={{ color: '#bc8cff', fontFamily: 'var(--mono)' }}>{fmtMem(m.memBytes)}</span> : '-';
       }
       case 'Restarts':
         return resource.restarts != null ? resource.restarts : '0';

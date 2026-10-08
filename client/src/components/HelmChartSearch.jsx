@@ -259,7 +259,7 @@ export default function HelmChartSearch({ onClose, onInstalled, upgradeRelease }
                   <a href={`https://artifacthub.io/packages/helm/${chart.repository.name}/${chart.name}`} target="_blank" rel="noreferrer" className="chart-link">
                     {chart.repository.name}/{chart.name} <Icon name="externalLink" size={11} />
                   </a>
-                  {upgrading && <span>current: {parseChart(upgradeRelease.chart).version || '—'}</span>}
+                  {upgrading && <span>current: {parseChart(upgradeRelease.chart).version || '-'}</span>}
                 </div>
               </div>
             </div>
