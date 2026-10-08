@@ -137,7 +137,7 @@ function IntegrationsSection({ onAddAzure, onAddAws, onAddGke }) {
   return (
     <div className="prefs-section">
       <h2 className="prefs-h2">Cloud Integrations</h2>
-      <p className="prefs-lead">Add clusters straight from your cloud account — no CLI required. We handle login and write the kubeconfig for you.</p>
+      <p className="prefs-lead">Add clusters straight from your cloud account, no CLI required. We handle login and write the kubeconfig for you.</p>
       <div className="prefs-cards">
         <div className="prefs-int-card">
           <div className="prefs-int-head"><Icon name="azure" size={22} /> <span>Azure AKS</span></div>
@@ -146,12 +146,12 @@ function IntegrationsSection({ onAddAzure, onAddAws, onAddGke }) {
         </div>
         <div className="prefs-int-card">
           <div className="prefs-int-head"><Icon name="aws" size={22} /> <span>AWS EKS</span></div>
-          <p className="prefs-muted">SSO, access keys or IAM role — discover and import EKS clusters.</p>
+          <p className="prefs-muted">Discover and import EKS clusters with SSO, access keys or an IAM role.</p>
           <button className="prefs-btn primary" onClick={onAddAws}>Add AWS clusters</button>
         </div>
         <div className="prefs-int-card">
           <div className="prefs-int-head"><Icon name="gcp" size={22} /> <span>Google GKE</span></div>
-          <p className="prefs-muted">Browser sign-in or a service-account key — no <code>gcloud</code> required.</p>
+          <p className="prefs-muted">Browser sign-in or a service-account key, no <code>gcloud</code> required.</p>
           <button className="prefs-btn primary" onClick={onAddGke}>Add GKE clusters</button>
         </div>
       </div>
@@ -199,7 +199,7 @@ function ExternalToolsSection() {
     <div className="prefs-section">
       <h2 className="prefs-h2">External Tools</h2>
       <div className="prefs-ai-label">AI TOOL <span className="prefs-premium">FREE</span></div>
-      <p className="prefs-lead">The AI tool the app launches for e.g. <strong>"Ask AI"</strong>. Bring your own agent — it runs in a terminal with your cluster context loaded, no API key.</p>
+      <p className="prefs-lead">The AI tool the app launches for e.g. <strong>"Ask AI"</strong>. Bring your own agent. It runs in a terminal with your cluster context loaded, no API key.</p>
 
       <div className="prefs-detect-row">
         <span className="prefs-muted">{detected} of {agents.length} detected on your system</span>
@@ -407,7 +407,7 @@ function McpSection() {
         <strong> currently selected cluster</strong>. The server runs while the app is open.
       </p>
 
-      <CopyField label="HTTP endpoint" hint="Streamable HTTP transport — recommended." value={endpoint} />
+      <CopyField label="HTTP endpoint" hint="Streamable HTTP transport (recommended)." value={endpoint} />
 
       <CopyField label="Add to Claude Code" hint="Run this in your terminal." value={claudeCmd} />
 
@@ -423,7 +423,7 @@ function McpSection() {
         </div>
       </Field>
 
-      <Field label="Write access" hint="Read-only is safest. Enabling lets agents apply, delete, scale and sync — mutating your cluster.">
+      <Field label="Write access" hint="Read-only is safest. Enabling lets agents apply, delete, scale and sync, which changes your cluster.">
         {info == null ? <span className="prefs-muted">…</span> : (
           <div className="prefs-stack">
             <div className="prefs-seg">
@@ -433,7 +433,7 @@ function McpSection() {
             <div className={`prefs-status ${info.allowWrite ? 'warn' : 'ok'}`}>
               <span className="prefs-status-dot" />
               {info.allowWrite
-                ? 'Write tools exposed — reconnect your agent to pick them up.'
+                ? 'Write tools are on. Reconnect your agent to pick them up.'
                 : 'Only read tools are exposed.'}
             </div>
           </div>
@@ -458,7 +458,7 @@ function AboutSection({ configStatus }) {
     <div className="prefs-section">
       <h2 className="prefs-h2">About</h2>
       <Field label="k8sight">{version ? <span className="prefs-muted">Version {version}</span> : null}</Field>
-      <p className="prefs-lead">A native Kubernetes management app — cluster overview, resources, topology, ArgoCD, one-click AKS/EKS, terminals and bring-your-own AI agents.</p>
+      <p className="prefs-lead">A native Kubernetes management app: cluster overview, resources, topology, ArgoCD, one-click AKS/EKS, terminals and bring-your-own AI agents.</p>
     </div>
   );
 }

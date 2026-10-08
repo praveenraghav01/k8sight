@@ -1916,7 +1916,7 @@ export function handle(req, res) {
         chart: chart || releaseName, chartVer: (req.body?.version || '1.0.0'), appVersion: '', status: 'deployed', revision: 1,
         values: (() => { try { return req.body?.values ? yaml.load(req.body.values) || {} : {}; } catch { return {}; } })(),
       }));
-      return json({ ok: true, release: releaseName, namespace, output: `NAME: ${releaseName}\nNAMESPACE: ${namespace}\nSTATUS: deployed\nREVISION: 1\n(demo — no cluster changes were made)` });
+      return json({ ok: true, release: releaseName, namespace, output: `NAME: ${releaseName}\nNAMESPACE: ${namespace}\nSTATUS: deployed\nREVISION: 1\n(demo: no cluster changes were made)` });
     }
     if (method === 'POST' && p === '/api/helm/upgrade') {
       const { releaseName, namespace = 'default', version } = req.body || {};
@@ -1928,7 +1928,7 @@ export function handle(req, res) {
       if (version && rel.chart?.metadata) rel.chart.metadata.version = version;
       const merged = (() => { try { return req.body?.values ? { ...(rel.config || {}), ...(yaml.load(req.body.values) || {}) } : rel.config; } catch { return rel.config; } })();
       rel.config = merged;
-      return json({ ok: true, release: releaseName, namespace, output: `Release "${releaseName}" has been upgraded.\nNAMESPACE: ${namespace}\nSTATUS: deployed\nREVISION: ${rel.version}\n(demo — no cluster changes were made)` });
+      return json({ ok: true, release: releaseName, namespace, output: `Release "${releaseName}" has been upgraded.\nNAMESPACE: ${namespace}\nSTATUS: deployed\nREVISION: ${rel.version}\n(demo: no cluster changes were made)` });
     }
 
     // ---------- custom resources ----------
@@ -2051,7 +2051,7 @@ export function handle(req, res) {
           c.phase = 'Progressing'; c.message = 'New revision detected, progressing canary analysis.';
           c._sim = { startedAt: Date.now(), done: 0 };
         }
-        return json({ success: true, message: 'Restarted — Flagger will start a new analysis' });
+        return json({ success: true, message: 'Restarted. Flagger will start a new analysis.' });
       }
     }
     if (method === 'GET' && p === '/api/flux/resources') {
@@ -2352,8 +2352,8 @@ export function shellSession(ws, meta = {}) {
       : '\r\n\x1b[1;36m│\x1b[0m  k8sight demo shell (synthetic pod)           \x1b[1;36m│\x1b[0m',
     '\r\n\x1b[1;36m╰──────────────────────────────────────────────╯\x1b[0m',
     isNode
-      ? `\r\n\x1b[90mConnected to node/${meta.node}. This is a demo — no real cluster.\x1b[0m`
-      : `\r\n\x1b[90mConnected to ${meta.namespace || 'shop'}/${meta.pod || 'pod'}${meta.container ? ' [' + meta.container + ']' : ''}. This is a demo — no real cluster.\x1b[0m`,
+      ? `\r\n\x1b[90mConnected to node/${meta.node}. This is a demo, not a real cluster.\x1b[0m`
+      : `\r\n\x1b[90mConnected to ${meta.namespace || 'shop'}/${meta.pod || 'pod'}${meta.container ? ' [' + meta.container + ']' : ''}. This is a demo, not a real cluster.\x1b[0m`,
     "\r\n\x1b[90mTry: ls, pwd, whoami, cat <file>, env, help, clear, exit\x1b[0m\r\n\r\n",
   ].join('');
   send(banner);
@@ -2472,7 +2472,7 @@ export function aiReply(question) {
   }
   // generic overview
   return reply(
-    'This is the synthetic demo cluster: 3 nodes and 5 namespaces (default, kube-system, shop, monitoring, argocd). The `shop` app runs frontend, catalog, cart, checkout, payments and a postgres StatefulSet. Two workloads need attention — a checkout pod is CrashLoopBackOff and a payments pod is stuck Pending. Ask me about either, or about ArgoCD, image vulnerabilities, nodes, or Helm releases.',
+    'This is the synthetic demo cluster: 3 nodes and 5 namespaces (default, kube-system, shop, monitoring, argocd). The `shop` app runs frontend, catalog, cart, checkout, payments and a postgres StatefulSet. Two workloads need attention: a checkout pod is CrashLoopBackOff and a payments pod is stuck Pending. Ask me about either, or about ArgoCD, image vulnerabilities, nodes, or Helm releases.',
     ['list_namespaces', 'list_nodes'],
   );
 }

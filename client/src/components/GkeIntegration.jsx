@@ -113,7 +113,7 @@ export default function GkeIntegration({ onClose, onImported }) {
               <>
                 <button className="action-modal-btn primary" onClick={listClusters}>Use your gcloud credentials</button>
                 <p className="azure-dim" style={{ marginTop: -4 }}>
-                  {adcAccount ? `Signed in as ${adcAccount} via gcloud` : 'Detected gcloud credentials on this machine'} — no setup needed
+                  {adcAccount ? `Signed in as ${adcAccount} via gcloud` : 'Detected gcloud credentials on this machine'}. No setup needed
                 </p>
               </>
             )}
@@ -150,7 +150,7 @@ export default function GkeIntegration({ onClose, onImported }) {
         {phase === 'browser' && (
           <div className="azure-center azure-msg">
             <Icon name="gcp" size={28} />
-            <p>A browser window opened for Google sign-in — pick your account and complete it there.</p>
+            <p>A browser window opened for Google sign-in. Pick your account and finish signing in there.</p>
             <div className="azure-waiting"><Loader label="Waiting for sign-in to complete…" /></div>
           </div>
         )}

@@ -123,7 +123,7 @@ export async function ssoStartDeviceFlow({ startUrl, ssoRegion }) {
       };
     } catch (e) { lastErr = e; /* wrong region → try the next */ }
   }
-  throw new Error(`Could not start AWS SSO sign-in for ${startUrl} — check the start URL. (${lastErr?.name || lastErr?.message || 'no region matched'})`);
+  throw new Error(`Could not start AWS SSO sign-in for ${startUrl}. Check the start URL. (${lastErr?.name || lastErr?.message || 'no region matched'})`);
 }
 
 // Poll once for the SSO access token. Returns { pending } or { accessToken }.

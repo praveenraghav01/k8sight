@@ -199,14 +199,14 @@ export default function AwsIntegration({ onClose, onImported }) {
                 <span className="aws-sso-icon"><Icon name="aws" size={20} /></span>
                 <div>
                   <div className="aws-sso-title">Sign in with AWS SSO <span className="aws-rec">Recommended</span></div>
-                  <div className="azure-dim">IAM Identity Center — sign in in the browser and authorize access.</div>
+                  <div className="azure-dim">IAM Identity Center. Sign in in the browser and authorize access.</div>
                 </div>
               </div>
-              {profiles.length > 0 && field('SSO profile (optional)', <select className="aws-input" value={ssoProfile} onChange={(e) => setSsoProfile(e.target.value)}><option value="">— enter start URL below —</option>{profiles.map((p) => <option key={p} value={p}>{p}</option>)}</select>)}
+              {profiles.length > 0 && field('SSO profile (optional)', <select className="aws-input" value={ssoProfile} onChange={(e) => setSsoProfile(e.target.value)}><option value="">Enter a start URL below</option>{profiles.map((p) => <option key={p} value={p}>{p}</option>)}</select>)}
               {!ssoProfile && field('AWS SSO start URL', <input className="aws-input" placeholder="https://my-org.awsapps.com/start" value={ssoStartUrl} onChange={(e) => setSsoStartUrl(e.target.value)} />)}
               <div className="aws-sso-actions">
                 <button className="action-modal-btn primary" onClick={() => startSsoLogin(ssoProfile)} disabled={!ssoProfile && !ssoStartUrl.trim()}>Sign in with AWS SSO</button>
-                {profiles.length > 0 && <button className="azure-alt" onClick={() => discover(existingProfile)}>Skip — already signed in, just discover clusters</button>}
+                {profiles.length > 0 && <button className="azure-alt" onClick={() => discover(existingProfile)}>Skip, I'm already signed in. Just discover clusters</button>}
               </div>
             </div>
 

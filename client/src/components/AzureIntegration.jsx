@@ -159,7 +159,7 @@ export default function AzureIntegration({ onClose, onImported, initialLogin }) 
             ) : (
               <>
                 <Icon name="azure" size={28} />
-                <p>A browser window opened for Azure sign-in — pick your account and complete it there.</p>
+                <p>A browser window opened for Azure sign-in. Pick your account and finish signing in there.</p>
                 {authUrl && <a className="azure-alt" href={authUrl} target="_blank" rel="noreferrer"><Icon name="externalLink" size={13} /> No window opened? Open the sign-in page</a>}
                 <div className="azure-waiting"><Loader label="Waiting for sign-in to complete…" /></div>
               </>
@@ -202,7 +202,7 @@ export default function AzureIntegration({ onClose, onImported, initialLogin }) 
             </div>
             <label className="azure-admin">
               <input type="checkbox" checked={admin} onChange={(e) => setAdmin(e.target.checked)} />
-              Use admin credentials (<code>--admin</code>) — cluster-admin certs, bypasses Azure AD
+              Use admin credentials (<code>--admin</code>): cluster-admin certs that bypass Azure AD
             </label>
             <div className="action-modal-actions">
               <button className="action-modal-btn ghost" style={{ marginRight: 'auto' }} onClick={skip} title="Continue without adding clusters">

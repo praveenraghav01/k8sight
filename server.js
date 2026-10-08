@@ -1070,7 +1070,7 @@ const classifyClusterError = (error) => {
   if (httpStatus === 401) {
     return {
       ok: false, reason: 'unauthorized',
-      message: 'Authentication failed (HTTP 401). Your credentials were rejected — the token or client certificate may be expired or invalid.'
+      message: 'Authentication failed (HTTP 401). Your credentials were rejected. The token or client certificate may be expired or invalid.'
     };
   }
   if (httpStatus === 403) {
@@ -3597,7 +3597,7 @@ app.post('/api/flagger/canary/:namespace/:name/restart', async (req, res) => {
     if (!['deployment', 'daemonset'].includes(kind)) return res.status(400).json({ error: `Cannot restart a ${ref.kind}` });
     const out = await runKubectl(['rollout', 'restart', `${kind}/${ref.name}`, '-n', namespace]);
     cache.clear();
-    res.json({ success: true, message: out || 'Restarted — Flagger will start a new analysis' });
+    res.json({ success: true, message: out || 'Restarted. Flagger will start a new analysis.' });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -5485,7 +5485,7 @@ wss.on('connection', async (browserWs, req) => {
         term = pty.spawn(kubectlBin, args, { name: 'xterm-256color', cols: 80, rows: 24, cwd: process.env.HOME || '/', env: process.env });
       } catch (err) {
         const hint = kubectlBin === 'kubectl'
-          ? ' (kubectl was not found — install it or add it to PATH)'
+          ? ' (kubectl was not found; install it or add it to PATH)'
           : '';
         send(`\r\n\x1b[31mFailed to start node shell: ${err.message}${hint}\x1b[0m\r\n`);
         browserWs.close();
@@ -5510,7 +5510,7 @@ wss.on('connection', async (browserWs, req) => {
         term = pty.spawn(kubectlBin, args, { name: 'xterm-256color', cols: 80, rows: 24, cwd: process.env.HOME || '/', env: process.env });
       } catch (err) {
         const hint = kubectlBin === 'kubectl'
-          ? ' (kubectl was not found — install it or add it to PATH)'
+          ? ' (kubectl was not found; install it or add it to PATH)'
           : '';
         send(`\r\n\x1b[31mFailed to start shell: ${err.message}${hint}\x1b[0m\r\n`);
         browserWs.close();

@@ -325,7 +325,7 @@ function App() {
       } else {
         // switched, but the new context can't authenticate — the auth-error
         // screen will explain; don't show a misleading success toast.
-        toast.info(`Switched to ${ctx} — cluster not reachable`, { title: 'Cluster' });
+        toast.info(`Switched to ${ctx}, but the cluster isn't reachable`, { title: 'Cluster' });
       }
     } catch (err) {
       toast.error(`Failed to switch to ${ctx}`, { title: 'Cluster' });
@@ -857,7 +857,7 @@ function App() {
         </div>
       ) : checkingAuth ? (
         <div className="loading-state">
-          <Loader label={autoRecovering ? 'Reconnecting — refreshing credentials…' : 'Checking cluster authentication…'} size={36} />
+          <Loader label={autoRecovering ? 'Reconnecting and refreshing credentials…' : 'Checking cluster authentication…'} size={36} />
         </div>
       ) : (
         // A modal (config / auth / server error) is overlaid above; keep a
