@@ -223,6 +223,19 @@
   .sec-head p { color: var(--text-dim); font-size: clamp(16px, 1.8vw, 18px); line-height: 1.6; }
   .sec-head p b { color: var(--text); font-weight: 600; }
 
+  /* ---------- Comparison table (same look as the docs page's) ---------- */
+  .cmp-wrap { overflow-x: auto; max-width: 980px; margin: 0 auto 20px; border: 1px solid var(--line); border-radius: 12px; }
+  table.cmp { width: 100%; border-collapse: collapse; font-size: 14.5px; min-width: 640px; }
+  table.cmp th, table.cmp td { padding: 12px 14px; text-align: center; border-bottom: 1px solid var(--line); }
+  table.cmp tr:last-child th, table.cmp tr:last-child td { border-bottom: 0; }
+  table.cmp thead th { font-weight: 600; color: var(--text); background: var(--panel); }
+  table.cmp thead th.pick { color: var(--accent); }
+  table.cmp tbody th { text-align: left; font-weight: 500; color: var(--text-dim); width: 34%; }
+  table.cmp td.yes { color: var(--green); font-weight: 600; }
+  table.cmp td.no { color: var(--text-dim); }
+  table.cmp td small { display: block; font-size: 12px; font-weight: 400; color: var(--text-dim); }
+  table.cmp col.pick, table.cmp td.pickcol { background: color-mix(in srgb, var(--accent) 7%, transparent); }
+
   /* ---------- Feature cards ---------- */
   .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
   .card {

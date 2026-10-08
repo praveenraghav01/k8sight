@@ -77,9 +77,10 @@ k8sight is a **desktop UI for clusters you already have**: closest in spirit to 
 | Centralized team RBAC & multi-tenancy | ❌ | ✅ | ❌ |
 | Built-in security scan (image CVEs, config, RBAC) | ✅ *bundled Trivy* | via add-ons | ❌ |
 | Cost view (OpenCost/Kubecost) | ✅ | via add-ons | ❌ |
-| AI assistant + MCP server | ✅ | ❌ | ❌ |
+| AI assistant + MCP server | ✅ *any model, no account* | Rancher Prime (Liz) | Lens ✅ (Prism + MCP) · k9s ❌ |
+| GitOps views | ✅ *Argo CD, Flux, Flagger* | Fleet | Lens: Flux · k9s ❌ |
 | Try with no cluster (demo mode) | ✅ | ❌ | ❌ |
-| One-click EKS/AKS/GKE onboarding (no CLI) | ✅ | ✅ | ❌ |
+| One-click EKS/AKS/GKE onboarding (no CLI) | ✅ | ✅ | Lens: AWS & Azure · k9s ❌ |
 | Free & open-source | ✅ | ✅ | k9s ✅ · Lens: sign-in required |
 
 > [!NOTE]
