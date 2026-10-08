@@ -130,7 +130,7 @@ export default function Navigation({
     { key: 'externalartifact', label: 'External Artifacts', icon: 'box' },
   ];
   const flaggerTypes = [
-    { key: 'canary', label: 'Canaries', icon: 'flagger' },
+    { key: 'canary', label: 'Canaries', icon: 'rocket' },
     { key: 'metrictemplate', label: 'Metric Templates', icon: 'activity' },
     { key: 'alertprovider', label: 'Alert Providers', icon: 'bell' },
   ];
