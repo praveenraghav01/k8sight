@@ -27,7 +27,7 @@
 - Security Center: image CVEs, config and RBAC audit, exposed secrets, via Trivy Operator reports or a bundled Trivy binary.
 - One-click AWS EKS and Azure AKS onboarding across accounts/subscriptions; GKE, on-prem, kind and minikube work from your existing kubeconfig.
 - Bring-your-own-model AI assistant grounded in live cluster data (secrets redacted before anything leaves the app).
-- MCP server so external AI agents can inspect the cluster (read tools by default; write tools opt-in).
+- MCP server so external AI agents can inspect the cluster, including costs, Security Center findings, Argo CD, Flux and Flagger (read tools by default; write tools such as sync, reconcile and canary restart are opt-in).
 - Demo mode: a realistic synthetic cluster, no kubeconfig required.
 
 ## Links

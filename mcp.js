@@ -429,6 +429,190 @@ export function createMcpServer({ baseURL, version, allowWrite } = {}) {
     return ok(data.clusters ?? data);
   }));
 
+  // ---- Costs (extended) ----
+  server.registerTool('get_cost_timeseries', {
+    title: 'Get cost over time',
+    description: 'Cost per namespace over time from OpenCost or Kubecost (hourly for 24h/today, daily otherwise). Supply all four selector fields to use a non-standard Service.',
+    inputSchema: {
+      window: z.enum(['24h', '7d', '30d', 'today', 'lastweek', 'month']).default('7d'),
+      provider: z.enum(['opencost', 'kubecost']).optional(),
+      namespace: z.string().optional(),
+      service: z.string().optional(),
+      port: z.number().int().min(1).max(65535).optional(),
+    },
+  }, wrap(async ({ window = '7d', provider, namespace, service, port }) => {
+    const { data } = await api.get('/api/costs/timeseries', { params: { window, provider, namespace, service, port } });
+    return ok(data);
+  }));
+
+  // ---- Security Center ----
+  // Image findings come from the Trivy Operator's reports when it's installed,
+  // otherwise from the app's built-in Trivy scan. Both use the same shape.
+  const SEVERITIES = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'UNKNOWN'];
+  const atLeast = (min) => SEVERITIES.slice(0, SEVERITIES.indexOf(min) + 1);
+  const securityImages = async (namespace) => {
+    const { data: st } = await api.get('/api/security/status');
+    if (st.installed && st.reports?.vulnerability) {
+      const { data } = await api.get('/api/security/vulnerabilities', { params: { namespace } });
+      return { source: 'trivy-operator', ...data };
+    }
+    const { data } = await api.get('/api/security/scan');
+    const images = (data.images || []).filter((im) => !namespace || namespace === 'all'
+      || (im.workloads || []).some((w) => w.namespace === namespace));
+    return { source: 'built-in scan', ...data, images };
+  };
+
+  server.registerTool('get_security_status', {
+    title: 'Get Security Center status',
+    description: 'Which security data is available: Trivy Operator reports (vulnerability, config audit, RBAC, exposed secrets) and the built-in Trivy scanner (available, running, has a result).',
+    inputSchema: {},
+  }, wrap(async () => {
+    const [{ data: operator }, { data: scan }] = await Promise.all([api.get('/api/security/status'), api.get('/api/security/scan/status')]);
+    return ok({ operator, builtInScan: scan });
+  }));
+
+  server.registerTool('list_vulnerable_images', {
+    title: 'List image vulnerabilities',
+    description: 'Images running in the cluster with CVE counts by severity, the workloads using them, and exposed-secret counts, worst first. Use get_image_vulnerabilities for the CVE list of one image.',
+    inputSchema: {
+      namespace: z.string().optional().describe('limit to one namespace (default: all)'),
+      minSeverity: z.enum(['CRITICAL', 'HIGH', 'MEDIUM', 'LOW']).optional().describe('only images with at least one finding at this severity or worse'),
+      limit: z.number().int().min(1).max(500).default(50),
+    },
+  }, wrap(async ({ namespace, minSeverity, limit = 50 }) => {
+    const d = await securityImages(namespace);
+    let images = d.images || [];
+    if (minSeverity) images = images.filter((im) => atLeast(minSeverity).some((sv) => im.summary?.[sv] > 0));
+    return ok({
+      source: d.source,
+      totals: d.summary,
+      imageCount: images.length,
+      images: images.slice(0, limit).map((im) => ({
+        image: im.image, os: im.os || im.platform || '', status: im.status, scannedAt: im.scannedAt,
+        summary: im.summary, exposedSecrets: im.secrets || 0,
+        workloads: (im.workloads || []).map((w) => `${w.namespace}/${w.kind}/${w.name}${w.container ? ` (${w.container})` : ''}`),
+      })),
+      note: d.images?.length ? undefined : 'No image findings. Install the Trivy Operator or run start_security_scan.',
+    });
+  }));
+
+  server.registerTool('get_image_vulnerabilities', {
+    title: 'Get CVEs for an image',
+    description: 'The CVEs found in one image (package, installed and fixed version, severity, score), worst first.',
+    inputSchema: {
+      image: z.string().describe('image reference as shown by list_vulnerable_images'),
+      minSeverity: z.enum(['CRITICAL', 'HIGH', 'MEDIUM', 'LOW']).optional(),
+      fixableOnly: z.boolean().optional().describe('only CVEs that have a fixed version'),
+      limit: z.number().int().min(1).max(1000).default(100),
+    },
+  }, wrap(async ({ image, minSeverity, fixableOnly, limit = 100 }) => {
+    const d = await securityImages();
+    const im = (d.images || []).find((x) => x.image === image) || (d.images || []).find((x) => x.image.includes(image));
+    if (!im) return fail(`image "${image}" has no scan result; check list_vulnerable_images`);
+    let vulns = im.vulnerabilities || [];
+    if (minSeverity) vulns = vulns.filter((v) => atLeast(minSeverity).includes(v.severity));
+    if (fixableOnly) vulns = vulns.filter((v) => v.fixedVersion);
+    return ok({
+      image: im.image, source: d.source, summary: im.summary, matching: vulns.length,
+      vulnerabilities: vulns.slice(0, limit).map((v) => ({
+        id: v.id, severity: v.severity, score: v.score, package: v.pkg,
+        installedVersion: v.installedVersion, fixedVersion: v.fixedVersion || null, title: v.title, link: v.link,
+      })),
+    });
+  }));
+
+  server.registerTool('list_security_checks', {
+    title: 'List config and RBAC findings',
+    description: 'Failed configuration-audit checks (kind=config) or RBAC risks (kind=rbac) per resource, from Trivy Operator reports, worst first. Each finding has its id, severity, message and remediation.',
+    inputSchema: {
+      kind: z.enum(['config', 'rbac']).default('config'),
+      namespace: z.string().optional(),
+      minSeverity: z.enum(['CRITICAL', 'HIGH', 'MEDIUM', 'LOW']).optional(),
+      limit: z.number().int().min(1).max(500).default(50),
+    },
+  }, wrap(async ({ kind = 'config', namespace, minSeverity, limit = 50 }) => {
+    const { data } = await api.get('/api/security/checks', { params: { kind, namespace } });
+    if (data.installed === false) return ok({ installed: false, note: 'Config and RBAC checks need the Trivy Operator; the built-in scan only covers images.' });
+    let resources = data.resources || [];
+    if (minSeverity) {
+      const keep = atLeast(minSeverity);
+      resources = resources.map((r) => ({ ...r, checks: r.checks.filter((c) => keep.includes(c.severity)) })).filter((r) => r.checks.length);
+    }
+    return ok({
+      totals: data.summary, resourceCount: resources.length,
+      resources: resources.slice(0, limit).map((r) => ({
+        resource: `${r.namespace ? r.namespace + '/' : ''}${r.kind}/${r.name}`, summary: r.summary, checks: r.checks,
+      })),
+    });
+  }));
+
+  server.registerTool('start_security_scan', {
+    title: 'Start built-in image scan',
+    description: 'Scan every running image with the app\'s built-in Trivy (runs on this machine; nothing is installed in the cluster). Returns immediately; poll get_security_status, then use list_vulnerable_images. Only works once Trivy is available locally.',
+    inputSchema: { namespace: z.string().optional().describe('only scan images used in this namespace') },
+  }, wrap(async ({ namespace }) => {
+    const { data: st } = await api.get('/api/security/scan/status');
+    if (!st.available) return fail('Trivy is not available on this machine yet. Open Security Center in k8sight and choose "Download Trivy & scan" once.');
+    const { data } = await api.post('/api/security/scan', namespace ? { namespace } : {});
+    return ok({ started: data.started, running: data.running, total: data.total, message: data.started ? 'Scan started.' : 'A scan is already running.' });
+  }));
+
+  // ---- Flux CD ----
+  const FLUX_KINDS = ['kustomization', 'helmrelease', 'gitrepository', 'ocirepository', 'helmrepository', 'bucket', 'helmchart', 'externalartifact', 'alert', 'provider', 'receiver', 'imagerepository', 'imagepolicy', 'imageupdateautomation'];
+  const fluxPath = (kind, namespace, name) => `/api/flux/resource/${encodeURIComponent(kind)}/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}`;
+
+  server.registerTool('get_flux_overview', {
+    title: 'Get Flux overview',
+    description: 'Whether Flux is installed, ready/total counts per category (Kustomizations, HelmReleases, sources, notifications), every resource that is not Ready with its message, and the last hour of Flux events.',
+    inputSchema: {},
+  }, wrap(async () => {
+    const { data: st } = await api.get('/api/flux/status');
+    if (!st.installed) return ok({ installed: false });
+    const { data } = await api.get('/api/flux/overview');
+    return ok({ installed: true, ...data, activity: (data.activity || []).slice(0, 40) });
+  }));
+
+  server.registerTool('list_flux_resources', {
+    title: 'List Flux resources',
+    description: 'All Flux resources of one kind with state (Ready, Reconciling, Failed, Suspended), message, source, revision and interval.',
+    inputSchema: { kind: z.enum(FLUX_KINDS) },
+  }, wrap(async ({ kind }) => {
+    const { data } = await api.get('/api/flux/resources', { params: { kind } });
+    return ok(data.resources ?? data);
+  }));
+
+  server.registerTool('get_flux_resource', {
+    title: 'Get Flux resource',
+    description: 'Full detail of one Flux resource: spec, status, conditions, the resources a Kustomization manages, and recent events.',
+    inputSchema: { kind: z.enum(FLUX_KINDS), namespace: z.string(), name: z.string() },
+  }, wrap(async ({ kind, namespace, name }) => {
+    const { data } = await api.get(fluxPath(kind, namespace, name));
+    return ok(data);
+  }));
+
+  // ---- Flagger ----
+  const FLAGGER_KINDS = ['canary', 'metrictemplate', 'alertprovider'];
+
+  server.registerTool('list_flagger_canaries', {
+    title: 'List Flagger canaries',
+    description: 'Flagger Canaries with phase (Progressing, WaitingPromotion, Succeeded, Failed, ...), strategy (Canary, A/B testing, Blue/Green, mirroring), target, traffic weight or iterations, and failed checks against the threshold. Use kind to list MetricTemplates or AlertProviders instead.',
+    inputSchema: { kind: z.enum(FLAGGER_KINDS).default('canary') },
+  }, wrap(async ({ kind = 'canary' }) => {
+    const { data: st } = await api.get('/api/flagger/status');
+    if (!st.installed) return ok({ installed: false });
+    const { data } = await api.get('/api/flagger/resources', { params: { kind } });
+    return ok(data.resources ?? data);
+  }));
+
+  server.registerTool('get_flagger_canary', {
+    title: 'Get Flagger canary',
+    description: 'Full detail of one Canary (or MetricTemplate / AlertProvider): rollout status, analysis metrics and thresholds, webhooks, alerts, A/B match rules, the objects Flagger generated, and events.',
+    inputSchema: { namespace: z.string(), name: z.string(), kind: z.enum(FLAGGER_KINDS).default('canary') },
+  }, wrap(async ({ namespace, name, kind = 'canary' }) => {
+    const { data } = await api.get(`/api/flagger/resource/${kind}/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}`);
+    return ok(data);
+  }));
+
   // ---------------------------------------------------------- write tools (gated)
   if (allowWrite) {
     server.registerTool('apply_yaml', {
@@ -469,10 +653,15 @@ export function createMcpServer({ baseURL, version, allowWrite } = {}) {
 
     server.registerTool('sync_argocd_app', {
       title: 'Sync ArgoCD application (write)',
-      description: 'Trigger an ArgoCD sync for an Application (deploys the target Git state). WRITE operation.',
-      inputSchema: { namespace: z.string(), name: z.string() },
-    }, wrap(async ({ namespace, name }) => {
-      const { data } = await api.post(`/api/argocd/application/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}/sync`);
+      description: 'Trigger an ArgoCD sync for an Application (deploys the target Git state). Optional: prune resources no longer in Git, a dry run, or a specific revision. WRITE operation.',
+      inputSchema: {
+        namespace: z.string(), name: z.string(),
+        prune: z.boolean().optional().describe('delete resources that are no longer defined in Git'),
+        dryRun: z.boolean().optional().describe('preview the sync without applying anything'),
+        revision: z.string().optional().describe('Git revision to sync to (default: the target revision)'),
+      },
+    }, wrap(async ({ namespace, name, prune, dryRun, revision }) => {
+      const { data } = await api.post(`/api/argocd/application/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}/sync`, { prune, dryRun, revision });
       return ok(data.message || 'sync triggered');
     }));
 
@@ -483,6 +672,53 @@ export function createMcpServer({ baseURL, version, allowWrite } = {}) {
     }, wrap(async ({ namespace, name }) => {
       const { data } = await api.post(`/api/argocd/application/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}/refresh`);
       return ok(data.message || 'refresh requested');
+    }));
+
+    server.registerTool('reconcile_flux_resource', {
+      title: 'Reconcile Flux resource',
+      description: 'Ask Flux to reconcile a resource now (same as `flux reconcile`; sets the reconcile.fluxcd.io/requestedAt annotation). WRITE operation.',
+      inputSchema: { kind: z.enum(FLUX_KINDS), namespace: z.string(), name: z.string() },
+    }, wrap(async ({ kind, namespace, name }) => {
+      const { data } = await api.post(`${fluxPath(kind, namespace, name)}/reconcile`);
+      return ok(data.message || 'reconciliation requested');
+    }));
+
+    server.registerTool('suspend_flux_resource', {
+      title: 'Suspend or resume Flux resource',
+      description: 'Suspend (suspend=true) or resume (suspend=false) reconciliation of a Flux resource via spec.suspend. WRITE operation.',
+      inputSchema: { kind: z.enum(FLUX_KINDS), namespace: z.string(), name: z.string(), suspend: z.boolean() },
+    }, wrap(async ({ kind, namespace, name, suspend }) => {
+      const { data } = await api.post(`${fluxPath(kind, namespace, name)}/${suspend ? 'suspend' : 'resume'}`);
+      return ok(data.message || (suspend ? 'suspended' : 'resumed'));
+    }));
+
+    const canaryPath = (namespace, name, action) => `/api/flagger/canary/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}/${action}`;
+
+    server.registerTool('restart_canary', {
+      title: 'Restart canary rollout',
+      description: 'Rollout-restart the Canary\'s target workload. Flagger treats it as a new revision and starts a new analysis (or promotes straight away if skipAnalysis is on). WRITE operation.',
+      inputSchema: { namespace: z.string(), name: z.string() },
+    }, wrap(async ({ namespace, name }) => {
+      const { data } = await api.post(canaryPath(namespace, name, 'restart'));
+      return ok(data.message || 'restarted');
+    }));
+
+    server.registerTool('suspend_canary', {
+      title: 'Suspend or resume canary',
+      description: 'Suspend (suspend=true) or resume (suspend=false) a Flagger Canary via spec.suspend. WRITE operation.',
+      inputSchema: { namespace: z.string(), name: z.string(), suspend: z.boolean() },
+    }, wrap(async ({ namespace, name, suspend }) => {
+      const { data } = await api.post(canaryPath(namespace, name, suspend ? 'suspend' : 'resume'));
+      return ok(data.message || (suspend ? 'suspended' : 'resumed'));
+    }));
+
+    server.registerTool('set_canary_skip_analysis', {
+      title: 'Set canary skipAnalysis',
+      description: 'Turn spec.skipAnalysis on (new revisions are promoted without analysis) or off. WRITE operation.',
+      inputSchema: { namespace: z.string(), name: z.string(), skip: z.boolean() },
+    }, wrap(async ({ namespace, name, skip }) => {
+      const { data } = await api.post(canaryPath(namespace, name, skip ? 'skip-analysis' : 'enable-analysis'));
+      return ok(data.message || (skip ? 'analysis will be skipped' : 'analysis enabled'));
     }));
   }
 

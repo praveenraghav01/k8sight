@@ -154,7 +154,7 @@ For a single-port production run: `npm run build && npm start`, then open **http
 
 ## Connect AI agents (MCP)
 
-The app is also an [MCP](https://modelcontextprotocol.io) server exposing the same capabilities as the UI: **~32 read tools** (contexts, resources, logs, events, topology, metrics, costs, Helm, CRDs, Argo CD, …) plus **6 write tools** (`apply_yaml`, `delete_resource`, `scale_workload`, `rollout_restart`, `sync_argocd_app`, `refresh_argocd_app`).
+The app is also an [MCP](https://modelcontextprotocol.io) server exposing the same capabilities as the UI: **43 read tools** (contexts, resources, logs, events, topology, metrics, Helm, CRDs, costs, Security Center findings, Argo CD, Flux and Flagger) plus **11 write tools** (`apply_yaml`, `delete_resource`, `scale_workload`, `rollout_restart`, `sync_argocd_app`, `refresh_argocd_app`, `reconcile_flux_resource`, `suspend_flux_resource`, `restart_canary`, `suspend_canary`, `set_canary_skip_analysis`).
 
 > [!NOTE]
 > Write tools are **off by default**. Enable them in **Preferences → MCP Server → Write access**, or start with `MCP_ALLOW_WRITE=1`. Reconnect the agent to pick up the new tool set.
