@@ -224,7 +224,7 @@ export default function Assistant({ context }) {
 
             {enabled && messages.length === 0 && (
               <div className="assistant-empty">
-                <p>Ask about your cluster — I can read logs, events, and resource specs to help debug. I can't make changes.</p>
+                <p>Ask about your cluster. I can read logs, events, and resource specs to help debug. I can't make changes.</p>
                 <div className="assistant-suggest">
                   {SUGGESTIONS.map((s) => (
                     <button key={s} onClick={() => send(s)} disabled={busy}>{s}</button>

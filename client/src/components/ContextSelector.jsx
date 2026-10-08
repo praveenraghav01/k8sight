@@ -150,7 +150,7 @@ export default function ContextSelector({ contexts = [], contextsInfo, currentCo
                   )}
                   {onAddLocal && (
                     <button className="ctx-add-item" onClick={() => { setOpen(false); onAddLocal(); }}>
-                      <Icon name="box" size={15} style={{ color: PROVIDERS.local.color }} /> Local — load kubeconfig
+                      <Icon name="box" size={15} style={{ color: PROVIDERS.local.color }} /> Local: load kubeconfig
                     </button>
                   )}
                 </div>

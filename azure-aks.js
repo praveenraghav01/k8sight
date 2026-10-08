@@ -168,7 +168,7 @@ async function accessToken() {
     if (r.ok && t.access_token) { setSession(t, session.tenant); return session.accessToken; }
   }
   session = null;
-  throw new Error('Azure session expired — sign in again');
+  throw new Error('Azure session expired. Sign in again.');
 }
 
 async function arm(url, { method = 'GET', body } = {}) {

@@ -113,7 +113,7 @@ function startServer(fixedPath) {
     if (!app.isQuitting && code !== 0 && code !== null) {
       const portTaken = /EADDRINUSE|already in use/i.test(stderrTail);
       const detail = portTaken
-        ? `Port ${BACKEND_PORT} is already in use — another copy of the app or a process on that port is running. Quit it and relaunch.`
+        ? `Port ${BACKEND_PORT} is already in use. Another copy of the app or a process on that port is running. Quit it and relaunch.`
         : `The backend exited unexpectedly (code ${code}).` +
           (stderrTail.trim() ? `\n\n${stderrTail.trim().split('\n').slice(-4).join('\n')}` : '');
       dialog.showErrorBox('k8sight', detail);

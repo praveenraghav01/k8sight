@@ -42,8 +42,8 @@ async function main() {
 
   let store;
   try { store = JSON.parse(fs.readFileSync(AUTH_FILE, 'utf-8')); }
-  catch { throw new Error('Not signed in to Azure — open k8sight and sign in to Azure.'); }
-  if (!store.refreshToken) throw new Error('No Azure session — sign in to Azure in k8sight.');
+  catch { throw new Error('Not signed in to Azure. Open k8sight and sign in to Azure.'); }
+  if (!store.refreshToken) throw new Error('No Azure session. Sign in to Azure in k8sight.');
 
   const tenant = arg('tenant') || store.tenant || 'organizations';
   const r = await fetch(`${AAD}/${tenant}/oauth2/v2.0/token`, {

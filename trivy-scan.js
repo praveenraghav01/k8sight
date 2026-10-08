@@ -114,7 +114,7 @@ async function verifyChecksum(version, asset, data) {
 export async function ensureTrivy(onPhase) {
   if ((await trivyAvailable()).available) return trivyBin();
   if (fs.existsSync(CACHED_TRIVY)) { _bin = CACHED_TRIVY; return CACHED_TRIVY; }
-  if (!trivyInstallable()) throw new Error('trivy is not available — install it and add it to PATH.');
+  if (!trivyInstallable()) throw new Error('trivy is not available. Install it and add it to PATH.');
   onPhase?.('preparing');
   const version = await latestVersion();
   const asset = assetName(version);

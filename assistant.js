@@ -380,7 +380,7 @@ ${ctx?.selected ? `- Selected resource: ${ctx.selected.type || ''} ${ctx.selecte
       if (resp.status === 401 || resp.status === 403) return res.status(400).json({ error: 'The API key was rejected by the provider (authentication failed).' });
       if (!resp.ok) {
         const text = await resp.text().catch(() => '');
-        return res.status(400).json({ error: `Provider rejected the request (HTTP ${resp.status}). Check the URL and model name.${text ? ` — ${truncate(text, 300)}` : ''}` });
+        return res.status(400).json({ error: `Provider rejected the request (HTTP ${resp.status}). Check the URL and model name.${text ? `: ${truncate(text, 300)}` : ''}` });
       }
     } catch (err) {
       // Network/timeout — save anyway but tell the user validation didn't complete.

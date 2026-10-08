@@ -115,6 +115,7 @@
           <a href="ai.html" class="current" aria-current="page">AI</a>
           <a href="cloud.html">Cloud</a>
           <a href="argocd.html">Argo CD</a>
+          <a href="flux.html">Flux</a>
           <a href="security.html">Security</a>
           <a href="costs.html">Costs</a>
           <a href="docs.html">Docs</a>
@@ -229,6 +230,78 @@
   </div>
 </section>
 
+<section class="sec" id="mcp">
+  <div class="wrap">
+    <div class="sec-head reveal">
+      <span class="kicker">MCP server</span>
+      <h2>Give any agent the same view of your cluster</h2>
+      <p>k8sight is also an MCP server, so Claude Code, Cursor, Copilot and any other MCP client can use what the app can see: 43 read tools and 11 write tools, on whichever cluster you have selected.</p>
+    </div>
+    <div class="reveal" style="max-width:720px; margin:0 auto 28px; padding:14px 18px; border:1px solid var(--border-2); border-radius:12px; background:var(--panel-2); font-family:var(--mono); font-size:13.5px; color:var(--text); overflow-x:auto; white-space:nowrap;"><span style="color:var(--text-mute);">$</span> claude mcp add --transport http k8sight http://localhost:3001/mcp</div>
+    <div class="grid">
+      <div class="card i-cyan reveal">
+        <div class="ico"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke-width="2"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg></div>
+        <h3>Cluster</h3>
+        <p>Contexts, namespaces, every resource kind and its YAML, logs, events, topology, nodes and live metrics, RBAC, Helm releases and custom resources.</p>
+      </div>
+      <div class="card i-red reveal">
+        <div class="ico"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg></div>
+        <h3>Security Center</h3>
+        <p>Which images have critical CVEs and where they run, the fixable CVEs in one image, config and RBAC findings with remediation, and a built-in Trivy scan.</p>
+      </div>
+      <div class="card i-green reveal">
+        <div class="ico"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></div>
+        <h3>Costs</h3>
+        <p>Spend by namespace, workload, node or cluster from OpenCost or Kubecost, and how it changed over the last day, week or month.</p>
+      </div>
+      <div class="card i-amber reveal">
+        <div class="ico"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke-width="2"><circle cx="6" cy="6" r="2.5"/><circle cx="6" cy="18" r="2.5"/><circle cx="18" cy="12" r="2.5"/><path d="M6 8.5v7M8.3 7l7.4 3.8M8.3 17l7.4-3.8"/></svg></div>
+        <h3>Argo CD</h3>
+        <p>Applications with sync and health, projects, ApplicationSets, repositories and clusters. Sync (with prune, dry run or a revision) and refresh.</p>
+      </div>
+      <div class="card i-purple reveal">
+        <div class="ico"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M21 12a9 9 0 0 1-9 9 9 9 0 0 1-8-5M3 12a9 9 0 0 1 9-9 9 9 0 0 1 8 5"/><path d="M20 4v5h-5M4 20v-5h5"/></svg></div>
+        <h3>Flux CD</h3>
+        <p>What isn&rsquo;t ready and why, recent Flux events, every Kustomization, HelmRelease and source. Reconcile, suspend and resume.</p>
+      </div>
+      <div class="card  reveal">
+        <div class="ico"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg></div>
+        <h3>Flagger</h3>
+        <p>Canaries with phase, strategy, traffic weight and failed checks, plus their metrics, webhooks and events. Restart, suspend and skip analysis.</p>
+      </div>
+    </div>
+    <p class="reveal" style="margin:22px auto 0; max-width:760px; text-align:center; color:var(--text-mute); font-size:14px;">Read tools are always on. Write tools (apply, delete, scale, restart, sync, reconcile, canary restart) stay off until you turn them on in <b style="color:var(--text-dim);">Preferences &rarr; MCP Server</b>. Agents use your kubeconfig, so they get exactly the access you have.</p>
+  </div>
+</section>
+
+<section class="sec" id="compare">
+  <div class="wrap">
+    <div class="sec-head reveal">
+      <span class="kicker">How it compares</span>
+      <h2>AI in k8sight, Lens, Rancher and k9s</h2>
+      <p>Lens and Rancher now ship AI assistants too. Here&rsquo;s where k8sight differs: there&rsquo;s no account or subscription, nothing runs in your cluster, and it works with any OpenAI-compatible model.</p>
+    </div>
+    <div class="cmp-wrap reveal">
+      <table class="cmp">
+        <colgroup><col><col class="pick"><col><col><col></colgroup>
+        <thead>
+          <tr><th></th><th class="pick" scope="col">k8sight</th><th scope="col">Lens</th><th scope="col">Rancher</th><th scope="col">k9s</th></tr>
+        </thead>
+        <tbody>
+          <tr><th scope="row">Built-in AI assistant</th><td class="pickcol yes">✓<small>bring your own model</small></td><td class="yes">✓<small>Lens Prism</small></td><td class="yes">✓<small>Liz, Rancher Prime</small></td><td class="no">✕</td></tr>
+          <tr><th scope="row">MCP server for your own agents</th><td class="pickcol yes">✓<small>43 read + 11 write tools</small></td><td class="yes">✓<small>since March 2026</small></td><td class="yes">✓<small>Rancher Prime</small></td><td class="no">✕</td></tr>
+          <tr><th scope="row">AI over CVEs, costs, Argo CD, Flux &amp; Flagger</th><td class="pickcol yes">✓</td><td>-</td><td>-</td><td class="no">✕</td></tr>
+          <tr><th scope="row">Docks your coding agents (Claude Code, Copilot, Codex&hellip;)</th><td class="pickcol yes">✓</td><td>-</td><td>-</td><td class="no">✕</td></tr>
+          <tr><th scope="row">No account or sign-in</th><td class="pickcol yes">✓</td><td class="no">✕<small>Lens ID required</small></td><td class="no">✕<small>Rancher server</small></td><td class="yes">✓</td></tr>
+          <tr><th scope="row">Nothing installed in the cluster</th><td class="pickcol yes">✓</td><td class="yes">✓</td><td class="no">✕</td><td class="yes">✓</td></tr>
+          <tr><th scope="row">Price</th><td class="pickcol">Free, open source<small>your LLM key</small></td><td>Free tier<small>Pro for larger orgs</small></td><td>Prime subscription<small>for Liz</small></td><td>Free, open source</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="reveal" style="margin:0 auto; max-width:760px; text-align:center; color:var(--text-mute); font-size:13.5px;">&ldquo;-&rdquo; means we couldn&rsquo;t confirm it from public docs. Based on public product docs as of October 2026; see <a href="docs.html#compare">the full comparison</a> for everything else.</p>
+  </div>
+</section>
+
 <section class="sec" id="more">
   <div class="wrap">
     <div class="sec-head reveal">
@@ -239,6 +312,7 @@
       <a class="more-link" href="operations.html"><b>Operations <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M5 12h14M13 6l6 6-6 6"/></svg></b><span>Live dashboard, every workload type, logs, a real shell, topology, Helm and port forwarding.</span></a>
       <a class="more-link" href="cloud.html"><b>Cloud clusters <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M5 12h14M13 6l6 6-6 6"/></svg></b><span>Add EKS, AKS and GKE clusters to your kubeconfig with no cloud CLI.</span></a>
       <a class="more-link" href="argocd.html"><b>Argo CD <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M5 12h14M13 6l6 6-6 6"/></svg></b><span>Applications, resource trees, sync and refresh, with no argocd CLI.</span></a>
+      <a class="more-link" href="flux.html"><b>Flux &amp; Flagger <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M5 12h14M13 6l6 6-6 6"/></svg></b><span>Flux reconciliation health and live Flagger canary rollouts.</span></a>
       <a class="more-link" href="security.html"><b>Security Center <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M5 12h14M13 6l6 6-6 6"/></svg></b><span>Image CVEs, config audits, RBAC checks and exposed secrets, powered by Trivy.</span></a>
       <a class="more-link" href="costs.html"><b>Costs <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M5 12h14M13 6l6 6-6 6"/></svg></b><span>Spend by namespace, workload and node from OpenCost or Kubecost.</span></a>
     </div>
@@ -271,6 +345,7 @@
       <a href="ai.html">AI</a>
       <a href="cloud.html">Cloud</a>
       <a href="argocd.html">Argo CD</a>
+      <a href="flux.html">Flux</a>
       <a href="security.html">Security</a>
       <a href="costs.html">Costs</a>
       <a href="index.html#download">Download</a>

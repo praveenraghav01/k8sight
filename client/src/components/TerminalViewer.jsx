@@ -89,7 +89,7 @@ export default function TerminalViewer({ resource, namespace }) {
     ws.onmessage = (e) => { term.write(e.data); };
     ws.onclose = () => {
       setStatus('closed');
-      term.write('\r\n\x1b[90m[session closed — press Reconnect]\x1b[0m\r\n');
+      term.write('\r\n\x1b[90m[session closed, press Reconnect]\x1b[0m\r\n');
     };
     ws.onerror = () => { setStatus('closed'); };
   };

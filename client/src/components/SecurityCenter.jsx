@@ -18,7 +18,7 @@ const sevTotal = (s = {}) => SEVERITIES.reduce((n, k) => n + (s[k] || 0), 0);
 const SevPill = ({ s }) => <span className="sec-pill" style={{ color: SEV_COLOR[s], background: `${SEV_COLOR[s]}22` }}>{s}</span>;
 
 const rel = (iso) => {
-  if (!iso) return '—';
+  if (!iso) return '-';
   const s = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
   if (s < 60) return 'just now';
   if (s < 3600) return `${Math.floor(s / 60)} minutes ago`;
@@ -260,7 +260,7 @@ function ImagesView({ vuln, ns, q, onSelect, selected, criticalOnly }) {
           {rows.map((im) => (
             <button key={im.image} className={`sec-tr img row ${selected === im ? 'sel' : ''}`} onClick={() => onSelect(im)}>
               <span className="sec-mono sec-ellip" title={im.image}>{im.image}</span>
-              <span>{im.namespace || '—'}</span>
+              <span>{im.namespace || '-'}</span>
               <span className="sec-kind">OciImage</span>
               <span className={im.summary.CRITICAL ? 'sec-crit' : ''}>{im.summary.CRITICAL || 0}</span>
               <span className="sec-dim">{rel(im.scannedAt)}</span>
@@ -276,10 +276,10 @@ function ImagesView({ vuln, ns, q, onSelect, selected, criticalOnly }) {
             return (
               <button key={im.image} className={`sec-tr imgfull row ${selected === im ? 'sel' : ''}`} onClick={() => onSelect(im)}>
                 <span className="sec-mono sec-ellip" title={im.image}>{im.image}</span>
-                <span className="sec-dim">{im.platform || im.os || '—'}</span>
+                <span className="sec-dim">{im.platform || im.os || '-'}</span>
                 <span>{pods}</span>
-                <span>{sevTotal(im.summary) ? <SevMini summary={im.summary} /> : <span className="sec-dim">{scanned ? '—' : '?'}</span>}</span>
-                <span>{scanned ? (im.secrets ? <span className="sec-secretnum">{im.secrets}</span> : <span className="sec-dim">—</span>) : <span className="sec-dim">?</span>}</span>
+                <span>{sevTotal(im.summary) ? <SevMini summary={im.summary} /> : <span className="sec-dim">{scanned ? '-' : '?'}</span>}</span>
+                <span>{scanned ? (im.secrets ? <span className="sec-secretnum">{im.secrets}</span> : <span className="sec-dim">-</span>) : <span className="sec-dim">?</span>}</span>
                 <span className={im.status === 'Failed' ? 'sec-crit' : 'sec-dim'}>{im.status || 'Not Scanned'}</span>
               </button>
             );
@@ -304,7 +304,7 @@ function ChecksView({ data, ns, q, onSelect, selected, label }) {
         <button key={`${r.kind}/${r.namespace}/${r.name}/${i}`} className={`sec-tr chk row ${selected === r ? 'sel' : ''}`} onClick={() => onSelect(r)}>
           <span className="sec-strong sec-ellip">{r.name}</span>
           <span className="sec-kind">{r.kind}</span>
-          <span className="sec-dim">{r.namespace || '—'}</span>
+          <span className="sec-dim">{r.namespace || '-'}</span>
           <span><SevMini summary={r.summary} /></span>
         </button>
       ))}
@@ -368,7 +368,7 @@ function ImageDetail({ d, onNavigate }) {
     <>
       <div className="sec-drawer-section">Properties</div>
       <Prop k="Name"><span className="sec-mono">{d.image}</span></Prop>
-      <Prop k="Namespace">{d.namespace ? <a onClick={() => onNavigate?.toNamespace?.(d.namespace)}>{d.namespace}</a> : '—'}</Prop>
+      <Prop k="Namespace">{d.namespace ? <a onClick={() => onNavigate?.toNamespace?.(d.namespace)}>{d.namespace}</a> : '-'}</Prop>
       {controlledBy && <Prop k="Controlled By">{controlledBy.kind} <a onClick={() => onNavigate?.toResource?.({ type: kindType(controlledBy.kind), namespace: controlledBy.namespace, name: controlledBy.name })}>{controlledBy.name}</a></Prop>}
       {d.tag && <Prop k="Tag">{d.tag}</Prop>}
       {d.digest && <Prop k="Image Digest"><span className="sec-mono sec-break">{d.digest}</span></Prop>}
@@ -449,7 +449,7 @@ function ImageDetail({ d, onNavigate }) {
               <span>{v.link ? <a href={v.link} target="_blank" rel="noreferrer" className="sec-cve">{v.id}</a> : v.id}</span>
               <span><SevPill s={v.severity} /></span>
               <span className="sec-mono sec-ellip" title={v.pkg}>{v.pkg}</span>
-              <span className="sec-mono">{v.fixedVersion || <em className="sec-dim">—</em>}</span>
+              <span className="sec-mono">{v.fixedVersion || <em className="sec-dim">-</em>}</span>
               <span className="sec-mono sec-ellip" title={v.installedVersion}>{v.installedVersion}</span>
             </div>
             {v.title && <div className="sec-vdesc">{v.title}</div>}
@@ -462,7 +462,7 @@ function ImageDetail({ d, onNavigate }) {
 }
 
 function reportDate(value) {
-  if (!value) return '—';
+  if (!value) return '-';
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
 }
@@ -487,16 +487,16 @@ function ImageVulnerabilityReport({ image, severityFilter }) {
 
       <section className="sec-report-meta">
         <div><b>Status</b><span>{image.status || 'Scanned'}</span></div>
-        <div><b>Namespace</b><span>{image.namespace || '—'}</span></div>
+        <div><b>Namespace</b><span>{image.namespace || '-'}</span></div>
         <div><b>Scanned</b><span>{reportDate(image.scannedAt)}</span></div>
         <div><b>Scanner</b><span>{image.scanner || 'Trivy'}</span></div>
-        <div><b>OS / platform</b><span>{image.platform || image.os || '—'}</span></div>
-        <div><b>Tag</b><span>{image.tag || '—'}</span></div>
+        <div><b>OS / platform</b><span>{image.platform || image.os || '-'}</span></div>
+        <div><b>Tag</b><span>{image.tag || '-'}</span></div>
         <div><b>Severity filter</b><span>{severityFilter === 'ALL' ? 'All severities' : severityFilter}</span></div>
         {image.digest && <div className="sec-report-digest"><b>Digest</b><span>{image.digest}</span></div>}
         <div className="sec-report-workloads">
           <b>Used by</b>
-          <span>{workloads.length ? workloads.slice(0, 20).map((workload) => `${workload.namespace || 'default'}/${workload.name}`).join(', ') : '—'}{workloads.length > 20 ? `, and ${workloads.length - 20} more` : ''}</span>
+          <span>{workloads.length ? workloads.slice(0, 20).map((workload) => `${workload.namespace || 'default'}/${workload.name}`).join(', ') : '-'}{workloads.length > 20 ? `, and ${workloads.length - 20} more` : ''}</span>
         </div>
       </section>
 
@@ -520,14 +520,14 @@ function ImageVulnerabilityReport({ image, severityFilter }) {
             <tbody>
               {vulnerabilities.map((vulnerability, index) => (
                 <tr key={`${vulnerability.id || 'finding'}-${vulnerability.pkg || ''}-${index}`}>
-                  <td className="sec-report-cve">{vulnerability.link ? <a href={vulnerability.link}>{vulnerability.id || '—'}</a> : vulnerability.id || '—'}</td>
+                  <td className="sec-report-cve">{vulnerability.link ? <a href={vulnerability.link}>{vulnerability.id || '-'}</a> : vulnerability.id || '-'}</td>
                   <td><span className="sec-report-sev" style={{ color: SEV_COLOR[vulnerability.severity] || SEV_COLOR.UNKNOWN }}>{vulnerability.severity || 'UNKNOWN'}</span></td>
-                  <td className="sec-report-code">{vulnerability.pkg || '—'}</td>
-                  <td className="sec-report-code">{vulnerability.installedVersion || '—'}</td>
-                  <td className="sec-report-code">{vulnerability.fixedVersion || '—'}</td>
-                  <td>{vulnerability.score ?? '—'}</td>
+                  <td className="sec-report-code">{vulnerability.pkg || '-'}</td>
+                  <td className="sec-report-code">{vulnerability.installedVersion || '-'}</td>
+                  <td className="sec-report-code">{vulnerability.fixedVersion || '-'}</td>
+                  <td>{vulnerability.score ?? '-'}</td>
                   <td className="sec-report-details">
-                    <div>{vulnerability.title || '—'}</div>
+                    <div>{vulnerability.title || '-'}</div>
                     {vulnerability.link && <a href={vulnerability.link}>{vulnerability.link}</a>}
                   </td>
                 </tr>
@@ -555,7 +555,7 @@ function ChecksDetail({ d, onNavigate }) {
       <div className="sec-drawer-section">Properties</div>
       {d.createdAt && <Prop k="Created">{rel(d.createdAt)}</Prop>}
       <Prop k="Name"><span className="sec-strong">{d.name}</span></Prop>
-      <Prop k="Namespace">{d.namespace ? <a onClick={() => onNavigate?.toNamespace?.(d.namespace)}>{d.namespace}</a> : '—'}</Prop>
+      <Prop k="Namespace">{d.namespace ? <a onClick={() => onNavigate?.toNamespace?.(d.namespace)}>{d.namespace}</a> : '-'}</Prop>
       {d.labels ? <Prop k="Labels">{d.labels} Labels</Prop> : null}
       <Prop k="Controlled By">{d.kind} {navType ? <a onClick={() => onNavigate?.toResource?.({ type: navType, namespace: d.namespace, name: d.name })}>{d.name}</a> : d.name}</Prop>
       <Prop k="Status">Scanned</Prop>
@@ -609,7 +609,7 @@ function SetupState({ error, scanAvail, onScan, scanError }) {
         <h2>Scan your cluster for vulnerabilities</h2>
         {(scanAvail?.available || scanAvail?.installable) ? (
           <>
-            <p>Run a <strong>built-in image scan</strong> right now — k8sight scans every image your cluster is running with Trivy{scanAvail.version ? ` (${scanAvail.version})` : ''}. <strong>Nothing to install in your cluster.</strong>{!scanAvail.available ? ' The first run downloads the Trivy binary (~60 MB) and its vulnerability database, so it may take a few minutes.' : ' The first scan downloads Trivy\'s vulnerability database and may take a few minutes.'}</p>
+            <p>Run a <strong>built-in image scan</strong> right now. k8sight scans every image your cluster is running with Trivy{scanAvail.version ? ` (${scanAvail.version})` : ''}. <strong>Nothing to install in your cluster.</strong>{!scanAvail.available ? ' The first run downloads the Trivy binary (~60 MB) and its vulnerability database, so it may take a few minutes.' : ' The first scan downloads Trivy\'s vulnerability database and may take a few minutes.'}</p>
             <button className="sec-run-btn" onClick={onScan}><Icon name="shieldCheck" size={16} /> {scanAvail.available ? 'Run built-in scan' : 'Download Trivy & scan'}</button>
             {scanError && <div className="sec-dim" style={{ marginTop: 12, color: 'var(--red)' }}>{scanError}</div>}
             <p className="sec-dim" style={{ marginTop: 18 }}>For continuous scanning plus resource best-practice and RBAC checks, install the Trivy Operator in-cluster (below).</p>
@@ -636,7 +636,7 @@ function ScanProgress() {
     <div className="sec-setup">
       <div className="sec-setup-icon scanning"><Icon name="shieldCheck" size={40} /></div>
       <h2>Preparing Trivy…</h2>
-      <p>Downloading the Trivy scanner and its vulnerability database. This happens once — nothing is installed in your cluster. You can switch tabs or views; the scan runs in the background.</p>
+      <p>Downloading the Trivy scanner and its vulnerability database. This happens once, and nothing is installed in your cluster. You can switch tabs or views; the scan runs in the background.</p>
     </div>
   );
 }
@@ -670,7 +670,7 @@ function OperatorNote({ feature, foreign }) {
         <>
           <p><strong>{feature}</strong> needs the official Aqua Trivy Operator.</p>
           <p className="sec-dim" style={{ maxWidth: 460, textAlign: 'center' }}>
-            A different Trivy operator (<strong>{foreign.name}</strong>) is installed — its CRDs live under{' '}
+            A different Trivy operator (<strong>{foreign.name}</strong>) is installed. Its CRDs live under{' '}
             <code>{foreign.group}</code> and don’t include the config-audit or RBAC reports k8sight reads. Install the
             official Aqua operator (group <code>aquasecurity.github.io</code>) for resource best-practice and RBAC checks:
           </p>
