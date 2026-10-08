@@ -1,4 +1,4 @@
-# Kubernetes Manager — Marketing Website
+# Kubernetes Manager: Marketing Website
 
 A single-page, self-contained landing site to showcase the product publicly and
 offer the macOS app and Docker image as downloads.
@@ -33,10 +33,10 @@ python3 -m http.server 4321 -d website
 
 ## Updating
 
-- **macOS release** — the download buttons point to the repo's
+- **macOS release**: the download buttons point to the repo's
   `/releases/latest`. Publish the `.dmg` as a GitHub Release asset; no site
   change is needed. Update the version badge in `index.html` if you want it shown.
-- **Docker image** — the pull/run commands reference
+- **Docker image**: the pull/run commands reference
   `praveenraghav/k8s-manager-ui:latest`. Change the tag in `index.html` if needed.
 
 ## Hosting

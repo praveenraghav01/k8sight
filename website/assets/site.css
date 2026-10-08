@@ -139,7 +139,7 @@
   .announce .arr { flex: none; display: grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; background: var(--panel-2); color: var(--text); }
   .announce .arr svg { width: 13px; height: 13px; }
 
-  /* Academy promo bar — top strip. Fixed brand-blue gradient so white text keeps
+  /* Academy promo bar: top strip. Fixed brand-blue gradient so white text keeps
      contrast in both light and dark themes. */
   .promo-bar { position: relative; display: flex; align-items: center; justify-content: center; gap: 10px; padding: 9px 46px 9px 18px; background: linear-gradient(90deg, #0057d8, #2b8bff); color: #fff; font-size: 13.5px; line-height: 1.35; text-align: center; }
   .promo-bar[hidden] { display: none; }

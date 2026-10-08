@@ -1,10 +1,10 @@
 # k8sight
 
-> k8sight is a free, open-source native desktop app (macOS, Windows and Linux) for browsing and operating any Kubernetes cluster from your local kubeconfig. It gives you a live dashboard, pod logs, an in-pod shell, interactive topology, Helm, Argo CD, Flux CD and Flagger, a built-in Security Center (image CVEs, config and RBAC audit via bundled Trivy), a bring-your-own-model AI assistant, and one-click AWS EKS / Azure AKS onboarding — with nothing to install in-cluster. A demo mode lets you try every feature with no cluster required.
+> k8sight is a free, open-source native desktop app (macOS, Windows and Linux) for browsing and operating any Kubernetes cluster from your local kubeconfig. It gives you a live dashboard, pod logs, an in-pod shell, interactive topology, Helm, Argo CD, Flux CD and Flagger, a built-in Security Center (image CVEs, config and RBAC audit via bundled Trivy), a bring-your-own-model AI assistant, and one-click AWS EKS / Azure AKS onboarding, with nothing to install in-cluster. A demo mode lets you try every feature with no cluster required.
 
 ## What k8sight is
 
-- **Category:** a desktop UI for Kubernetes clusters you already have — a peer of Lens and k9s, not a management platform like Rancher.
+- **Category:** a desktop UI for Kubernetes clusters you already have: a peer of Lens and k9s, not a management platform like Rancher.
 - **Runs where:** on your laptop. It reads your kubeconfig and operates no servers of its own; the local API binds to 127.0.0.1 by default.
 - **Price:** free and open-source (MIT-style license). No account or sign-in required.
 - **Platforms:** macOS (Apple Silicon .dmg), Windows (x64 .exe), Linux (.AppImage and .deb), plus a Docker image.
@@ -24,7 +24,7 @@
 - Helm releases with values and rendered manifests.
 - First-class Argo CD GitOps dashboard with sync/refresh/rollback.
 - Flux CD dashboard: Kustomizations, HelmReleases and sources with reconcile, suspend and resume; Flagger canary, A/B and blue/green rollout tracking.
-- Security Center: image CVEs, config and RBAC audit, exposed secrets — via Trivy Operator reports or a bundled Trivy binary.
+- Security Center: image CVEs, config and RBAC audit, exposed secrets, via Trivy Operator reports or a bundled Trivy binary.
 - One-click AWS EKS and Azure AKS onboarding across accounts/subscriptions; GKE, on-prem, kind and minikube work from your existing kubeconfig.
 - Bring-your-own-model AI assistant grounded in live cluster data (secrets redacted before anything leaves the app).
 - MCP server so external AI agents can inspect the cluster (read tools by default; write tools opt-in).
