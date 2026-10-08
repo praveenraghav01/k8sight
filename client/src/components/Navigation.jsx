@@ -117,13 +117,13 @@ export default function Navigation({
   const fluxNotificationTypes = [
     { key: 'alert', label: 'Alerts', icon: 'events' },
     { key: 'provider', label: 'Providers', icon: 'cluster' },
-    { key: 'receiver', label: 'Receivers', icon: 'network' },
+    { key: 'receiver', label: 'Receivers', icon: 'receiver' },
   ];
   const fluxSourceTypes = [
     { key: 'gitrepository', label: 'Git Repositories', icon: 'git' },
     { key: 'ocirepository', label: 'OCI Repositories', icon: 'box' },
     { key: 'helmrepository', label: 'Helm Repositories', icon: 'helm' },
-    { key: 'bucket', label: 'Buckets', icon: 'storage' },
+    { key: 'bucket', label: 'Buckets', icon: 'bucket' },
     { key: 'externalartifact', label: 'External Artifacts', icon: 'box' },
   ];
   const fluxItem = (type) => (

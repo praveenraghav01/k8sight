@@ -237,6 +237,23 @@ const ICONS = {
       <path d="M3 21l7-7" />
     </>
   ),
+  // Incoming webhook: signal waves around a receiving point.
+  receiver: (
+    <>
+      <circle cx="12" cy="12" r="2" />
+      <path d="M16.24 7.76a6 6 0 0 1 0 8.49" />
+      <path d="M7.76 16.24a6 6 0 0 1 0-8.49" />
+      <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
+      <path d="M4.93 19.07a10 10 0 0 1 0-14.14" />
+    </>
+  ),
+  // Object-storage bucket.
+  bucket: (
+    <>
+      <ellipse cx="12" cy="6" rx="8" ry="3" />
+      <path d="M4 6l1.8 12.6A3 3 0 0 0 8.77 21h6.46a3 3 0 0 0 2.97-2.4L20 6" />
+    </>
+  ),
   git: (
     <>
       <line x1="6" y1="3" x2="6" y2="15" />
