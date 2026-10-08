@@ -98,7 +98,7 @@ export default function Navigation({
   // Clusters live under a nested "Settings" group.
   const argocdTypes = [
     { key: 'dashboard', label: 'Dashboard', icon: 'overview' },
-    { key: 'applications', label: 'Applications', icon: 'argocd' },
+    { key: 'applications', label: 'Applications', icon: 'deployment' },
     { key: 'view', label: 'View', icon: 'topology' },
     { key: 'appsets', label: 'Application Sets', icon: 'box' },
     { key: 'projects', label: 'Projects', icon: 'accessControl' },
@@ -116,7 +116,7 @@ export default function Navigation({
   ];
   const fluxNotificationTypes = [
     { key: 'alert', label: 'Alerts', icon: 'events' },
-    { key: 'provider', label: 'Providers', icon: 'cluster' },
+    { key: 'provider', label: 'Providers', icon: 'send' },
     { key: 'receiver', label: 'Receivers', icon: 'receiver' },
   ];
   const fluxSourceTypes = [

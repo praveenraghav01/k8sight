@@ -253,7 +253,7 @@ function FluxDashboard({ overview, onOpen }) {
       <div className="argo-cards">
         {card('kustomizations', 'Kustomizations', 'configuration')}
         {card('helmreleases', 'Helm Releases', 'helm')}
-        {card('sources', 'Sources', 'flux')}
+        {card('sources', 'Sources', 'git')}
         {(sum.notifications?.total > 0) && card('notifications', 'Notifications', 'events')}
       </div>
 
