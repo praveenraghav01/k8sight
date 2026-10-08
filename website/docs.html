@@ -217,7 +217,7 @@
   table.cmp tr:last-child td { border-bottom: 0; }
   table.cmp thead th { font-weight: 600; color: var(--text); background: var(--bg-2); }
   table.cmp thead th.pick { color: var(--accent); }
-  table.cmp tbody th { text-align: left; font-weight: 500; color: var(--text-dim); white-space: nowrap; }
+  table.cmp tbody th { text-align: left; font-weight: 500; color: var(--text-dim); width: 30%; }
   table.cmp td.yes { color: var(--green); font-weight: 600; }
   table.cmp td.no { color: var(--text-dim); }
   table.cmp td small { display: block; font-size: 12px; font-weight: 400; color: var(--text-dim); }
@@ -927,25 +927,29 @@ export GOOGLE_CLIENT_SECRET='GOCSPX-...'</code></pre>
       <p>k8sight is a <strong>desktop UI for clusters you already have</strong>: closest in spirit to <strong>Lens</strong> and <strong>k9s</strong>, not to a management <em>platform</em> like <strong>Rancher</strong>. Rancher runs <em>inside</em> your clusters to provision and govern a whole fleet for a team; k8sight runs on your laptop, reads your kubeconfig, and needs nothing installed in-cluster.</p>
       <div class="cmp-wrap">
         <table class="cmp">
-          <colgroup><col><col class="pick"><col><col></colgroup>
+          <colgroup><col><col class="pick"><col><col><col></colgroup>
           <thead>
-            <tr><th></th><th class="pick" scope="col">k8sight</th><th scope="col">Rancher</th><th scope="col">Lens / k9s</th></tr>
+            <tr><th></th><th class="pick" scope="col">k8sight</th><th scope="col">Rancher</th><th scope="col">Lens</th><th scope="col">k9s</th></tr>
           </thead>
           <tbody>
-            <tr><th scope="row">Category</th><td class="pickcol">Native desktop UI</td><td>Multi-cluster platform</td><td>Desktop / terminal UI</td></tr>
-            <tr><th scope="row">Setup</th><td class="pickcol">Download &amp; run</td><td>Deploy in-cluster</td><td>Download &amp; run</td></tr>
-            <tr><th scope="row">Runs where</th><td class="pickcol">Your laptop</td><td>In a cluster</td><td>Laptop / terminal</td></tr>
-            <tr><th scope="row">Cluster lifecycle (provision, upgrade)</th><td class="pickcol no">✕</td><td class="yes">✓</td><td class="no">✕</td></tr>
-            <tr><th scope="row">Centralized team RBAC &amp; multi-tenancy</th><td class="pickcol no">✕</td><td class="yes">✓</td><td class="no">✕</td></tr>
-            <tr><th scope="row">Built-in security scan (CVEs, config, RBAC)</th><td class="pickcol yes">✓<small>bundled Trivy</small></td><td>via add-ons</td><td class="no">✕</td></tr>
-            <tr><th scope="row">AI assistant + MCP server</th><td class="pickcol yes">✓<small>any model, no account</small></td><td>Rancher Prime<small>Liz</small></td><td>Lens ✓ · k9s ✕<small>Lens Prism + MCP</small></td></tr>
-            <tr><th scope="row">GitOps views</th><td class="pickcol yes">✓<small>Argo CD, Flux, Flagger</small></td><td>Fleet</td><td>Lens: Flux · k9s ✕</td></tr>
-            <tr><th scope="row">Try with no cluster (demo mode)</th><td class="pickcol yes">✓</td><td class="no">✕</td><td class="no">✕</td></tr>
-            <tr><th scope="row">One-click EKS/AKS onboarding (no CLI)</th><td class="pickcol yes">✓<small>plus GKE</small></td><td class="yes">✓</td><td>Lens: AWS &amp; Azure · k9s ✕</td></tr>
-            <tr><th scope="row">Free &amp; open-source</th><td class="pickcol yes">✓</td><td class="yes">✓</td><td>k9s ✓ · Lens: sign-in</td></tr>
+            <tr><th scope="row">Category</th><td class="pickcol">Native desktop UI</td><td>Multi-cluster platform</td><td>Desktop UI</td><td>Terminal UI</td></tr>
+            <tr><th scope="row">Setup</th><td class="pickcol">Download &amp; run</td><td>Deploy in-cluster</td><td>Download, sign in with a Lens ID</td><td>Download &amp; run</td></tr>
+            <tr><th scope="row">Runs where</th><td class="pickcol">Your laptop</td><td>In a cluster</td><td>Your laptop</td><td>Your terminal</td></tr>
+            <tr><th scope="row">Cluster lifecycle (provision, upgrade)</th><td class="pickcol no">✕</td><td class="yes">✓</td><td class="no">✕</td><td class="no">✕</td></tr>
+            <tr><th scope="row">Centralized team RBAC &amp; multi-tenancy</th><td class="pickcol no">✕</td><td class="yes">✓</td><td class="no">✕</td><td class="no">✕</td></tr>
+            <tr><th scope="row">Built-in security scan (CVEs, config, RBAC)</th><td class="pickcol yes">✓<small>bundled Trivy</small></td><td>via add-ons</td><td class="no">✕</td><td class="no">✕</td></tr>
+            <tr><th scope="row">Cost view (OpenCost/Kubecost)</th><td class="pickcol yes">✓</td><td>via add-ons</td><td class="no">✕</td><td class="no">✕</td></tr>
+            <tr><th scope="row">Built-in AI assistant</th><td class="pickcol yes">✓<small>any OpenAI-compatible model</small></td><td class="yes">✓<small>Liz, Rancher Prime</small></td><td class="yes">✓<small>Lens Prism</small></td><td class="no">✕</td></tr>
+            <tr><th scope="row">MCP server for your own agents</th><td class="pickcol yes">✓<small>43 read + 11 write tools</small></td><td class="yes">✓<small>Rancher Prime</small></td><td class="yes">✓<small>since March 2026</small></td><td class="no">✕</td></tr>
+            <tr><th scope="row">GitOps views</th><td class="pickcol yes">✓<small>Argo CD, Flux, Flagger</small></td><td>Fleet</td><td>Flux</td><td class="no">✕</td></tr>
+            <tr><th scope="row">Try with no cluster (demo mode)</th><td class="pickcol yes">✓</td><td class="no">✕</td><td class="no">✕</td><td class="no">✕</td></tr>
+            <tr><th scope="row">One-click cloud onboarding (no CLI)</th><td class="pickcol yes">✓<small>EKS, AKS, GKE</small></td><td class="yes">✓</td><td>AWS &amp; Azure</td><td class="no">✕</td></tr>
+            <tr><th scope="row">No account or sign-in</th><td class="pickcol yes">✓</td><td class="no">✕</td><td class="no">✕</td><td class="yes">✓</td></tr>
+            <tr><th scope="row">Price</th><td class="pickcol">Free, open source</td><td>Free, open source<small>Prime is paid</small></td><td>Free tier<small>Pro for larger orgs</small></td><td>Free, open source</td></tr>
           </tbody>
         </table>
       </div>
+      <p style="font-size:13px; color:var(--text-dim); margin:-8px 0 20px;">AI, MCP and cloud details for Lens and Rancher come from their public docs as of October 2026: <a href="https://www.mirantis.com/company/press-center/company-news/lens-launches-built-in-mcp-server-connecting-ai-coding-assistants-to-kubernetes/" target="_blank" rel="noopener">Lens MCP server</a>, <a href="https://docs.lenshq.io/faq/subscription-and-licensing/" target="_blank" rel="noopener">Lens licensing</a>, <a href="https://documentation.suse.com/cloudnative/rancher-ai/latest/en/introduction.html" target="_blank" rel="noopener">Rancher Prime AI assistant</a>, <a href="https://suse.com/c/kubecon-eu-2026-prime-mcp-plug-and-play" target="_blank" rel="noopener">Rancher Prime MCP</a>.</p>
       <div class="callout tip">
         <span class="cico"><svg aria-hidden="true" focusable="false" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg></span>
         <p>Reach for <strong>Rancher</strong> to provision and govern a fleet of clusters for a team. Reach for <strong>k8sight</strong> as a fast local cockpit for clusters you already have: dashboards, logs, shell, topology, security scans and an AI assistant, with nothing to deploy. They coexist happily.</p>
