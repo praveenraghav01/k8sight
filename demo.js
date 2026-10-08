@@ -459,6 +459,7 @@ const cluster = {
   customResources: {}, // "group/version/plural" -> [objects]
   argo: { apps: [], projects: [], appsets: [], repos: [], clusters: [] },
   flux: [], // Flux CD resources, stored in the server's parsed-row shape + detail fields
+  flagger: [], flaggerTemplates: [], flaggerProviders: [], // Flagger canaries + analysis config
   events: [],
   // metrics baselines keyed by "ns/pod" and node name
   podMetricBase: {},
@@ -681,6 +682,7 @@ function podMetric(nsName, podName, cpuMilli, memBytes) {
 
   buildArgo();
   buildFlux();
+  buildFlagger();
 })();
 
 // ----------------------------------------------------------------------------
@@ -931,6 +933,208 @@ function fluxDetail(r) {
     metadata: { annotations: r._annotations, labels: {}, finalizers: r._finalizers, creationTimestamp: fluxDrift(r.createdAt) },
     managed: r._managed,
     events: r._events.map(fluxEventOut).sort((a, b) => new Date(b.at) - new Date(a.at)),
+  };
+}
+
+// ---------------- Flagger (progressive delivery) ----------------
+// Canaries are stored with times as "minutes ago" so they stay fresh however
+// long the demo runs. A restarted canary gets a `_sim` start time and walks
+// through its steps (one every FLAGGER_STEP_MS) when read, so the UI shows a
+// live rollout without any background timers.
+const FLAGGER_STEP_MS = 12_000;
+
+function canaryStrategy(a) {
+  if ((a.match || []).length) return 'A/B testing';
+  if (a.mirror) return 'Blue/Green mirroring';
+  if (a.stepWeight || (a.stepWeights || []).length) return a.sessionAffinity ? 'Canary (session affinity)' : 'Canary';
+  if (a.iterations) return 'Blue/Green';
+  return 'Canary';
+}
+
+function flaggerCanary(name, o) {
+  const target = o.target || name;
+  return {
+    kindKey: 'canary', kind: 'Canary', name, namespace: o.namespace || 'shop',
+    phase: o.phase, suspended: !!o.suspended, skipAnalysis: !!o.skipAnalysis,
+    target: { kind: 'Deployment', name: target }, service: target, port: o.port || 80,
+    provider: o.provider || 'istio', autoscaler: o.autoscaler || '',
+    weight: o.weight || 0, iterations: o.iterations || 0, failedChecks: o.failedChecks || 0,
+    message: o.message || '',
+    _analysis: o.analysis,
+    _createdMins: o.createdMins ?? 8640,
+    _transitionMins: o.transitionMins ?? 1,
+    _transitionAt: null,
+    _events: (o.events || []).map(([type, message, mins, count]) => ({ type, reason: 'Synced', message, count: count || 1, mins })),
+    _sim: null,
+  };
+}
+
+function buildFlagger() {
+  const promMetrics = [
+    { name: 'request-success-rate', thresholdRange: { min: 99 }, interval: '1m' },
+    { name: 'request-duration', thresholdRange: { max: 500 }, interval: '1m' },
+  ];
+  const testHooks = [
+    { name: 'acceptance-test', type: 'pre-rollout', url: 'http://flagger-loadtester.test/', timeout: '30s', metadata: { type: 'bash', cmd: 'curl -sd \'test\' http://frontend-canary.shop/api/echo | grep test' } },
+    { name: 'load-test', type: 'rollout', url: 'http://flagger-loadtester.test/', metadata: { cmd: 'hey -z 1m -q 10 -c 2 http://frontend-canary.shop/' } },
+  ];
+  cluster.flagger = [
+    flaggerCanary('frontend', {
+      phase: 'Progressing', weight: 30, failedChecks: 1, autoscaler: 'frontend', transitionMins: 0.5,
+      message: 'New revision detected, progressing canary analysis.',
+      analysis: { interval: '1m', threshold: 5, maxWeight: 50, stepWeight: 10,
+        metrics: [...promMetrics, { name: '404s percentage', templateRef: { name: 'not-found-percentage', namespace: 'shop' }, thresholdRange: { max: 5 }, interval: '1m' }],
+        webhooks: testHooks, alerts: [{ name: 'on-call', severity: 'error', providerRef: { name: 'on-call', namespace: 'shop' } }] },
+      events: [
+        ['Normal', 'New revision detected! Scaling up frontend.shop', 6.2],
+        ['Normal', 'Starting canary analysis for frontend.shop', 5.5],
+        ['Normal', 'Pre-rollout check acceptance-test passed', 5.4],
+        ['Normal', 'Advance frontend.shop canary weight 10', 4.4],
+        ['Warning', 'Halt advancement no values found for istio metric request-success-rate probably frontend.shop is not receiving traffic: failed checks: 1', 3.4],
+        ['Normal', 'Advance frontend.shop canary weight 20', 2.4],
+        ['Normal', 'Advance frontend.shop canary weight 30', 0.5],
+      ],
+    }),
+    flaggerCanary('checkout', {
+      phase: 'WaitingPromotion', iterations: 10, provider: 'kubernetes', transitionMins: 3,
+      message: 'Waiting for approval: confirm-promotion check promotion-gate is closed.',
+      analysis: { interval: '30s', threshold: 2, iterations: 10, metrics: promMetrics,
+        webhooks: [...testHooks, { name: 'promotion-gate', type: 'confirm-promotion', url: 'http://flagger-loadtester.test/gate/check' }] },
+      events: [
+        ['Normal', 'New revision detected! Scaling up checkout.shop', 9],
+        ['Normal', 'Starting canary analysis for checkout.shop', 8.5],
+        ['Normal', 'Pre-rollout check acceptance-test passed', 8.4],
+        ['Normal', 'Advance checkout.shop canary iteration 5/10', 5.5],
+        ['Normal', 'Advance checkout.shop canary iteration 10/10', 3],
+        ['Normal', 'Confirm-promotion check promotion-gate failed: Halt checkout.shop advancement waiting for promotion approval promotion-gate', 0.2, 6],
+      ],
+    }),
+    flaggerCanary('payments', {
+      phase: 'Failed', iterations: 6, failedChecks: 5, provider: 'istio', transitionMins: 22,
+      message: 'Canary analysis failed, Deployment scaled to zero.',
+      analysis: { interval: '1m', threshold: 5, iterations: 10,
+        match: [{ headers: { 'x-canary': { exact: 'insider' } } }, { headers: { cookie: { regex: '^(.*?;)?(canary=always)(;.*)?$' } } }],
+        metrics: promMetrics, webhooks: testHooks, alerts: [{ name: 'on-call', severity: 'error', providerRef: { name: 'on-call', namespace: 'shop' } }] },
+      events: [
+        ['Normal', 'New revision detected! Scaling up payments.shop', 31],
+        ['Normal', 'Starting canary analysis for payments.shop', 30],
+        ['Normal', 'Advance payments.shop canary iteration 1/10', 29],
+        ['Warning', 'Halt payments.shop advancement request duration 1.24s > 500ms', 23, 5],
+        ['Warning', 'Rolling back payments.shop failed checks threshold reached 5', 22.2],
+        ['Warning', 'Canary failed! Scaling down payments.shop', 22],
+      ],
+    }),
+    flaggerCanary('catalog', {
+      phase: 'Succeeded', provider: 'nginx', transitionMins: 140,
+      message: 'Canary analysis completed successfully, promotion finished.',
+      analysis: { interval: '1m', threshold: 3, stepWeights: [5, 10, 25, 50], metrics: promMetrics, webhooks: testHooks },
+      events: [
+        ['Normal', 'Advance catalog.shop canary weight 50', 146],
+        ['Normal', 'Copying catalog.shop template spec to catalog-primary.shop', 145],
+        ['Normal', 'Routing all traffic to primary', 142],
+        ['Normal', 'Promotion completed! Scaling down catalog.shop', 140],
+      ],
+    }),
+    flaggerCanary('cart', {
+      phase: 'Initialized', suspended: true, provider: 'istio', transitionMins: 4300,
+      message: 'Deployment initialization completed.',
+      analysis: { interval: '1m', threshold: 5, maxWeight: 50, stepWeight: 10, metrics: promMetrics },
+      events: [['Normal', 'Initialization done! cart.shop', 4300]],
+    }),
+  ];
+  cluster.flaggerTemplates = [
+    { kindKey: 'metrictemplate', kind: 'MetricTemplate', name: 'not-found-percentage', namespace: 'shop', provider: 'prometheus', address: 'http://prometheus.monitoring:9090',
+      query: '100 - sum(rate(istio_requests_total{reporter="destination",destination_workload_namespace="{{ namespace }}",destination_workload="{{ target }}",response_code!="404"}[{{ interval }}])) / sum(rate(istio_requests_total{reporter="destination",destination_workload_namespace="{{ namespace }}",destination_workload="{{ target }}"}[{{ interval }}])) * 100',
+      _createdMins: 8700 },
+    { kindKey: 'metrictemplate', kind: 'MetricTemplate', name: 'latency-p95', namespace: 'shop', provider: 'datadog', address: 'https://api.datadoghq.com',
+      query: 'avg:trace.http.request.duration.by.service.95p{service:{{ target }}}', _createdMins: 8700 },
+  ];
+  cluster.flaggerProviders = [
+    { kindKey: 'alertprovider', kind: 'AlertProvider', name: 'on-call', namespace: 'shop', type: 'slack', channel: '#on-call', username: 'flagger', _createdMins: 8700 },
+    { kindKey: 'alertprovider', kind: 'AlertProvider', name: 'release-notes', namespace: 'shop', type: 'msteams', channel: '', username: '', _createdMins: 8700 },
+  ];
+}
+
+// Advance a restarted canary based on elapsed time.
+function flaggerTick(c) {
+  if (!c._sim) return;
+  const a = c._analysis;
+  const strategy = canaryStrategy(a);
+  const weighted = strategy.startsWith('Canary');
+  const steps = weighted ? (a.stepWeights || Array.from({ length: Math.ceil((a.maxWeight || 50) / (a.stepWeight || 10)) }, (_, i) => Math.min((i + 1) * (a.stepWeight || 10), a.maxWeight || 50)))
+    : Array.from({ length: a.iterations || 5 }, (_, i) => i + 1);
+  const n = Math.floor((Date.now() - c._sim.startedAt) / FLAGGER_STEP_MS);
+  while (c._sim.done < n) {
+    const i = c._sim.done; // step index just completed
+    const at = new Date(c._sim.startedAt + (i + 1) * FLAGGER_STEP_MS).toISOString();
+    const ev = (message, type = 'Normal') => c._events.push({ type, reason: 'Synced', message, count: 1, at });
+    if (i === 0) { c.phase = 'Progressing'; ev(`Starting canary analysis for ${c.name}.${c.namespace}`); }
+    else if (i <= steps.length) {
+      const s = steps[i - 1];
+      if (weighted) { c.weight = s; ev(`Advance ${c.name}.${c.namespace} canary weight ${s}`); }
+      else { c.iterations = s; ev(`Advance ${c.name}.${c.namespace} canary iteration ${s}/${steps.length}`); }
+    } else if (i === steps.length + 1) { c.phase = 'Promoting'; ev(`Copying ${c.name}.${c.namespace} template spec to ${c.name}-primary.${c.namespace}`); }
+    else if (i === steps.length + 2) { c.phase = 'Finalising'; c.weight = 0; ev('Routing all traffic to primary'); }
+    else {
+      c.phase = 'Succeeded'; c.message = 'Canary analysis completed successfully, promotion finished.';
+      ev(`Promotion completed! Scaling down ${c.name}.${c.namespace}`); c._sim = null;
+      c._transitionAt = at; c._transitionMins = null; return;
+    }
+    c._transitionAt = at; c._transitionMins = null; c._sim.done++;
+  }
+}
+
+function canaryRow(c) {
+  flaggerTick(c);
+  const a = c._analysis;
+  const strategy = canaryStrategy(a);
+  const weighted = strategy.startsWith('Canary');
+  const row = Object.fromEntries(Object.entries(c).filter(([k]) => !k.startsWith('_')));
+  return {
+    ...row, strategy,
+    maxWeight: weighted ? (a.maxWeight || (a.stepWeights || []).slice(-1)[0] || 100) : null,
+    stepWeight: a.stepWeight || null, stepWeights: a.stepWeights || null,
+    maxIterations: a.iterations || null, threshold: a.threshold || null, interval: a.interval || '',
+    lastTransition: c._transitionAt || ago(c._transitionMins),
+    createdAt: ago(c._createdMins),
+  };
+}
+const flaggerPlainRow = (r) => ({ ...Object.fromEntries(Object.entries(r).filter(([k]) => !k.startsWith('_'))), createdAt: ago(r._createdMins) });
+
+function flaggerList(kindKey) {
+  if (kindKey === 'canary') return cluster.flagger.map(canaryRow);
+  if (kindKey === 'metrictemplate') return cluster.flaggerTemplates.map(flaggerPlainRow);
+  if (kindKey === 'alertprovider') return cluster.flaggerProviders.map(flaggerPlainRow);
+  return null;
+}
+function flaggerStore(kindKey) {
+  return { canary: 'flagger', metrictemplate: 'flaggerTemplates', alertprovider: 'flaggerProviders' }[kindKey];
+}
+
+function flaggerDetail(kindKey, r) {
+  if (kindKey !== 'canary') {
+    return { summary: flaggerPlainRow(r), spec: {}, status: {}, conditions: [], metadata: { annotations: {}, labels: {}, creationTimestamp: ago(r._createdMins) }, analysis: null, generated: [], events: [] };
+  }
+  const s = canaryRow(r);
+  const a = r._analysis;
+  const generated = [
+    { kind: 'Deployment', name: `${s.target.name}-primary`, role: 'Primary (stable)' },
+    { kind: 'Deployment', name: s.target.name, role: 'Canary (target)' },
+    { kind: 'Service', name: s.service, role: 'Apex' },
+    { kind: 'Service', name: `${s.service}-primary`, role: 'Primary' },
+    { kind: 'Service', name: `${s.service}-canary`, role: 'Canary' },
+    ...(s.autoscaler ? [{ kind: 'HorizontalPodAutoscaler', name: `${s.autoscaler}-primary`, role: 'Primary autoscaler' }] : []),
+  ].map((g) => ({ ...g, namespace: s.namespace }));
+  const done = ['Succeeded', 'Initialized'].includes(s.phase);
+  return {
+    summary: s,
+    spec: { targetRef: { apiVersion: 'apps/v1', ...s.target }, service: { port: s.port }, provider: s.provider, suspend: s.suspended, skipAnalysis: s.skipAnalysis, analysis: a },
+    status: { phase: s.phase, canaryWeight: s.weight, failedChecks: s.failedChecks, iterations: s.iterations },
+    conditions: [{ type: 'Promoted', status: s.phase === 'Failed' ? 'False' : done ? 'True' : 'Unknown', reason: s.phase, message: s.message, lastTransitionTime: s.lastTransition }],
+    metadata: { annotations: {}, labels: {}, creationTimestamp: s.createdAt },
+    analysis: { metrics: a.metrics || [], webhooks: a.webhooks || [], alerts: a.alerts || [], match: a.match || [] },
+    generated,
+    events: r._events.map(({ mins, ...e }) => ({ ...e, at: e.at || ago(mins) })).sort((x, y) => new Date(y.at) - new Date(x.at)),
   };
 }
 
@@ -1811,6 +2015,45 @@ export function handle(req, res) {
       return json({ installed: true, groups: { source: true, kustomize: true, helm: true, notification: true, image: false, kinds } });
     }
     if (method === 'GET' && p === '/api/flux/overview') return json(fluxOverview());
+    if (method === 'GET' && p === '/api/flagger/status') {
+      return json({ installed: true, kinds: { canary: true, metrictemplate: true, alertprovider: true } });
+    }
+    if (method === 'GET' && p === '/api/flagger/resources') {
+      const kindKey = String(q.kind || '');
+      const resources = flaggerList(kindKey);
+      if (!resources) return json({ error: 'Unknown Flagger kind' }, 400);
+      return json({ kindKey, resources: resources.sort((a, b) => `${a.namespace}/${a.name}`.localeCompare(`${b.namespace}/${b.name}`)) });
+    }
+    if (seg[1] === 'flagger' && seg[2] === 'resource' && seg.length === 6) {
+      const kindKey = seg[3], nsp = decodeURIComponent(seg[4]), name = decodeURIComponent(seg[5]);
+      const store = flaggerStore(kindKey);
+      if (!store) return json({ error: 'Unknown Flagger kind' }, 400);
+      const r = cluster[store].find((x) => x.namespace === nsp && x.name === name);
+      if (!r) return json({ error: `${nsp}/${name} not found` }, 404);
+      if (method === 'GET') return json(flaggerDetail(kindKey, r));
+      if (method === 'DELETE') { cluster[store] = cluster[store].filter((x) => x !== r); return json({ success: true, message: `${name} deleted` }); }
+    }
+    if (method === 'POST' && seg[1] === 'flagger' && seg[2] === 'canary' && seg.length === 6) {
+      const c = cluster.flagger.find((x) => x.namespace === decodeURIComponent(seg[3]) && x.name === decodeURIComponent(seg[4]));
+      if (!c) return json({ error: 'Canary not found' }, 404);
+      const ev = (message, type = 'Normal') => c._events.push({ type, reason: 'Synced', message, count: 1, at: nowISO() });
+      const action = seg[5];
+      if (action === 'suspend' || action === 'resume') { c.suspended = action === 'suspend'; return json({ success: true, message: c.suspended ? 'Suspended' : 'Resumed' }); }
+      if (action === 'skip-analysis' || action === 'enable-analysis') { c.skipAnalysis = action === 'skip-analysis'; return json({ success: true, message: c.skipAnalysis ? 'Analysis will be skipped' : 'Analysis enabled' }); }
+      if (action === 'restart') {
+        if (c.suspended) return json({ error: `Canary ${c.name} is suspended; resume it first` }, 409);
+        ev(`New revision detected! Scaling up ${c.name}.${c.namespace}`);
+        c.weight = 0; c.iterations = 0; c.failedChecks = 0; c._transitionAt = nowISO(); c._transitionMins = null;
+        if (c.skipAnalysis) {
+          c.phase = 'Succeeded'; c.message = 'Analysis skipped, promotion finished.'; c._sim = null;
+          ev(`Skipping analysis for ${c.name}.${c.namespace}`); ev(`Promotion completed! Scaling down ${c.name}.${c.namespace}`);
+        } else {
+          c.phase = 'Progressing'; c.message = 'New revision detected, progressing canary analysis.';
+          c._sim = { startedAt: Date.now(), done: 0 };
+        }
+        return json({ success: true, message: 'Restarted — Flagger will start a new analysis' });
+      }
+    }
     if (method === 'GET' && p === '/api/flux/resources') {
       const kindKey = String(q.kind || '');
       if (!FLUX_KIND[kindKey]) return json({ error: 'Unknown Flux kind' }, 400);
