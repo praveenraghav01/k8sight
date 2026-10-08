@@ -21,6 +21,7 @@ import AccessControl from './components/AccessControl';
 import SecurityCenter from './components/SecurityCenter';
 import CostsCenter from './components/CostsCenter';
 import ArgoCD from './components/ArgoCD';
+import Flux from './components/Flux';
 import Assistant from './components/Assistant';
 import AgentPanel from './components/AgentPanel';
 import CommandPalette from './components/CommandPalette';
@@ -31,7 +32,7 @@ import { useToast } from './components/Toast';
 
 // Views that load their own data and should NOT trigger the shared resource fetch.
 // (Overview is intentionally excluded — its dashboard is built from the shared fetch.)
-const STANDALONE_RESOURCE_TYPES = ['cluster', 'nodes', 'namespaces', 'helm', 'customResources', 'accessControl', 'topology', 'argocd', 'security', 'costs'];
+const STANDALONE_RESOURCE_TYPES = ['cluster', 'nodes', 'namespaces', 'helm', 'customResources', 'accessControl', 'topology', 'argocd', 'flux', 'security', 'costs'];
 
 // Maps a resourceType to the key it lives under in allResources.
 // Naive `type + 's'` breaks for a few types.
@@ -87,6 +88,7 @@ function App() {
   // Auto-refresh cadence (key into REFRESH_OPTIONS). Defaults to 'auto' (= 1 min).
   const [refreshInterval, setRefreshInterval] = useState(() => localStorage.getItem('refreshInterval') || 'auto');
   const [argocdInstalled, setArgocdInstalled] = useState(false);
+  const [fluxInstalled, setFluxInstalled] = useState(false);
   const handleRefreshRef = useRef(() => {});
   const refreshInFlight = useRef(false);
   const visitedViewsRef = useRef(new Set());
@@ -115,11 +117,17 @@ function App() {
     config: false,
     argocd: false,
     argocdSettings: false,
+    flux: false,
+    fluxSources: false,
+    fluxNotifications: false,
+    fluxImage: false,
     security: false,
     costs: false
   });
   // Which ArgoCD sub-view the sidebar is pointing at (dashboard/applications/…).
   const [argoView, setArgoView] = useState('dashboard');
+  // Which Flux sub-view the sidebar is pointing at (dashboard/helmrelease/…).
+  const [fluxView, setFluxView] = useState('dashboard');
   // Which Security Center sub-view the sidebar is pointing at.
   const [securityView, setSecurityView] = useState('overview');
   // Which Cost Center sub-view the sidebar is pointing at.
@@ -159,14 +167,18 @@ function App() {
     if (authOk) fetchNamespaces();
   }, [authOk]);
 
-  // Detect optional integrations (ArgoCD) on the active cluster.
+  // Detect optional integrations (ArgoCD, Flux CD) on the active cluster.
   useEffect(() => {
-    if (!authOk) { setArgocdInstalled(false); return; }
+    if (!authOk) { setArgocdInstalled(false); setFluxInstalled(false); return; }
     let live = true;
     setArgocdInstalled(false);
+    setFluxInstalled(false);
     axios.get('/api/argocd/status')
       .then(({ data }) => { if (live) setArgocdInstalled(!!data.installed); })
       .catch(() => { if (live) setArgocdInstalled(false); });
+    axios.get('/api/flux/status')
+      .then(({ data }) => { if (live) setFluxInstalled(!!data.installed); })
+      .catch(() => { if (live) setFluxInstalled(false); });
     return () => { live = false; };
   }, [authOk, configStatus.currentContext]);
 
@@ -651,6 +663,7 @@ function App() {
     if (viewType === 'security') return <SecurityCenter namespaces={namespaces} onNavigate={nav} view={resourceType === viewType ? securityView : null} onViewChange={setSecurityView} refreshSignal={refreshSignal} />;
     if (viewType === 'costs') return <CostsCenter key={`costs-${configStatus.currentContext}`} context={configStatus.currentContext} refreshSignal={refreshSignal} view={resourceType === viewType ? costsView : null} onViewChange={setCostsView} />;
     if (viewType === 'argocd') return <ArgoCD onNavigate={nav} refreshSignal={refreshSignal} view={resourceType === viewType ? argoView : null} onViewChange={setArgoView} />;
+    if (viewType === 'flux') return <Flux onNavigate={nav} refreshSignal={refreshSignal} view={resourceType === viewType ? fluxView : null} onViewChange={(v) => { setFluxView(v); setResourceType('flux'); }} />;
     if (viewType === 'preferences') {
       return (
         <Preferences
@@ -799,6 +812,9 @@ function App() {
             argocdInstalled={argocdInstalled}
             argoView={resourceType === 'argocd' ? argoView : null}
             onSelectArgoView={(v) => { setArgoView(v); setResourceType('argocd'); }}
+            fluxInstalled={fluxInstalled}
+            fluxView={resourceType === 'flux' ? fluxView : null}
+            onSelectFluxView={(v) => { setFluxView(v); setResourceType('flux'); }}
             securityView={resourceType === 'security' ? securityView : null}
             onSelectSecurityView={(v) => { setSecurityView(v); setResourceType('security'); }}
             costsView={resourceType === 'costs' ? costsView : null}

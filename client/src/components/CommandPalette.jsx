@@ -15,6 +15,7 @@ const NAV_GROUPS = [
     { key: 'accessControl', label: 'Access Control', icon: 'accessControl' },
     { key: 'costs', label: 'Costs', icon: 'costs' },
     { key: 'argocd', label: 'Argo CD', icon: 'argocd' },
+    { key: 'flux', label: 'Flux CD', icon: 'flux' },
   ] },
   { group: 'Workloads', items: [
     { key: 'pod', label: 'Pods', icon: 'pod' },

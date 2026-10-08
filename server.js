@@ -3097,6 +3097,255 @@ app.post('/api/argocd/application/:namespace/:name/refresh', async (req, res) =>
   }
 });
 
+// ==================================================================
+// Flux CD — GitOps Toolkit. Auto-detected from the Flux CRDs
+// (*.toolkit.fluxcd.io) and read straight from the cluster via kubectl, exactly
+// like the Argo CD integration above: a dashboard overview, per-kind list +
+// detail, reconcile / suspend / resume actions, and events for the activity
+// timeline.
+// ==================================================================
+const FLUX_GROUPS = {
+  source: 'source.toolkit.fluxcd.io',
+  kustomize: 'kustomize.toolkit.fluxcd.io',
+  helm: 'helm.toolkit.fluxcd.io',
+  notification: 'notification.toolkit.fluxcd.io',
+  image: 'image.toolkit.fluxcd.io',
+};
+// kind-key -> { kind, resource (fully-qualified kubectl name), category, suspendable }
+const FLUX_KINDS = {
+  kustomization:         { kind: 'Kustomization',         resource: `kustomizations.${FLUX_GROUPS.kustomize}`,         category: 'kustomizations', suspendable: true },
+  helmrelease:           { kind: 'HelmRelease',           resource: `helmreleases.${FLUX_GROUPS.helm}`,                category: 'helmreleases', suspendable: true },
+  gitrepository:         { kind: 'GitRepository',         resource: `gitrepositories.${FLUX_GROUPS.source}`,           category: 'sources', suspendable: true },
+  ocirepository:         { kind: 'OCIRepository',         resource: `ocirepositories.${FLUX_GROUPS.source}`,           category: 'sources', suspendable: true },
+  helmrepository:        { kind: 'HelmRepository',        resource: `helmrepositories.${FLUX_GROUPS.source}`,          category: 'sources', suspendable: true },
+  bucket:                { kind: 'Bucket',                resource: `buckets.${FLUX_GROUPS.source}`,                   category: 'sources', suspendable: true },
+  helmchart:             { kind: 'HelmChart',             resource: `helmcharts.${FLUX_GROUPS.source}`,                category: 'sources', suspendable: true },
+  alert:                 { kind: 'Alert',                 resource: `alerts.${FLUX_GROUPS.notification}`,              category: 'notifications', suspendable: true },
+  provider:              { kind: 'Provider',              resource: `providers.${FLUX_GROUPS.notification}`,           category: 'notifications', suspendable: false },
+  receiver:              { kind: 'Receiver',              resource: `receivers.${FLUX_GROUPS.notification}`,           category: 'notifications', suspendable: true },
+  imagerepository:       { kind: 'ImageRepository',       resource: `imagerepositories.${FLUX_GROUPS.image}`,          category: 'image', suspendable: true },
+  imagepolicy:           { kind: 'ImagePolicy',           resource: `imagepolicies.${FLUX_GROUPS.image}`,              category: 'image', suspendable: false },
+  imageupdateautomation: { kind: 'ImageUpdateAutomation', resource: `imageupdateautomations.${FLUX_GROUPS.image}`,     category: 'image', suspendable: true },
+};
+
+// Reconciliation state from status.conditions + spec.suspend.
+const fluxState = (item) => {
+  if (item.spec?.suspend === true) return 'Suspended';
+  const conds = item.status?.conditions || [];
+  const ready = conds.find((c) => c.type === 'Ready');
+  const reconciling = conds.find((c) => c.type === 'Reconciling');
+  const stalled = conds.find((c) => c.type === 'Stalled');
+  if (stalled?.status === 'True') return 'Failed';
+  if (ready?.status === 'True') return 'Ready';
+  if (ready?.status === 'False') return /progress|inprogress|reconcil/i.test(ready.reason || '') ? 'Reconciling' : 'Failed';
+  if (reconciling?.status === 'True') return 'Reconciling';
+  return conds.length ? 'Reconciling' : 'Unknown';
+};
+const fluxSourceRef = (item, kindKey) => {
+  const s = item.spec || {};
+  const ref = s.sourceRef || s.chart?.spec?.sourceRef;
+  if ((kindKey === 'kustomization' || kindKey === 'helmrelease') && ref) {
+    return { kind: ref.kind, name: ref.name, namespace: ref.namespace || item.metadata?.namespace };
+  }
+  return null;
+};
+const fluxRevision = (item) => {
+  const st = item.status || {};
+  return String(st.artifact?.revision || st.lastAppliedRevision || st.lastAttemptedRevision || '');
+};
+const parseFlux = (item, kindKey) => {
+  const meta = item.metadata || {}, spec = item.spec || {}, st = item.status || {};
+  const ready = (st.conditions || []).find((c) => c.type === 'Ready');
+  return {
+    kindKey,
+    kind: FLUX_KINDS[kindKey]?.kind || item.kind,
+    category: FLUX_KINDS[kindKey]?.category,
+    name: meta.name,
+    namespace: meta.namespace,
+    state: fluxState(item),
+    suspended: spec.suspend === true,
+    suspendable: !!FLUX_KINDS[kindKey]?.suspendable,
+    message: ready?.message || '',
+    reason: ready?.reason || '',
+    revision: fluxRevision(item),
+    source: fluxSourceRef(item, kindKey),
+    lastReconciled: ready?.lastTransitionTime || st.lastHandledReconcileAt || '',
+    createdAt: meta.creationTimestamp,
+    interval: spec.interval || '',
+    // kind-specific extras surfaced in list/detail
+    url: spec.url || '',
+    chart: spec.chart?.spec?.chart || (typeof spec.chart === 'string' ? spec.chart : '') || '',
+    path: spec.path || '',
+    targetNamespace: spec.targetNamespace || spec.chart?.spec?.targetNamespace || '',
+  };
+};
+
+// Detect which Flux CRD groups are installed.
+app.get('/api/flux/status', async (req, res) => {
+  try {
+    if (!kubeConfig) return res.json({ installed: false, groups: {} });
+    const cacheKey = getCacheKey('flux-status', { ctx: currentContext });
+    const cached = getCache(cacheKey);
+    if (cached) { res.set('X-Cache', 'HIT'); return res.json(cached); }
+    let groups = { kinds: {} };
+    try {
+      const api = kubeConfig.makeApiClient(k8s.ApiextensionsV1Api);
+      const { items } = await api.listCustomResourceDefinition();
+      const names = new Set(items.map((c) => c.metadata?.name));
+      const kinds = {};
+      for (const [key, def] of Object.entries(FLUX_KINDS)) kinds[key] = names.has(def.resource);
+      groups = {
+        source: names.has(`gitrepositories.${FLUX_GROUPS.source}`),
+        kustomize: names.has(`kustomizations.${FLUX_GROUPS.kustomize}`),
+        helm: names.has(`helmreleases.${FLUX_GROUPS.helm}`),
+        notification: names.has(`alerts.${FLUX_GROUPS.notification}`),
+        image: names.has(`imagerepositories.${FLUX_GROUPS.image}`),
+        kinds,
+      };
+    } catch { groups = { kinds: {} }; }
+    const installed = !!(groups.source || groups.kustomize || groups.helm || groups.notification || groups.image);
+    const result = { installed, groups };
+    setCache(cacheKey, result, CACHE_TTL.namespaces);
+    res.json(result);
+  } catch (e) { res.status(500).json({ error: e.message, installed: false }); }
+});
+
+// List one Flux kind (returns [] for a missing CRD rather than erroring).
+const listFluxKind = async (kindKey, { namespace } = {}) => {
+  const def = FLUX_KINDS[kindKey];
+  if (!def) return [];
+  const nsArgs = namespace && namespace !== 'all' ? ['-n', namespace] : ['-A'];
+  try {
+    const { stdout } = await execFileAsync('kubectl', kctl('get', def.resource, ...nsArgs, '-o', 'json'),
+      { encoding: 'utf-8', maxBuffer: 80 * 1024 * 1024, timeout: 20000 });
+    return (JSON.parse(stdout).items || []).map((i) => parseFlux(i, kindKey));
+  } catch (e) {
+    if (/NotFound|doesn't have a resource type|could not find|the server could not find/i.test(e.stderr || e.message || '')) return [];
+    throw e;
+  }
+};
+
+app.get('/api/flux/resources', async (req, res) => {
+  try {
+    if (!kubeConfig) return res.status(400).json({ error: 'No kubeconfig loaded' });
+    const kindKey = String(req.query.kind || '');
+    if (!FLUX_KINDS[kindKey]) return res.status(400).json({ error: 'Unknown Flux kind' });
+    const cacheKey = getCacheKey('flux-res', { ctx: currentContext, kindKey });
+    const cached = getCache(cacheKey);
+    if (cached) { res.set('X-Cache', 'HIT'); return res.json(cached); }
+    const items = await listFluxKind(kindKey);
+    items.sort((a, b) => `${a.namespace}/${a.name}`.localeCompare(`${b.namespace}/${b.name}`));
+    const result = { kind: FLUX_KINDS[kindKey].kind, kindKey, resources: items };
+    setCache(cacheKey, result, CACHE_TTL.resources);
+    res.json(result);
+  } catch (e) { res.status(500).json({ error: (e.stderr || e.message || '').trim(), resources: [] }); }
+});
+
+// Dashboard overview: per-category ready/total, needs-attention, recent activity.
+app.get('/api/flux/overview', async (req, res) => {
+  try {
+    if (!kubeConfig) return res.status(400).json({ error: 'No kubeconfig loaded' });
+    const cacheKey = getCacheKey('flux-overview', { ctx: currentContext });
+    const cached = getCache(cacheKey);
+    if (cached) { res.set('X-Cache', 'HIT'); return res.json(cached); }
+    const keys = Object.keys(FLUX_KINDS);
+    const lists = await Promise.all(keys.map((k) => listFluxKind(k).catch(() => [])));
+    const all = [];
+    keys.forEach((k, i) => lists[i].forEach((r) => all.push(r)));
+    const summary = {};
+    for (const r of all) {
+      const c = r.category;
+      (summary[c] = summary[c] || { total: 0, ready: 0 }).total++;
+      if (r.state === 'Ready') summary[c].ready++;
+    }
+    const attention = all.filter((r) => r.state === 'Failed' || r.state === 'Suspended');
+    const total = all.length;
+    const ready = all.filter((r) => r.state === 'Ready').length;
+    const healthy = !all.some((r) => r.state === 'Failed');
+    let activity = [];
+    try {
+      const { stdout } = await execFileAsync('kubectl', kctl('get', 'events', '-A', '-o', 'json'),
+        { encoding: 'utf-8', maxBuffer: 80 * 1024 * 1024, timeout: 20000 });
+      const fluxKindNames = new Set(Object.values(FLUX_KINDS).map((d) => d.kind));
+      activity = (JSON.parse(stdout).items || [])
+        .filter((e) => fluxKindNames.has(e.involvedObject?.kind))
+        .map((e) => ({
+          kind: e.involvedObject.kind, name: e.involvedObject.name, namespace: e.involvedObject.namespace,
+          type: e.type, reason: e.reason, message: e.message, count: e.count || e.series?.count || 1,
+          at: e.lastTimestamp || e.series?.lastObservedTime || e.eventTime || e.metadata?.creationTimestamp,
+        }))
+        .sort((a, b) => new Date(b.at) - new Date(a.at))
+        .slice(0, 60);
+    } catch { /* events are best-effort */ }
+    const result = { total, ready, healthy, summary, attention, activity };
+    setCache(cacheKey, result, CACHE_TTL.resources);
+    res.json(result);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// One Flux resource in full (properties + reconciliation + conditions + events).
+app.get('/api/flux/resource/:kindKey/:namespace/:name', async (req, res) => {
+  try {
+    if (!kubeConfig) return res.status(400).json({ error: 'No kubeconfig loaded' });
+    const { kindKey, namespace, name } = req.params;
+    const def = FLUX_KINDS[kindKey];
+    if (!def) return res.status(400).json({ error: 'Unknown Flux kind' });
+    const { stdout } = await execFileAsync('kubectl', kctl('get', def.resource, name, '-n', namespace, '-o', 'json'),
+      { encoding: 'utf-8', maxBuffer: 40 * 1024 * 1024, timeout: 15000 });
+    const item = JSON.parse(stdout);
+    let events = [];
+    try {
+      const { stdout: ev } = await execFileAsync('kubectl', kctl('get', 'events', '-n', namespace,
+        '--field-selector', `involvedObject.name=${name},involvedObject.kind=${def.kind}`, '-o', 'json'),
+        { encoding: 'utf-8', maxBuffer: 20 * 1024 * 1024, timeout: 12000 });
+      events = (JSON.parse(ev).items || [])
+        .map((e) => ({ type: e.type, reason: e.reason, message: e.message, count: e.count || 1, at: e.lastTimestamp || e.eventTime }))
+        .sort((a, b) => new Date(b.at) - new Date(a.at)).slice(0, 30);
+    } catch { /* events optional */ }
+    res.json({
+      summary: parseFlux(item, kindKey),
+      spec: item.spec || {},
+      status: item.status || {},
+      conditions: item.status?.conditions || [],
+      metadata: {
+        annotations: item.metadata?.annotations || {}, labels: item.metadata?.labels || {},
+        finalizers: item.metadata?.finalizers || [], creationTimestamp: item.metadata?.creationTimestamp,
+      },
+      events,
+    });
+  } catch (e) { res.status(500).json({ error: (e.stderr || e.message || '').trim() }); }
+});
+
+// Trigger an immediate reconciliation (equivalent to `flux reconcile`).
+app.post('/api/flux/resource/:kindKey/:namespace/:name/reconcile', async (req, res) => {
+  try {
+    if (!kubeConfig) return res.status(400).json({ error: 'No kubeconfig loaded' });
+    const { kindKey, namespace, name } = req.params;
+    const def = FLUX_KINDS[kindKey];
+    if (!def) return res.status(400).json({ error: 'Unknown Flux kind' });
+    const out = await runKubectl(['annotate', def.resource, name, '-n', namespace,
+      `reconcile.fluxcd.io/requestedAt=${new Date().toISOString()}`, '--overwrite']);
+    cache.clear();
+    res.json({ success: true, message: out || 'Reconciliation requested' });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Suspend or resume reconciliation (spec.suspend).
+const fluxSuspend = (suspend) => async (req, res) => {
+  try {
+    if (!kubeConfig) return res.status(400).json({ error: 'No kubeconfig loaded' });
+    const { kindKey, namespace, name } = req.params;
+    const def = FLUX_KINDS[kindKey];
+    if (!def) return res.status(400).json({ error: 'Unknown Flux kind' });
+    const out = await runKubectl(['patch', def.resource, name, '-n', namespace, '--type', 'merge',
+      '-p', JSON.stringify({ spec: { suspend } })]);
+    cache.clear();
+    res.json({ success: true, message: out || (suspend ? 'Suspended' : 'Resumed') });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+};
+app.post('/api/flux/resource/:kindKey/:namespace/:name/suspend', fluxSuspend(true));
+app.post('/api/flux/resource/:kindKey/:namespace/:name/resume', fluxSuspend(false));
+
 const parseCpuCores = (s) => {
   if (!s || s === '-') return 0;
   if (String(s).endsWith('m')) return parseInt(s) / 1000;
