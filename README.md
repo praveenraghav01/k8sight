@@ -68,20 +68,24 @@ A native desktop app (macOS · Windows · Linux), plus a Docker image, for brows
 
 k8sight is a **desktop UI for clusters you already have**: closest in spirit to **Lens** and **k9s**, not to a management *platform* like **Rancher**. Rancher runs *inside* your clusters to provision and govern a whole fleet for a team; k8sight runs on your laptop, reads your kubeconfig, and needs nothing installed in-cluster.
 
-| | **k8sight** | **Rancher** | **Lens / k9s** |
-|---|:---:|:---:|:---:|
-| Category | Native desktop UI | Multi-cluster platform (server) | Desktop UI / terminal UI |
-| Setup | Download & run | Deploy & operate in-cluster | Download & run |
-| Runs where | Your laptop | In a cluster | Your laptop / terminal |
-| Cluster lifecycle (provision, upgrade) | ❌ | ✅ | ❌ |
-| Centralized team RBAC & multi-tenancy | ❌ | ✅ | ❌ |
-| Built-in security scan (image CVEs, config, RBAC) | ✅ *bundled Trivy* | via add-ons | ❌ |
-| Cost view (OpenCost/Kubecost) | ✅ | via add-ons | ❌ |
-| AI assistant + MCP server | ✅ *any model, no account* | Rancher Prime (Liz) | Lens ✅ (Prism + MCP) · k9s ❌ |
-| GitOps views | ✅ *Argo CD, Flux, Flagger* | Fleet | Lens: Flux · k9s ❌ |
-| Try with no cluster (demo mode) | ✅ | ❌ | ❌ |
-| One-click EKS/AKS/GKE onboarding (no CLI) | ✅ | ✅ | Lens: AWS & Azure · k9s ❌ |
-| Free & open-source | ✅ | ✅ | k9s ✅ · Lens: sign-in required |
+| | **k8sight** | **Rancher** | **Lens** | **k9s** |
+|---|:---:|:---:|:---:|:---:|
+| Category | Native desktop UI | Multi-cluster platform (server) | Desktop UI | Terminal UI |
+| Setup | Download & run | Deploy & operate in-cluster | Download, sign in with a Lens ID | Download & run |
+| Runs where | Your laptop | In a cluster | Your laptop | Your terminal |
+| Cluster lifecycle (provision, upgrade) | ❌ | ✅ | ❌ | ❌ |
+| Centralized team RBAC & multi-tenancy | ❌ | ✅ | ❌ | ❌ |
+| Built-in security scan (image CVEs, config, RBAC) | ✅ *bundled Trivy* | via add-ons | ❌ | ❌ |
+| Cost view (OpenCost/Kubecost) | ✅ | via add-ons | ❌ | ❌ |
+| Built-in AI assistant | ✅ *any OpenAI-compatible model* | ✅ *Liz, Rancher Prime* | ✅ *Lens Prism* | ❌ |
+| MCP server for your own agents | ✅ *43 read + 11 write tools* | ✅ *Rancher Prime* | ✅ *since March 2026* | ❌ |
+| GitOps views | ✅ *Argo CD, Flux, Flagger* | Fleet | Flux | ❌ |
+| Try with no cluster (demo mode) | ✅ | ❌ | ❌ | ❌ |
+| One-click cloud onboarding (no CLI) | ✅ *EKS, AKS, GKE* | ✅ | AWS & Azure | ❌ |
+| No account or sign-in | ✅ | ❌ | ❌ | ✅ |
+| Price | Free, open source | Free, open source; Prime is paid | Free tier; Pro for larger orgs | Free, open source |
+
+<sub>AI, MCP and cloud details for Lens and Rancher are from their public docs as of October 2026: [Lens MCP server](https://www.mirantis.com/company/press-center/company-news/lens-launches-built-in-mcp-server-connecting-ai-coding-assistants-to-kubernetes/), [Lens licensing](https://docs.lenshq.io/faq/subscription-and-licensing/), [Rancher Prime AI assistant](https://documentation.suse.com/cloudnative/rancher-ai/latest/en/introduction.html), [Rancher Prime MCP](https://suse.com/c/kubecon-eu-2026-prime-mcp-plug-and-play).</sub>
 
 > [!NOTE]
 > Reach for **Rancher** to provision and govern a fleet of clusters for a team. Reach for **k8sight** as a fast local cockpit for clusters you already have: dashboards, logs, shell, topology, security scans and an AI assistant, with nothing to deploy. They coexist happily.
