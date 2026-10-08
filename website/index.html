@@ -6,7 +6,7 @@
 <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
 <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)" />
 <title>k8sight: a beautiful desktop UI for Kubernetes</title>
-<meta name="description" content="k8sight is a native desktop app for browsing and operating any Kubernetes cluster from your local kubeconfig. Live dashboards, pod logs, interactive shells, topology, Helm chart install, Argo CD, cloud clusters (EKS/AKS/GKE), a built-in Security Center (image CVEs, config & RBAC audit), cost visibility, an AI assistant and docked coding agents. Download for macOS, Windows and Linux." />
+<meta name="description" content="k8sight is a native desktop app for browsing and operating any Kubernetes cluster from your local kubeconfig. Live dashboards, pod logs, interactive shells, topology, Helm chart install, Argo CD, Flux CD and Flagger, cloud clusters (EKS/AKS/GKE), a built-in Security Center (image CVEs, config & RBAC audit), cost visibility, an AI assistant and docked coding agents. Download for macOS, Windows and Linux." />
 <link rel="canonical" href="https://k8sight.in/" />
 <!-- Open Graph -->
 <meta property="og:type" content="website" />
@@ -95,6 +95,7 @@
         "Cost visibility from OpenCost or Kubecost: totals, idle cost and cost over time by namespace",
         "In-app auto-update for signed desktop builds",
         "First-class Argo CD GitOps dashboard with sync/refresh/rollback",
+        "Flux CD dashboard (Kustomizations, HelmReleases, sources) with reconcile/suspend/resume, and Flagger canary rollout tracking",
         "Built-in Security Center: image CVEs, config and RBAC audit, exposed secrets (bundled Trivy)",
         "One-click AWS EKS, Azure AKS and Google GKE onboarding without the aws/az/gcloud CLI",
         "Bring-your-own-model AI assistant grounded in live cluster data",
@@ -111,7 +112,7 @@
           "name": "What is k8sight?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "k8sight is a native desktop app (macOS, Windows and Linux) for browsing and operating any Kubernetes cluster from your local kubeconfig. It gives you a live dashboard, pod logs, an in-pod shell, interactive topology, Helm, Argo CD, a built-in Security Center and an AI assistant, without a wall of kubectl commands."
+            "text": "k8sight is a native desktop app (macOS, Windows and Linux) for browsing and operating any Kubernetes cluster from your local kubeconfig. It gives you a live dashboard, pod logs, an in-pod shell, interactive topology, Helm, Argo CD, Flux CD and Flagger, a built-in Security Center and an AI assistant, without a wall of kubectl commands."
           }
         },
         {
@@ -214,6 +215,7 @@
           <a href="ai.html">AI</a>
           <a href="cloud.html">Cloud</a>
           <a href="argocd.html">Argo CD</a>
+          <a href="flux.html">Flux</a>
           <a href="security.html">Security</a>
           <a href="costs.html">Costs</a>
           <a href="docs.html">Docs</a>
@@ -242,7 +244,7 @@
 <section class="hero" id="top">
   <div class="wrap">
     <h1>See your whole cluster in <span class="grad">one beautiful</span> window</h1>
-    <p class="sub">A native desktop app for every cluster in your <code>kubeconfig</code>: live metrics, logs, shells, topology, Helm, Argo CD and costs.</p>
+    <p class="sub">A native desktop app for every cluster in your <code>kubeconfig</code>: live metrics, logs, shells, topology, Helm, Argo CD, Flux and costs.</p>
     <div class="cta-row">
       <a class="btn btn-primary" href="#download">
         <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg>
@@ -318,6 +320,24 @@
           <span class="kicker">GitOps, natively</span>
           <h3>First-class Argo CD</h3>
           <p>Sync and health for every Application, resource trees and history, with sync, refresh and prune built in.</p>
+          <span class="more">Learn more <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span>
+        </div>
+      </a>
+      <a class="ftile reveal" href="flux.html">
+        <div class="thumb"><img class="shot-dark" src="assets/screenshot-flux-dark.webp" width="2000" height="1195" loading="lazy" decoding="async" alt="" /><img class="shot-light" src="assets/screenshot-flux-light.webp" width="2000" height="1195" loading="lazy" decoding="async" alt="" /></div>
+        <div class="body">
+          <span class="kicker">GitOps with Flux</span>
+          <h3>Flux CD dashboard</h3>
+          <p>Ready counts for every Kustomization, Helm release and source, what&rsquo;s failing and why, and reconcile in one click.</p>
+          <span class="more">Learn more <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span>
+        </div>
+      </a>
+      <a class="ftile reveal" href="flux.html#flagger">
+        <div class="thumb"><img class="shot-dark" src="assets/screenshot-flagger-dark.webp" width="2000" height="1195" loading="lazy" decoding="async" alt="" /><img class="shot-light" src="assets/screenshot-flagger-light.webp" width="2000" height="1195" loading="lazy" decoding="async" alt="" /></div>
+        <div class="body">
+          <span class="kicker">Progressive delivery</span>
+          <h3>Flagger canaries</h3>
+          <p>Watch canary, A/B and blue/green releases shift traffic step by step, with checks, approvals and rollbacks.</p>
           <span class="more">Learn more <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span>
         </div>
       </a>
@@ -487,7 +507,7 @@
     <div class="faq-list reveal">
       <details class="faq-item">
         <summary>What is k8sight?</summary>
-        <p class="faq-a">k8sight is a native desktop app (macOS, Windows and Linux) for browsing and operating any Kubernetes cluster from your local kubeconfig. It gives you a live dashboard, pod logs, an in-pod shell, interactive topology, Helm, Argo CD, a built-in Security Center and an AI assistant, without a wall of kubectl commands.</p>
+        <p class="faq-a">k8sight is a native desktop app (macOS, Windows and Linux) for browsing and operating any Kubernetes cluster from your local kubeconfig. It gives you a live dashboard, pod logs, an in-pod shell, interactive topology, Helm, Argo CD, Flux CD and Flagger, a built-in Security Center and an AI assistant, without a wall of kubectl commands.</p>
       </details>
       <details class="faq-item">
         <summary>Is k8sight free and open-source?</summary>
@@ -533,6 +553,7 @@
       <a href="ai.html">AI</a>
       <a href="cloud.html">Cloud</a>
       <a href="argocd.html">Argo CD</a>
+      <a href="flux.html">Flux</a>
       <a href="security.html">Security</a>
       <a href="costs.html">Costs</a>
       <a href="#download">Download</a>

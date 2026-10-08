@@ -1,6 +1,6 @@
 # k8sight
 
-> k8sight is a free, open-source native desktop app (macOS, Windows and Linux) for browsing and operating any Kubernetes cluster from your local kubeconfig. It gives you a live dashboard, pod logs, an in-pod shell, interactive topology, Helm, Argo CD, a built-in Security Center (image CVEs, config and RBAC audit via bundled Trivy), a bring-your-own-model AI assistant, and one-click AWS EKS / Azure AKS onboarding — with nothing to install in-cluster. A demo mode lets you try every feature with no cluster required.
+> k8sight is a free, open-source native desktop app (macOS, Windows and Linux) for browsing and operating any Kubernetes cluster from your local kubeconfig. It gives you a live dashboard, pod logs, an in-pod shell, interactive topology, Helm, Argo CD, Flux CD and Flagger, a built-in Security Center (image CVEs, config and RBAC audit via bundled Trivy), a bring-your-own-model AI assistant, and one-click AWS EKS / Azure AKS onboarding — with nothing to install in-cluster. A demo mode lets you try every feature with no cluster required.
 
 ## What k8sight is
 
@@ -23,6 +23,7 @@
 - Interactive pan/zoom topology graph and lazy-loaded Custom Resource tree.
 - Helm releases with values and rendered manifests.
 - First-class Argo CD GitOps dashboard with sync/refresh/rollback.
+- Flux CD dashboard: Kustomizations, HelmReleases and sources with reconcile, suspend and resume; Flagger canary, A/B and blue/green rollout tracking.
 - Security Center: image CVEs, config and RBAC audit, exposed secrets — via Trivy Operator reports or a bundled Trivy binary.
 - One-click AWS EKS and Azure AKS onboarding across accounts/subscriptions; GKE, on-prem, kind and minikube work from your existing kubeconfig.
 - Bring-your-own-model AI assistant grounded in live cluster data (secrets redacted before anything leaves the app).
@@ -36,6 +37,7 @@
 - AI assistant and coding agents: https://k8sight.in/ai
 - Cloud clusters: EKS, AKS and GKE with no CLI: https://k8sight.in/cloud
 - Argo CD: https://k8sight.in/argocd
+- Flux CD and Flagger: https://k8sight.in/flux
 - Security Center: CVEs, config and RBAC audits: https://k8sight.in/security
 - Costs: OpenCost and Kubecost: https://k8sight.in/costs
 - Documentation: https://k8sight.in/docs
