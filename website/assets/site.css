@@ -450,7 +450,9 @@
   .chip .d { width: 8px; height: 8px; border-radius: 50%; }
 
   /* Overview tiles on the home page, and "more features" links on each page */
-  .feature-tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  /* Flex rather than grid so a short last row is centred instead of left-aligned. */
+  .feature-tiles { display: flex; flex-wrap: wrap; justify-content: center; gap: 16px; }
+  .feature-tiles > .ftile { flex: 0 0 calc((100% - 32px) / 3); min-width: 0; }
   .ftile { display: flex; flex-direction: column; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; color: var(--text); transition: border-color .2s; }
   .ftile:hover { border-color: var(--border-2); text-decoration: none; }
   .ftile .thumb { aspect-ratio: 16 / 10; overflow: hidden; border-bottom: 1px solid var(--line); background: var(--bg); }
@@ -472,7 +474,7 @@
   .ftile .more svg { width: 14px; height: 14px; transition: transform .2s var(--ease-out); }
   .ftile:hover .more svg { transform: translateX(3px); }
 
-  .more-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; }
+  .more-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
   .more-link { display: flex; flex-direction: column; gap: 6px; padding: 20px; border: 1px solid var(--line); border-radius: 14px; background: var(--panel); color: var(--text); transition: border-color .2s; }
   .more-link:hover { border-color: var(--border-2); text-decoration: none; }
   .more-link b { font-size: 15px; font-weight: 600; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
@@ -485,10 +487,11 @@
 
   .guide-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 8px; }
 
-  @media (max-width: 1000px) { .more-grid { grid-template-columns: repeat(3, 1fr); } }
-  @media (max-width: 900px) { .feature-tiles, .guide-grid { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 900px) { .feature-tiles > .ftile { flex-basis: calc((100% - 16px) / 2); } }
+  @media (max-width: 900px) { .guide-grid { grid-template-columns: repeat(2, 1fr); } }
   @media (max-width: 560px) {
-    .feature-tiles, .guide-grid, .more-grid { grid-template-columns: 1fr; }
+    .guide-grid, .more-grid { grid-template-columns: 1fr; }
+    .feature-tiles > .ftile { flex-basis: 100%; }
     .page-hero { padding: 56px 0 40px; }
   }
 

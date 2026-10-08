@@ -5,20 +5,20 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
 <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)" />
-<title>Argo CD in a Kubernetes desktop app | k8sight</title>
-<meta name="description" content="k8sight detects Argo CD and adds a full workspace: live sync and health, resource trees, sync history, sync, refresh and prune, ApplicationSets, projects and repos, with no argocd CLI or separate login." />
-<link rel="canonical" href="https://k8sight.in/argocd" />
+<title>Flux CD and Flagger in a Kubernetes desktop app | k8sight</title>
+<meta name="description" content="k8sight detects Flux CD and Flagger and adds a GitOps workspace: reconciliation health for every Kustomization, HelmRelease and source, plus live canary, A/B and blue/green rollouts. No flux CLI needed." />
+<link rel="canonical" href="https://k8sight.in/flux" />
 <meta property="og:type" content="website" />
 <meta property="og:site_name" content="k8sight" />
-<meta property="og:url" content="https://k8sight.in/argocd" />
-<meta property="og:title" content="Argo CD in a Kubernetes desktop app | k8sight" />
-<meta property="og:description" content="k8sight detects Argo CD and adds a full workspace: live sync and health, resource trees, sync history, sync, refresh and prune, ApplicationSets, projects and repos, with no argocd CLI or separate login." />
+<meta property="og:url" content="https://k8sight.in/flux" />
+<meta property="og:title" content="Flux CD and Flagger in a Kubernetes desktop app | k8sight" />
+<meta property="og:description" content="k8sight detects Flux CD and Flagger and adds a GitOps workspace: reconciliation health for every Kustomization, HelmRelease and source, plus live canary, A/B and blue/green rollouts. No flux CLI needed." />
 <meta property="og:image" content="https://k8sight.in/assets/og-image.png" />
 <meta property="og:image:width" content="1200" />
 <meta property="og:image:height" content="630" />
 <meta name="twitter:card" content="summary_large_image" />
-<meta name="twitter:title" content="Argo CD in a Kubernetes desktop app | k8sight" />
-<meta name="twitter:description" content="k8sight detects Argo CD and adds a full workspace: live sync and health, resource trees, sync history, sync, refresh and prune, ApplicationSets, projects and repos, with no argocd CLI or separate login." />
+<meta name="twitter:title" content="Flux CD and Flagger in a Kubernetes desktop app | k8sight" />
+<meta name="twitter:description" content="k8sight detects Flux CD and Flagger and adds a GitOps workspace: reconciliation health for every Kustomization, HelmRelease and source, plus live canary, A/B and blue/green rollouts. No flux CLI needed." />
 <meta name="twitter:image" content="https://k8sight.in/assets/og-image.png" />
 <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1" />
 <link rel="icon" href="assets/icon.svg" type="image/svg+xml" />
@@ -39,10 +39,10 @@
   "@graph": [
     {
       "@type": "WebPage",
-      "@id": "https://k8sight.in/argocd#webpage",
-      "url": "https://k8sight.in/argocd",
-      "name": "Argo CD in a Kubernetes desktop app | k8sight",
-      "description": "k8sight detects Argo CD and adds a full workspace: live sync and health, resource trees, sync history, sync, refresh and prune, ApplicationSets, projects and repos, with no argocd CLI or separate login.",
+      "@id": "https://k8sight.in/flux#webpage",
+      "url": "https://k8sight.in/flux",
+      "name": "Flux CD and Flagger in a Kubernetes desktop app | k8sight",
+      "description": "k8sight detects Flux CD and Flagger and adds a GitOps workspace: reconciliation health for every Kustomization, HelmRelease and source, plus live canary, A/B and blue/green rollouts. No flux CLI needed.",
       "isPartOf": {
         "@id": "https://k8sight.in/#website"
       },
@@ -70,8 +70,8 @@
         {
           "@type": "ListItem",
           "position": 2,
-          "name": "Argo CD",
-          "item": "https://k8sight.in/argocd"
+          "name": "Flux CD & Flagger",
+          "item": "https://k8sight.in/flux"
         }
       ]
     }
@@ -114,8 +114,8 @@
           <a href="operations.html">Operations</a>
           <a href="ai.html">AI</a>
           <a href="cloud.html">Cloud</a>
-          <a href="argocd.html" class="current" aria-current="page">Argo CD</a>
-          <a href="flux.html">Flux</a>
+          <a href="argocd.html">Argo CD</a>
+          <a href="flux.html" class="current" aria-current="page">Flux</a>
           <a href="security.html">Security</a>
           <a href="costs.html">Costs</a>
           <a href="docs.html">Docs</a>
@@ -137,28 +137,27 @@
 <main id="main">
 <section class="hero page-hero" id="top">
   <div class="wrap">
-    <span class="kicker">GitOps, natively</span>
-    <h1>First-class Argo CD support</h1>
-    <p class="sub">Running Argo CD? The app auto-detects it and adds a full Argo CD workspace, no <code>argocd</code> CLI and no separate login. It reads the Application CRDs straight from your cluster using your kubeconfig&rsquo;s own RBAC.</p>
+    <span class="kicker">GitOps &amp; progressive delivery</span>
+    <h1>Flux CD and Flagger, built in</h1>
+    <p class="sub">Running Flux? The app spots its CRDs and adds a Flux workspace next to the rest of your cluster. Add Flagger and you can watch canary releases shift traffic step by step. No <code>flux</code> CLI, nothing to install in the cluster, and it all runs on your kubeconfig&rsquo;s own RBAC.</p>
     <div class="cta-row">
       <a class="btn btn-primary" href="index.html#download">
         <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg>
         Download k8sight
       </a>
-      <a class="btn btn-ghost" href="docs.html#argocd">Read the docs</a>
+      <a class="btn btn-ghost" href="docs.html#flux">Read the docs</a>
     </div>
     <div class="chips reveal">
-      <span class="chip"><span class="d" style="background:var(--green)"></span>Synced</span>
-      <span class="chip"><span class="d" style="background:var(--amber)"></span>OutOfSync</span>
-      <span class="chip"><span class="d" style="background:var(--green)"></span>Healthy</span>
-      <span class="chip"><span class="d" style="background:var(--cyan)"></span>Progressing</span>
-      <span class="chip"><span class="d" style="background:var(--red)"></span>Degraded</span>
+      <span class="chip"><span class="d" style="background:var(--green)"></span>Ready</span>
+      <span class="chip"><span class="d" style="background:var(--cyan)"></span>Reconciling</span>
+      <span class="chip"><span class="d" style="background:var(--red)"></span>Not ready</span>
       <span class="chip"><span class="d" style="background:var(--purple)"></span>Suspended</span>
+      <span class="chip"><span class="d" style="background:var(--amber)"></span>Waiting promotion</span>
     </div>
     <div class="shot-wrap reveal">
       <div class="shot-frame">
-        <img class="shot-dark" src="assets/screenshot-argocd-dark.webp" width="2000" height="1195" decoding="async" alt="k8sight Argo CD dashboard with sync and health status, application summary and recent sync activity" />
-        <img class="shot-light" src="assets/screenshot-argocd-light.webp" width="2000" height="1195" decoding="async" alt="k8sight Argo CD dashboard with sync and health status, application summary and recent sync activity (light theme)" />
+        <img class="shot-dark" src="assets/screenshot-flux-dark.webp" width="2000" height="1195" decoding="async" alt="k8sight Flux dashboard with ready counts for Kustomizations, Helm releases, sources and notifications, a needs-attention list and recent reconciliation activity" />
+        <img class="shot-light" src="assets/screenshot-flux-light.webp" width="2000" height="1195" decoding="async" alt="k8sight Flux dashboard with ready counts for Kustomizations, Helm releases, sources and notifications, a needs-attention list and recent reconciliation activity (light theme)" />
       </div>
     </div>
   </div>
@@ -167,63 +166,78 @@
 <section class="sec" id="details">
   <div class="wrap">
     <div class="sec-head reveal">
-      <span class="kicker">What&rsquo;s inside</span>
-      <h2>The whole Argo CD picture</h2>
+      <span class="kicker">Flux CD</span>
+      <h2>Every reconciliation, at a glance</h2>
+      <p>Flux keeps your cluster in line with Git. k8sight shows whether it&rsquo;s keeping up, and what to do when it isn&rsquo;t.</p>
     </div>
-  <div class="wrap">
-    
-
-    
-
-    
-
     <div class="grid">
       <div class="card i-cyan reveal">
         <div class="ico"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke-width="2"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg></div>
-        <h3>Applications dashboard</h3>
-        <p>Every Application with live sync and health status, quick filters, and a <em>needs-attention</em> view that surfaces whatever is drifting or unhealthy.</p>
+        <h3>Flux dashboard</h3>
+        <p>Ready counts for Kustomizations, Helm releases, sources and notifications. A <em>needs attention</em> list shows what&rsquo;s failing and why, and recent activity can be filtered down to warnings.</p>
       </div>
       <div class="card i-purple reveal">
-        <div class="ico"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke-width="2"><circle cx="12" cy="5" r="2.5"/><circle cx="6" cy="19" r="2.5"/><circle cx="18" cy="19" r="2.5"/><path d="M12 7.5v3.5M12 11H6.4a1 1 0 0 0-1 1v4.5M12 11h5.6a1 1 0 0 1 1 1v4.5"/></svg></div>
-        <h3>Resource tree &amp; history</h3>
-        <p>Open an app for its managed resource tree, sync parameters, and full sync/rollout history, each resource with its own sync and health badge.</p>
+        <div class="ico"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M12 2 2 7l10 5 10-5-10-5z"/><path d="M2 12l10 5 10-5M2 17l10 5 10-5"/></svg></div>
+        <h3>Every Flux kind</h3>
+        <p>Kustomizations, HelmReleases, Git, OCI and Helm repositories, buckets, Helm charts, alerts, providers and receivers. Each list has status, source and revision columns.</p>
       </div>
       <div class="card i-green reveal">
         <div class="ico"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M21 12a9 9 0 0 1-9 9 9 9 0 0 1-8-5M3 12a9 9 0 0 1 9-9 9 9 0 0 1 8 5"/><path d="M20 4v5h-5M4 20v-5h5"/></svg></div>
-        <h3>Sync, refresh &amp; prune</h3>
-        <p>Trigger a Sync with <code>prune</code>, <code>dry-run</code>, apply-only, force or replace, or a soft/hard Refresh, right from the drawer.</p>
+        <h3>Reconcile, suspend &amp; resume</h3>
+        <p>Reconcile now, pause or resume a resource, or delete it, from the row menu or the detail panel. Same result as <code>flux reconcile</code>, without the CLI.</p>
       </div>
       <div class="card i-amber reveal">
-        <div class="ico"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M12 2 2 7l10 5 10-5-10-5z"/><path d="M2 12l10 5 10-5M2 17l10 5 10-5"/></svg></div>
-        <h3>App Sets, Projects &amp; repos</h3>
-        <p>Browse ApplicationSets, AppProjects, connected Git/Helm repositories and destination clusters, the whole Argo CD picture.</p>
+        <div class="ico"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke-width="2"><circle cx="12" cy="5" r="2.5"/><circle cx="6" cy="19" r="2.5"/><circle cx="18" cy="19" r="2.5"/><path d="M12 7.5v3.5M12 11H6.4a1 1 0 0 0-1 1v4.5M12 11h5.6a1 1 0 0 1 1 1v4.5"/></svg></div>
+        <h3>What it manages</h3>
+        <p>Open a Kustomization to see its conditions, source, last applied revision, the resources it owns (each one a click away) and its events.</p>
       </div>
-      <div class="card reveal">
-        <div class="ico"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M10 6h10M10 12h10M10 18h10"/><path d="M3.5 6 5 7.5 7.5 5M3.5 12 5 13.5 7.5 11M3.5 18 5 19.5 7.5 17"/></svg></div>
-        <h3>Bulk operations</h3>
-        <p>Select many Applications and sync or refresh them together, with an opt-in multi-select so you always choose exactly what runs.</p>
+    </div>
+  </div>
+</section>
+
+<section class="sec" id="flagger">
+  <div class="wrap">
+    <div class="sec-head reveal">
+      <span class="kicker">Flagger</span>
+      <h2>Watch a canary roll out</h2>
+      <p>Flagger moves traffic to a new version step by step, checking metrics as it goes, then promotes it or rolls it back. k8sight shows every Canary&rsquo;s progress as it happens.</p>
+    </div>
+    <div class="shot-wrap reveal">
+      <div class="shot-frame">
+        <img class="shot-dark" src="assets/screenshot-flagger-dark.webp" width="2000" height="1195" loading="lazy" decoding="async" alt="k8sight Flagger canaries list with phase, strategy and progress, and a canary detail panel showing the rollout timeline at 30 percent traffic, failed checks and analysis metrics" />
+        <img class="shot-light" src="assets/screenshot-flagger-light.webp" width="2000" height="1195" loading="lazy" decoding="async" alt="k8sight Flagger canaries list with phase, strategy and progress, and a canary detail panel showing the rollout timeline at 30 percent traffic, failed checks and analysis metrics (light theme)" />
+      </div>
+    </div>
+    <div class="grid" style="margin-top:28px">
+      <div class="card i-cyan reveal">
+        <div class="ico"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg></div>
+        <h3>Live rollout timeline</h3>
+        <p>Analysis, approval, promote, finalise, done. See each traffic step or test iteration, failed checks against the threshold, and a clear marker when a release rolls back.</p>
+      </div>
+      <div class="card i-purple reveal">
+        <div class="ico"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M6 3v12M18 9v12"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="6" r="3"/></svg></div>
+        <h3>Every strategy</h3>
+        <p>Canary, A/B testing, blue/green and traffic mirroring, detected from each Canary&rsquo;s analysis settings. A/B rules are shown as readable header and cookie matches.</p>
+      </div>
+      <div class="card i-amber reveal">
+        <div class="ico"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg></div>
+        <h3>Metrics, webhooks &amp; alerts</h3>
+        <p>Metric checks with their threshold ranges and templates, test and approval webhooks, alert providers, plus the primary deployment and services Flagger creates for you.</p>
+      </div>
+      <div class="card i-green reveal">
+        <div class="ico"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M21 12a9 9 0 0 1-9 9 9 9 0 0 1-8-5M3 12a9 9 0 0 1 9-9 9 9 0 0 1 8 5"/><path d="M20 4v5h-5M4 20v-5h5"/></svg></div>
+        <h3>Restart, suspend &amp; skip</h3>
+        <p>Start a new analysis with a rollout restart of the target, suspend or resume a Canary, or turn on <code>skipAnalysis</code> to promote straight away.</p>
       </div>
       <div class="card i-red reveal">
         <div class="ico"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/></svg></div>
         <h3>AI-assisted triage</h3>
-        <p>One click hands an app&rsquo;s sync/health condition and failing resources to the assistant for a root-cause read <span style="color:var(--text-mute)">(needs your own LLM subscription)</span>.</p>
+        <p>Hand a failing Kustomization or a stuck Canary to the assistant to find the likely cause and the next step <span style="color:var(--text-mute)">(needs your own LLM subscription)</span>.</p>
       </div>
-    </div>
-  </div>
-  </div>
-</section>
-
-<section class="sec" id="tree">
-  <div class="wrap">
-    <div class="sec-head reveal">
-      <span class="kicker">Resource tree</span>
-      <h2>See everything an app manages</h2>
-      <p>Open any Application to see its managed resources as a tree, each with its own sync and health badge, next to the app&rsquo;s sync status and history.</p>
-    </div>
-    <div class="shot-wrap reveal">
-      <div class="shot-frame">
-        <img class="shot-dark" src="assets/screenshot-argocd-tree-dark.webp" width="2000" height="1195" decoding="async" alt="k8sight Argo CD resource tree for an application, showing its service, deployment, replica set and pods with health badges" />
-        <img class="shot-light" src="assets/screenshot-argocd-tree-light.webp" width="2000" height="1195" decoding="async" alt="k8sight Argo CD resource tree for an application, showing its service, deployment, replica set and pods with health badges (light theme)" />
+      <div class="card reveal">
+        <div class="ico"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke-width="2"><rect x="3" y="4" width="18" height="14" rx="2"/><path d="M8 21h8M12 18v3"/></svg></div>
+        <h3>Try it in the demo</h3>
+        <p>The built-in demo includes a podinfo Flux setup and five Flagger canaries. Restart one and watch it step through a full rollout.</p>
       </div>
     </div>
   </div>
@@ -239,7 +253,7 @@
       <a class="more-link" href="operations.html"><b>Operations <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M5 12h14M13 6l6 6-6 6"/></svg></b><span>Live dashboard, every workload type, logs, a real shell, topology, Helm and port forwarding.</span></a>
       <a class="more-link" href="ai.html"><b>AI assistant <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M5 12h14M13 6l6 6-6 6"/></svg></b><span>Ask about your cluster in plain English, and dock your own coding agents beside it.</span></a>
       <a class="more-link" href="cloud.html"><b>Cloud clusters <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M5 12h14M13 6l6 6-6 6"/></svg></b><span>Add EKS, AKS and GKE clusters to your kubeconfig with no cloud CLI.</span></a>
-      <a class="more-link" href="flux.html"><b>Flux &amp; Flagger <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M5 12h14M13 6l6 6-6 6"/></svg></b><span>Flux reconciliation health and live Flagger canary rollouts.</span></a>
+      <a class="more-link" href="argocd.html"><b>Argo CD <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M5 12h14M13 6l6 6-6 6"/></svg></b><span>Sync and health for every Application, resource trees, history and bulk sync.</span></a>
       <a class="more-link" href="security.html"><b>Security Center <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M5 12h14M13 6l6 6-6 6"/></svg></b><span>Image CVEs, config audits, RBAC checks and exposed secrets, powered by Trivy.</span></a>
       <a class="more-link" href="costs.html"><b>Costs <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M5 12h14M13 6l6 6-6 6"/></svg></b><span>Spend by namespace, workload and node from OpenCost or Kubecost.</span></a>
     </div>

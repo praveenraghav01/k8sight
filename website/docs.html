@@ -392,6 +392,7 @@
           <a href="ai.html">AI</a>
           <a href="cloud.html">Cloud</a>
           <a href="argocd.html">Argo CD</a>
+          <a href="flux.html">Flux</a>
           <a href="security.html">Security</a>
           <a href="costs.html">Costs</a>
           <a href="docs.html" class="current">Docs</a>
@@ -439,6 +440,7 @@
       <a href="#workloads" data-sect>Overview &amp; workloads</a>
       <a href="#topology" data-sect>Topology</a>
       <a href="#argocd" data-sect>ArgoCD</a>
+      <a href="#flux" data-sect>Flux CD &amp; Flagger</a>
       <a href="#logs-shell" data-sect>Logs, shell &amp; forward</a>
       <a href="#edit" data-sect>Edit &amp; apply</a>
     </nav>
@@ -829,6 +831,29 @@ export GOOGLE_CLIENT_SECRET='GOCSPX-...'</code></pre>
       </ul>
     </article>
 
+    <!-- ============ Flux CD & Flagger ============ -->
+    <article id="flux">
+      <h2>Flux CD &amp; Flagger</h2>
+      <div class="tagline">GitOps reconciliation and progressive delivery, auto-detected from their CRDs.</div>
+      <p>k8sight checks the active cluster for the Flux (<code>*.toolkit.fluxcd.io</code>) and Flagger (<code>flagger.app</code>) CRDs and adds a <strong>Flux</strong> and/or <strong>Flagger</strong> section to the sidebar. Each is detected on its own, so Flagger works without Flux. Everything goes through <code>kubectl</code> with your kubeconfig, so you don&rsquo;t need the <code>flux</code> CLI and nothing is installed in the cluster.</p>
+      <h3>Flux</h3>
+      <ul>
+        <li><strong>Dashboard</strong>: a health banner, ready counts for Kustomizations, Helm releases, sources and notifications, a <em>Needs attention</em> list with each failure message, and the last hour of Flux events, filterable by name with a warnings toggle. Click any item to open it.</li>
+        <li><strong>Lists</strong> for Kustomizations, HelmReleases, Git/OCI/Helm repositories, Buckets, HelmCharts, External Artifacts, Alerts, Providers and Receivers, with status, source and revision columns.</li>
+        <li><strong>Detail panel</strong>: properties, reconciliation status and conditions, source and last applied revision, the resources a Kustomization manages (from its inventory, each one linked), and events.</li>
+        <li><strong>Actions</strong>: <strong>Reconcile</strong> (sets <code>reconcile.fluxcd.io/requestedAt</code>, like <code>flux reconcile</code>), <strong>Suspend / Resume</strong> (<code>spec.suspend</code>), <strong>Delete</strong> (confirmed first) and <strong>Ask AI &rarr; Summarize</strong>.</li>
+      </ul>
+      <h3>Flagger</h3>
+      <ul>
+        <li><strong>Canaries</strong>: phase, strategy (Canary, A/B testing, Blue/Green or mirroring, worked out from <code>spec.analysis</code>), target, a progress bar for traffic weight or iterations, and failed checks against the threshold. The summary cards filter by in progress, waiting approval, failed or promoted.</li>
+        <li><strong>Canary panel</strong>: a rollout timeline (analysis, approval, promote, finalise, done) with each weight step or iteration, plus metrics and threshold ranges, webhooks, alerts, A/B match rules, the objects Flagger generates (primary Deployment, Services, HPA) and events. It refreshes every few seconds while a rollout is running.</li>
+        <li><strong>Actions</strong>: <strong>Restart rollout</strong> (a <code>kubectl rollout restart</code> of the target, which Flagger treats as a new revision), <strong>Suspend / Resume</strong>, a <strong>Skip analysis</strong> switch (<code>spec.skipAnalysis</code>), <strong>Delete</strong> and <strong>Ask AI</strong>.</li>
+        <li><strong>Metric Templates</strong> and <strong>Alert Providers</strong> lists, showing the provider, address and query, or the alert type and channel.</li>
+      </ul>
+      <p>Manual promotion and rollback aren&rsquo;t buttons, because Flagger only exposes them through its load tester&rsquo;s gate webhooks. Your kubeconfig user needs <code>get/list</code> on these CRDs to view them, and <code>patch</code>/<code>delete</code> on them (plus <code>patch</code> on the target Deployment for a restart) to use the actions.</p>
+      <p>The demo cluster has a podinfo Flux setup and five Flagger canaries, one for each strategy and phase. Restart one to watch it step through a simulated rollout.</p>
+    </article>
+
     <!-- ============ Logs, shell & forward ============ -->
     <article id="logs-shell">
       <h2>Logs, shell &amp; port-forward</h2>
@@ -1093,6 +1118,7 @@ export GOOGLE_CLIENT_SECRET='GOCSPX-...'</code></pre>
       <a href="ai.html">AI</a>
       <a href="cloud.html">Cloud</a>
       <a href="argocd.html">Argo CD</a>
+      <a href="flux.html">Flux</a>
       <a href="security.html">Security</a>
       <a href="costs.html">Costs</a>
       <a href="index.html#download">Download</a>

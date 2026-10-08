@@ -24,7 +24,7 @@ A native desktop app (macOS · Windows · Linux) — and a Docker image — for 
 ## Features
 
 **Demo mode — try it with no cluster**
-- Pick the built-in **demo cluster** (or click **Explore the demo** on the connect screen) to try every feature against a realistic synthetic cluster — sample workloads (including a Pending and a CrashLoopBackOff pod), live metrics, cost allocations, logs, topology, Helm, Argo CD, a Security Center scan, a pod shell and the AI assistant — with **no kubeconfig required**.
+- Pick the built-in **demo cluster** (or click **Explore the demo** on the connect screen) to try every feature against a realistic synthetic cluster — sample workloads (including a Pending and a CrashLoopBackOff pod), live metrics, cost allocations, logs, topology, Helm, Argo CD, Flux and Flagger, a Security Center scan, a pod shell and the AI assistant — with **no kubeconfig required**.
 
 **Explore**
 - Live cluster dashboard — node/pod health, workload charts, capacity.
@@ -54,6 +54,10 @@ A native desktop app (macOS · Windows · Linux) — and a Docker image — for 
 
 **Argo CD** (auto-detected)
 - GitOps dashboard, resource-tree View, Applications/AppSets/Projects, and Sync/Refresh/Rollback actions.
+
+**Flux CD & Flagger** (auto-detected)
+- Flux dashboard with ready counts, a needs-attention list and recent activity; lists for Kustomizations, HelmReleases, sources and notifications; Reconcile/Suspend/Resume actions.
+- Flagger canaries with a live rollout timeline (traffic steps, failed checks, rollbacks) for canary, A/B and blue/green releases, plus Restart, Suspend and Skip analysis.
 
 **AI, bring your own**
 - A read-only, tool-using assistant grounded in live cluster data — connect any OpenAI-compatible endpoint (secrets redacted before anything leaves the app).
