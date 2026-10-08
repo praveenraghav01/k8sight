@@ -16,6 +16,7 @@ const NAV_GROUPS = [
     { key: 'costs', label: 'Costs', icon: 'costs' },
     { key: 'argocd', label: 'Argo CD', icon: 'argocd' },
     { key: 'flux', label: 'Flux CD', icon: 'flux' },
+    { key: 'flagger', label: 'Flagger canaries', icon: 'flagger' },
   ] },
   { group: 'Workloads', items: [
     { key: 'pod', label: 'Pods', icon: 'pod' },

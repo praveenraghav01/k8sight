@@ -19,6 +19,9 @@ export default function Navigation({
   fluxInstalled,
   fluxView,
   onSelectFluxView,
+  flaggerInstalled,
+  flaggerView,
+  onSelectFlaggerView,
   securityView,
   onSelectSecurityView,
   costsView,
@@ -125,6 +128,11 @@ export default function Navigation({
     { key: 'helmrepository', label: 'Helm Repositories', icon: 'helm' },
     { key: 'bucket', label: 'Buckets', icon: 'bucket' },
     { key: 'externalartifact', label: 'External Artifacts', icon: 'box' },
+  ];
+  const flaggerTypes = [
+    { key: 'canary', label: 'Canaries', icon: 'flagger' },
+    { key: 'metrictemplate', label: 'Metric Templates', icon: 'activity' },
+    { key: 'alertprovider', label: 'Alert Providers', icon: 'bell' },
   ];
   const fluxItem = (type) => (
     <div
@@ -300,6 +308,34 @@ export default function Navigation({
                 {fluxMainTypes.map(fluxItem)}
                 {fluxSubsection('fluxNotifications', 'Notifications', fluxNotificationTypes)}
                 {fluxSubsection('fluxSources', 'Sources', fluxSourceTypes)}
+              </div>
+            )}
+          </div>
+        )}
+
+        {flaggerInstalled && (
+          <div className="nav-section">
+            <div className="nav-section-title" onClick={() => onToggleNav('flagger')}>
+              <span className={`nav-section-chevron ${navExpanded.flagger ? 'open' : ''}`}>
+                <Icon name="chevronRight" size={13} strokeWidth={2.2} />
+              </span>
+              <Icon name="flagger" size={15} className="nav-lead-icon" />
+              Flagger
+              <span className="nav-new-badge">NEW</span>
+            </div>
+            {navExpanded.flagger && (
+              <div className="nav-items">
+                {flaggerTypes.map((type) => (
+                  <div
+                    key={type.key}
+                    className={`nav-item ${flaggerView === type.key ? 'active' : ''}`}
+                    onClick={() => onSelectFlaggerView(type.key)}
+                    title={type.label}
+                  >
+                    <Icon name={type.icon} size={15} className="nav-lead-icon" />
+                    {type.label}
+                  </div>
+                ))}
               </div>
             )}
           </div>

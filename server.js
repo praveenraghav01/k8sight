@@ -3379,6 +3379,228 @@ const fluxSuspend = (suspend) => async (req, res) => {
 app.post('/api/flux/resource/:kindKey/:namespace/:name/suspend', fluxSuspend(true));
 app.post('/api/flux/resource/:kindKey/:namespace/:name/resume', fluxSuspend(false));
 
+// ---------------------------------------------------------------------------
+// Flagger (progressive delivery) — auto-detected from the flagger.app CRDs.
+// Canaries drive a Deployment/DaemonSet through canary, A/B or blue/green
+// releases; MetricTemplates and AlertProviders back the analysis.
+// ---------------------------------------------------------------------------
+const FLAGGER_GROUP = 'flagger.app';
+const FLAGGER_KINDS = {
+  canary:         { kind: 'Canary',         resource: `canaries.${FLAGGER_GROUP}` },
+  metrictemplate: { kind: 'MetricTemplate', resource: `metrictemplates.${FLAGGER_GROUP}` },
+  alertprovider:  { kind: 'AlertProvider',  resource: `alertproviders.${FLAGGER_GROUP}` },
+};
+
+// Which release strategy a Canary's analysis block selects (see docs.flagger.app
+// "Deployment Strategies"): match → A/B, mirror → B/G mirroring, step weights →
+// canary, iterations alone → blue/green.
+const flaggerStrategy = (a = {}) => {
+  if (Array.isArray(a.match) && a.match.length) return 'A/B testing';
+  if (a.mirror) return 'Blue/Green mirroring';
+  if (a.stepWeight || (a.stepWeights || []).length) return a.sessionAffinity ? 'Canary (session affinity)' : 'Canary';
+  if (a.iterations) return 'Blue/Green';
+  return 'Canary';
+};
+
+const parseCanary = (item) => {
+  const spec = item.spec || {};
+  const st = item.status || {};
+  const a = spec.analysis || spec.canaryAnalysis || {};
+  const strategy = flaggerStrategy(a);
+  const weighted = strategy.startsWith('Canary');
+  const promoted = (st.conditions || []).find((c) => c.type === 'Promoted');
+  return {
+    kindKey: 'canary', kind: 'Canary',
+    name: item.metadata?.name, namespace: item.metadata?.namespace,
+    phase: st.phase || 'Initializing',
+    suspended: !!spec.suspend,
+    skipAnalysis: !!spec.skipAnalysis,
+    strategy,
+    target: spec.targetRef ? { kind: spec.targetRef.kind || 'Deployment', name: spec.targetRef.name } : null,
+    service: spec.service?.name || spec.targetRef?.name || '',
+    port: spec.service?.port || null,
+    provider: spec.provider || '',
+    autoscaler: spec.autoscalerRef?.name || '',
+    weight: st.canaryWeight || 0,
+    maxWeight: weighted ? (a.maxWeight || (a.stepWeights || []).slice(-1)[0] || 100) : null,
+    stepWeight: a.stepWeight || null,
+    stepWeights: a.stepWeights || null,
+    iterations: st.iterations || 0,
+    maxIterations: a.iterations || null,
+    failedChecks: st.failedChecks || 0,
+    threshold: a.threshold || null,
+    interval: a.interval || '',
+    message: promoted?.message || '',
+    lastTransition: st.lastTransitionTime || promoted?.lastTransitionTime || null,
+    createdAt: item.metadata?.creationTimestamp,
+  };
+};
+
+const parseMetricTemplate = (item) => ({
+  kindKey: 'metrictemplate', kind: 'MetricTemplate',
+  name: item.metadata?.name, namespace: item.metadata?.namespace,
+  provider: item.spec?.provider?.type || '',
+  address: item.spec?.provider?.address || '',
+  query: item.spec?.query || '',
+  createdAt: item.metadata?.creationTimestamp,
+});
+
+const parseAlertProvider = (item) => ({
+  kindKey: 'alertprovider', kind: 'AlertProvider',
+  name: item.metadata?.name, namespace: item.metadata?.namespace,
+  type: item.spec?.type || '',
+  channel: item.spec?.channel || '',
+  username: item.spec?.username || '',
+  createdAt: item.metadata?.creationTimestamp,
+});
+
+const FLAGGER_PARSE = { canary: parseCanary, metrictemplate: parseMetricTemplate, alertprovider: parseAlertProvider };
+
+app.get('/api/flagger/status', async (req, res) => {
+  try {
+    if (!kubeConfig) return res.json({ installed: false, kinds: {} });
+    const cacheKey = getCacheKey('flagger-status', { ctx: currentContext });
+    const cached = getCache(cacheKey);
+    if (cached) { res.set('X-Cache', 'HIT'); return res.json(cached); }
+    const kinds = {};
+    try {
+      const api = kubeConfig.makeApiClient(k8s.ApiextensionsV1Api);
+      const { items } = await api.listCustomResourceDefinition();
+      const names = new Set(items.map((c) => c.metadata?.name));
+      for (const [key, def] of Object.entries(FLAGGER_KINDS)) kinds[key] = names.has(def.resource);
+    } catch { /* no CRD access → not installed */ }
+    const result = { installed: !!kinds.canary, kinds };
+    setCache(cacheKey, result, CACHE_TTL.namespaces);
+    res.json(result);
+  } catch (e) { res.status(500).json({ error: e.message, installed: false }); }
+});
+
+const listFlaggerKind = async (kindKey) => {
+  const def = FLAGGER_KINDS[kindKey];
+  if (!def) return [];
+  try {
+    const { stdout } = await execFileAsync('kubectl', kctl('get', def.resource, '-A', '-o', 'json'),
+      { encoding: 'utf-8', maxBuffer: 80 * 1024 * 1024, timeout: 20000 });
+    return (JSON.parse(stdout).items || []).map(FLAGGER_PARSE[kindKey]);
+  } catch (e) {
+    if (/NotFound|doesn't have a resource type|could not find|the server could not find/i.test(e.stderr || e.message || '')) return [];
+    throw e;
+  }
+};
+
+app.get('/api/flagger/resources', async (req, res) => {
+  try {
+    if (!kubeConfig) return res.status(400).json({ error: 'No kubeconfig loaded' });
+    const kindKey = String(req.query.kind || '');
+    if (!FLAGGER_KINDS[kindKey]) return res.status(400).json({ error: 'Unknown Flagger kind' });
+    const cacheKey = getCacheKey('flagger-res', { ctx: currentContext, kindKey });
+    const cached = getCache(cacheKey);
+    if (cached) { res.set('X-Cache', 'HIT'); return res.json(cached); }
+    const items = await listFlaggerKind(kindKey);
+    items.sort((a, b) => `${a.namespace}/${a.name}`.localeCompare(`${b.namespace}/${b.name}`));
+    const result = { kind: FLAGGER_KINDS[kindKey].kind, kindKey, resources: items };
+    setCache(cacheKey, result, CACHE_TTL.resources);
+    res.json(result);
+  } catch (e) { res.status(500).json({ error: (e.stderr || e.message || '').trim(), resources: [] }); }
+});
+
+// The objects Flagger creates for a Canary (docs: "How it works").
+const flaggerGenerated = (c) => {
+  if (!c.target) return [];
+  const out = [
+    { kind: c.target.kind, name: `${c.target.name}-primary`, role: 'Primary (stable)' },
+    { kind: c.target.kind, name: c.target.name, role: 'Canary (target)' },
+  ];
+  if (c.service) {
+    out.push({ kind: 'Service', name: c.service, role: 'Apex' });
+    out.push({ kind: 'Service', name: `${c.service}-primary`, role: 'Primary' });
+    out.push({ kind: 'Service', name: `${c.service}-canary`, role: 'Canary' });
+  }
+  if (c.autoscaler) out.push({ kind: 'HorizontalPodAutoscaler', name: `${c.autoscaler}-primary`, role: 'Primary autoscaler' });
+  return out.map((o) => ({ ...o, namespace: c.namespace }));
+};
+
+app.get('/api/flagger/resource/:kindKey/:namespace/:name', async (req, res) => {
+  try {
+    if (!kubeConfig) return res.status(400).json({ error: 'No kubeconfig loaded' });
+    const { kindKey, namespace, name } = req.params;
+    const def = FLAGGER_KINDS[kindKey];
+    if (!def) return res.status(400).json({ error: 'Unknown Flagger kind' });
+    const { stdout } = await execFileAsync('kubectl', kctl('get', def.resource, name, '-n', namespace, '-o', 'json'),
+      { encoding: 'utf-8', maxBuffer: 40 * 1024 * 1024, timeout: 15000 });
+    const item = JSON.parse(stdout);
+    let events = [];
+    try {
+      const { stdout: ev } = await execFileAsync('kubectl', kctl('get', 'events', '-n', namespace,
+        '--field-selector', `involvedObject.name=${name},involvedObject.kind=${def.kind}`, '-o', 'json'),
+        { encoding: 'utf-8', maxBuffer: 20 * 1024 * 1024, timeout: 12000 });
+      events = (JSON.parse(ev).items || [])
+        .map((e) => ({ type: e.type, reason: e.reason, message: e.message, count: e.count || 1, at: e.lastTimestamp || e.eventTime }))
+        .sort((a, b) => new Date(b.at) - new Date(a.at)).slice(0, 40);
+    } catch { /* events optional */ }
+    const summary = FLAGGER_PARSE[kindKey](item);
+    const a = item.spec?.analysis || item.spec?.canaryAnalysis || {};
+    res.json({
+      summary,
+      spec: item.spec || {},
+      status: item.status || {},
+      conditions: item.status?.conditions || [],
+      metadata: {
+        annotations: item.metadata?.annotations || {}, labels: item.metadata?.labels || {},
+        creationTimestamp: item.metadata?.creationTimestamp,
+      },
+      analysis: kindKey === 'canary' ? { metrics: a.metrics || [], webhooks: a.webhooks || [], alerts: a.alerts || [], match: a.match || [] } : null,
+      generated: kindKey === 'canary' ? flaggerGenerated(summary) : [],
+      events,
+    });
+  } catch (e) { res.status(500).json({ error: (e.stderr || e.message || '').trim() }); }
+});
+
+app.delete('/api/flagger/resource/:kindKey/:namespace/:name', async (req, res) => {
+  try {
+    if (!kubeConfig) return res.status(400).json({ error: 'No kubeconfig loaded' });
+    const { kindKey, namespace, name } = req.params;
+    const def = FLAGGER_KINDS[kindKey];
+    if (!def) return res.status(400).json({ error: 'Unknown Flagger kind' });
+    const out = await runKubectl(['delete', def.resource, name, '-n', namespace]);
+    cache.clear();
+    res.json({ success: true, message: out || 'Deleted' });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Canary actions: suspend/resume (spec.suspend), skip/unskip analysis
+// (spec.skipAnalysis) and restart — a rollout restart of the target changes its
+// pod template, which Flagger treats as a new revision and re-runs the analysis.
+const flaggerPatch = (field, value, message) => async (req, res) => {
+  try {
+    if (!kubeConfig) return res.status(400).json({ error: 'No kubeconfig loaded' });
+    const { namespace, name } = req.params;
+    const out = await runKubectl(['patch', FLAGGER_KINDS.canary.resource, name, '-n', namespace, '--type', 'merge',
+      '-p', JSON.stringify({ spec: { [field]: value } })]);
+    cache.clear();
+    res.json({ success: true, message: out || message });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+};
+app.post('/api/flagger/canary/:namespace/:name/suspend', flaggerPatch('suspend', true, 'Suspended'));
+app.post('/api/flagger/canary/:namespace/:name/resume', flaggerPatch('suspend', false, 'Resumed'));
+app.post('/api/flagger/canary/:namespace/:name/skip-analysis', flaggerPatch('skipAnalysis', true, 'Analysis will be skipped'));
+app.post('/api/flagger/canary/:namespace/:name/enable-analysis', flaggerPatch('skipAnalysis', false, 'Analysis enabled'));
+app.post('/api/flagger/canary/:namespace/:name/restart', async (req, res) => {
+  try {
+    if (!kubeConfig) return res.status(400).json({ error: 'No kubeconfig loaded' });
+    const { namespace, name } = req.params;
+    const { stdout } = await execFileAsync('kubectl', kctl('get', FLAGGER_KINDS.canary.resource, name, '-n', namespace, '-o', 'json'),
+      { encoding: 'utf-8', maxBuffer: 10 * 1024 * 1024, timeout: 15000 });
+    const ref = JSON.parse(stdout).spec?.targetRef;
+    if (!ref?.name) return res.status(400).json({ error: 'Canary has no targetRef' });
+    const kind = String(ref.kind || 'Deployment').toLowerCase();
+    if (!['deployment', 'daemonset'].includes(kind)) return res.status(400).json({ error: `Cannot restart a ${ref.kind}` });
+    const out = await runKubectl(['rollout', 'restart', `${kind}/${ref.name}`, '-n', namespace]);
+    cache.clear();
+    res.json({ success: true, message: out || 'Restarted — Flagger will start a new analysis' });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 const parseCpuCores = (s) => {
   if (!s || s === '-') return 0;
   if (String(s).endsWith('m')) return parseInt(s) / 1000;
