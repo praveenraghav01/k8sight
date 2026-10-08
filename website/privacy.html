@@ -299,6 +299,19 @@
   .toc a:hover { color: var(--text); }
   .tbl-wrap { border-color: var(--line); }
   table.data thead th { background: var(--panel); }
+
+  /* Academy promo bar (same rules as assets/site.css, which this page does not load): top strip. Fixed brand-blue gradient so white text keeps
+     contrast in both light and dark themes. */
+  .promo-bar { position: relative; display: flex; align-items: center; justify-content: center; gap: 10px; padding: 9px 46px 9px 18px; background: linear-gradient(90deg, #0057d8, #2b8bff); color: #fff; font-size: 13.5px; line-height: 1.35; text-align: center; }
+  .promo-bar[hidden] { display: none; }
+  .promo-inner { display: inline-flex; align-items: center; gap: 10px; color: #fff; text-decoration: none; flex-wrap: wrap; justify-content: center; }
+  .promo-badge { background: rgba(255,255,255,.2); border: 1px solid rgba(255,255,255,.4); padding: 1px 8px; border-radius: 999px; font-size: 10.5px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; }
+  .promo-text b { font-weight: 600; }
+  .promo-arrow { transition: transform .15s ease; font-weight: 600; }
+  .promo-inner:hover .promo-arrow { transform: translateX(3px); }
+  .promo-close { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); background: none; border: none; color: rgba(255,255,255,.85); font-size: 20px; line-height: 1; cursor: pointer; padding: 0 6px; border-radius: 6px; }
+  .promo-close:hover { background: rgba(255,255,255,.2); color: #fff; }
+  @media (max-width: 640px) { .promo-bar { font-size: 12.5px; padding: 8px 40px 8px 12px; } .promo-badge { display: none; } }
 </style>
 <script>
   // Set theme before first paint to avoid a flash.
