@@ -123,7 +123,7 @@ function KubernetesSection({ configStatus, onChangeConfig }) {
         </div>
       </Field>
       <Field label="Current context" hint="The cluster that new requests target.">
-        <code className="prefs-code">{configStatus?.currentContext || '—'}</code>
+        <code className="prefs-code">{configStatus?.currentContext || '-'}</code>
       </Field>
       <Field label="Available contexts">
         <span className="prefs-muted">{(configStatus?.contexts || []).length} context(s) across {(configStatus?.clusters || []).length} cluster(s)</span>

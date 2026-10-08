@@ -512,7 +512,7 @@ export default function ArgoCD({ refreshSignal = 0, view, onViewChange }) {
                         <tr key={i} className="resource-table-row">
                           <td><a className="xlink" href={r.url.startsWith('http') ? r.url : `https://${r.url}`} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}>{r.url}</a></td>
                           <td><span className="argo-badge muted">{r.type}</span></td>
-                          <td>{r.appCount || (r.source === 'secret' ? '—' : 0)}</td>
+                          <td>{r.appCount || (r.source === 'secret' ? '-' : 0)}</td>
                           <td className="drawer-dim">{r.source === 'secret' ? 'configured' : 'from applications'}</td>
                         </tr>
                       ))}

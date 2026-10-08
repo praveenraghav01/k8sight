@@ -18,11 +18,11 @@ const fmtBytes = (bytes) => {
 };
 
 const fmtCpuUsage = (milli) => {
-  if (milli == null) return '—';
+  if (milli == null) return '-';
   return milli < 1000 ? `${Math.round(milli)}m` : `${(milli / 1000).toFixed(2)} cores`;
 };
 
-const fmtMemoryUsage = (bytes) => bytes == null ? '—' : fmtBytes(bytes);
+const fmtMemoryUsage = (bytes) => bytes == null ? '-' : fmtBytes(bytes);
 
 function getClusterReference(value) {
   const match = String(value).match(/^arn:aws:eks:([^:]+):(\d+):cluster\/(.+)$/);
@@ -328,15 +328,15 @@ export default function Cluster({ refreshSignal = 0, configStatus = {}, onSwitch
               </div>
               <div className="info-item">
                 <label>Platform</label>
-                <span className="context-value">{data.platform || '—'}</span>
+                <span className="context-value">{data.platform || '-'}</span>
               </div>
               <div className="info-item">
                 <label>Kubelet</label>
-                <span className="context-value">{data.versions.join(', ') || '—'}</span>
+                <span className="context-value">{data.versions.join(', ') || '-'}</span>
               </div>
               <div className="info-item">
                 <label>OS Image</label>
-                <span className="context-value">{data.osImages.join(', ') || '—'}</span>
+                <span className="context-value">{data.osImages.join(', ') || '-'}</span>
               </div>
             </div>
 

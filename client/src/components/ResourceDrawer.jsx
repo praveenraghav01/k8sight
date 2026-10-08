@@ -311,15 +311,15 @@ export default function ResourceDrawer({ resource, namespace, resourceType, onCl
               <tbody>
                 <tr>
                   <th>CPU</th>
-                  <td>{cpuReqVal == null ? '—' : fmtCpu(cpuReqVal)}</td>
-                  <td>{cpuLimitVal == null ? '—' : fmtCpu(cpuLimitVal)}</td>
-                  <td>{metricsNow?.cpuMilli == null ? '—' : fmtCpu(metricsNow.cpuMilli)}</td>
+                  <td>{cpuReqVal == null ? '-' : fmtCpu(cpuReqVal)}</td>
+                  <td>{cpuLimitVal == null ? '-' : fmtCpu(cpuLimitVal)}</td>
+                  <td>{metricsNow?.cpuMilli == null ? '-' : fmtCpu(metricsNow.cpuMilli)}</td>
                 </tr>
                 <tr>
                   <th>Memory</th>
-                  <td>{memReqVal == null ? '—' : fmtMem(memReqVal)}</td>
-                  <td>{memLimitVal == null ? '—' : fmtMem(memLimitVal)}</td>
-                  <td>{metricsNow?.memBytes == null ? '—' : fmtMem(metricsNow.memBytes)}</td>
+                  <td>{memReqVal == null ? '-' : fmtMem(memReqVal)}</td>
+                  <td>{memLimitVal == null ? '-' : fmtMem(memLimitVal)}</td>
+                  <td>{metricsNow?.memBytes == null ? '-' : fmtMem(metricsNow.memBytes)}</td>
                 </tr>
               </tbody>
             </table>
@@ -390,7 +390,7 @@ export default function ResourceDrawer({ resource, namespace, resourceType, onCl
             <div className="drawer-section">
               <Row label="Status">
                 <span className={`drawer-status ${statusClass(status.phase || resource.status)}`}>
-                  {status.phase || resource.status || '—'}
+                  {status.phase || resource.status || '-'}
                 </span>
               </Row>
               {isPod && (
@@ -401,7 +401,7 @@ export default function ResourceDrawer({ resource, namespace, resourceType, onCl
                     </span>
                   </Row>
                   <Row label="Pod IP">{status.podIP}</Row>
-                  <Row label="Priority Class">{spec.priorityClassName || '—'}</Row>
+                  <Row label="Priority Class">{spec.priorityClassName || '-'}</Row>
                   <Row label="QoS Class">{status.qosClass}</Row>
                   <Row label="Service Account">{spec.serviceAccountName || spec.serviceAccount}</Row>
                   <Row label="Conditions">
@@ -475,7 +475,7 @@ export default function ResourceDrawer({ resource, namespace, resourceType, onCl
             {(kind === 'Deployment' || kind === 'StatefulSet' || kind === 'DaemonSet' || kind === 'ReplicaSet') && (
               <div className="drawer-section">
                 <div className="drawer-section-title">Replicas</div>
-                <Row label="Desired">{spec.replicas != null ? spec.replicas : '—'}</Row>
+                <Row label="Desired">{spec.replicas != null ? spec.replicas : '-'}</Row>
                 <Row label="Ready">{status.readyReplicas || 0}</Row>
                 <Row label="Available">{status.availableReplicas || 0}</Row>
                 <Row label="Updated">{status.updatedReplicas || 0}</Row>
@@ -520,14 +520,14 @@ export default function ResourceDrawer({ resource, namespace, resourceType, onCl
                     <span className="xlink" onClick={() => onNavigate?.toResource({ type: 'storageClass', name: spec.storageClassName })}>
                       {spec.storageClassName}
                     </span>
-                  ) : '—'}
+                  ) : '-'}
                 </Row>
                 <Row label="Claim">
                   {spec.claimRef?.name ? (
                     <span className="xlink" onClick={() => onNavigate?.toResource({ type: 'persistentVolumeClaim', namespace: spec.claimRef.namespace, name: spec.claimRef.name })}>
                       {spec.claimRef.namespace ? `${spec.claimRef.namespace}/` : ''}{spec.claimRef.name}
                     </span>
-                  ) : '—'}
+                  ) : '-'}
                 </Row>
               </div>
             )}
@@ -544,14 +544,14 @@ export default function ResourceDrawer({ resource, namespace, resourceType, onCl
                     <span className="xlink" onClick={() => onNavigate?.toResource({ type: 'storageClass', name: spec.storageClassName })}>
                       {spec.storageClassName}
                     </span>
-                  ) : '—'}
+                  ) : '-'}
                 </Row>
                 <Row label="Volume">
                   {spec.volumeName ? (
                     <span className="xlink" onClick={() => onNavigate?.toResource({ type: 'persistentVolume', name: spec.volumeName })}>
                       {spec.volumeName}
                     </span>
-                  ) : '—'}
+                  ) : '-'}
                 </Row>
               </div>
             )}
@@ -588,12 +588,12 @@ export default function ResourceDrawer({ resource, namespace, resourceType, onCl
                       ) : null}
                       {c.resources?.requests && (
                         <Row label="Requests">
-                          {`${c.resources.requests.cpu || '—'} CPU · ${c.resources.requests.memory || '—'} Mem`}
+                          {`${c.resources.requests.cpu || '-'} CPU · ${c.resources.requests.memory || '-'} Mem`}
                         </Row>
                       )}
                       {c.resources?.limits && (
                         <Row label="Limits">
-                          {`${c.resources.limits.cpu || '—'} CPU · ${c.resources.limits.memory || '—'} Mem`}
+                          {`${c.resources.limits.cpu || '-'} CPU · ${c.resources.limits.memory || '-'} Mem`}
                         </Row>
                       )}
                     </div>
