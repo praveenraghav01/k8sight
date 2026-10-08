@@ -418,7 +418,7 @@ const FluxDrawer = React.forwardRef(({ selected, detail, busy, onClose, onNaviga
             <div className="drawer-section">
               <div className="drawer-section-title">Reconciliation</div>
               <div className="argo-kv">
-                <div><span>Status</span><code><span className={`flux-status-word ${STATE_CLASS[s.state] || 'muted'}`}>{STATE_WORD[s.state] || s.state}</span>{s.message ? ` — ${s.message}` : ''}</code></div>
+                <div><span>Status</span><code><span className={`flux-status-word ${STATE_CLASS[s.state] || 'muted'}`}>{STATE_WORD[s.state] || s.state}</span>{s.message ? `: ${s.message}` : ''}</code></div>
                 {row('Interval', spec.interval)}
                 {row('Last reconciled', s.lastReconciled ? `${formatAge(s.lastReconciled)} ago` : null)}
               </div>

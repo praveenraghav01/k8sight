@@ -188,7 +188,7 @@ export default function HelmChartSearch({ onClose, onInstalled, upgradeRelease }
           <>
             {upgrading && (
               <div className="chart-warn" style={{ color: 'var(--text-secondary)', background: 'var(--bg-base)', borderColor: 'var(--border)' }}>
-                <Icon name="details" size={14} /> Couldn’t auto-match “{parseChart(upgradeRelease.chart).name}”. Pick its repository below — it’ll upgrade <b>{upgradeRelease.name}</b> in <b>{upgradeRelease.namespace}</b>.
+                <Icon name="details" size={14} /> Couldn’t auto-match “{parseChart(upgradeRelease.chart).name}”. Pick its repository below and it’ll upgrade <b>{upgradeRelease.name}</b> in <b>{upgradeRelease.namespace}</b>.
               </div>
             )}
             <div className="chart-search-box">
@@ -198,7 +198,7 @@ export default function HelmChartSearch({ onClose, onInstalled, upgradeRelease }
                 type="text"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search charts on Artifact Hub — nginx, prometheus, redis…"
+                placeholder="Search charts on Artifact Hub, e.g. nginx, prometheus, redis…"
                 spellCheck={false}
                 autoFocus
               />
@@ -207,7 +207,7 @@ export default function HelmChartSearch({ onClose, onInstalled, upgradeRelease }
 
             {!helm.installed && helm.checked && (
               <div className="chart-warn">
-                <Icon name="warning" size={14} /> Helm isn’t available on the server — you can browse charts, but installing is disabled.
+                <Icon name="warning" size={14} /> Helm isn’t available on the server. You can browse charts, but installing is disabled.
               </div>
             )}
 
@@ -281,7 +281,7 @@ export default function HelmChartSearch({ onClose, onInstalled, upgradeRelease }
                   onChange={(e) => setForm((f) => ({ ...f, version: e.target.value }))}>
                   {(versions.length ? versions : [{ version: form.version, appVersion: chart.appVersion }]).map((v) => (
                     <option key={v.version} value={v.version}>
-                      {v.version}{v.appVersion ? ` (app ${v.appVersion})` : ''}{upgrading && v.version === parseChart(upgradeRelease.chart).version ? ' — current' : ''}
+                      {v.version}{v.appVersion ? ` (app ${v.appVersion})` : ''}{upgrading && v.version === parseChart(upgradeRelease.chart).version ? ' (current)' : ''}
                     </option>
                   ))}
                 </select>

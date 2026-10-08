@@ -130,7 +130,7 @@ function CostTrend({ series, window }) {
   const points = Array.isArray(series?.series) ? series.series.filter((p) => p && p.start && p.costs) : [];
   const namespaces = Array.isArray(series?.namespaces) ? series.namespaces.filter((n) => n.totalCost > 0) : [];
   if (!points.length || !namespaces.length) {
-    return <div className="cost-empty">Not enough data yet for a breakdown — this fills in once the cost provider has collected some history.</div>;
+    return <div className="cost-empty">Not enough data yet for a breakdown. This fills in once the cost provider has collected some history.</div>;
   }
   const TOP = 6;
   const top = namespaces.slice(0, TOP);

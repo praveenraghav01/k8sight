@@ -609,7 +609,7 @@ function SetupState({ error, scanAvail, onScan, scanError }) {
         <h2>Scan your cluster for vulnerabilities</h2>
         {(scanAvail?.available || scanAvail?.installable) ? (
           <>
-            <p>Run a <strong>built-in image scan</strong> right now — k8sight scans every image your cluster is running with Trivy{scanAvail.version ? ` (${scanAvail.version})` : ''}. <strong>Nothing to install in your cluster.</strong>{!scanAvail.available ? ' The first run downloads the Trivy binary (~60 MB) and its vulnerability database, so it may take a few minutes.' : ' The first scan downloads Trivy\'s vulnerability database and may take a few minutes.'}</p>
+            <p>Run a <strong>built-in image scan</strong> right now. k8sight scans every image your cluster is running with Trivy{scanAvail.version ? ` (${scanAvail.version})` : ''}. <strong>Nothing to install in your cluster.</strong>{!scanAvail.available ? ' The first run downloads the Trivy binary (~60 MB) and its vulnerability database, so it may take a few minutes.' : ' The first scan downloads Trivy\'s vulnerability database and may take a few minutes.'}</p>
             <button className="sec-run-btn" onClick={onScan}><Icon name="shieldCheck" size={16} /> {scanAvail.available ? 'Run built-in scan' : 'Download Trivy & scan'}</button>
             {scanError && <div className="sec-dim" style={{ marginTop: 12, color: 'var(--red)' }}>{scanError}</div>}
             <p className="sec-dim" style={{ marginTop: 18 }}>For continuous scanning plus resource best-practice and RBAC checks, install the Trivy Operator in-cluster (below).</p>
@@ -636,7 +636,7 @@ function ScanProgress() {
     <div className="sec-setup">
       <div className="sec-setup-icon scanning"><Icon name="shieldCheck" size={40} /></div>
       <h2>Preparing Trivy…</h2>
-      <p>Downloading the Trivy scanner and its vulnerability database. This happens once — nothing is installed in your cluster. You can switch tabs or views; the scan runs in the background.</p>
+      <p>Downloading the Trivy scanner and its vulnerability database. This happens once, and nothing is installed in your cluster. You can switch tabs or views; the scan runs in the background.</p>
     </div>
   );
 }
@@ -670,7 +670,7 @@ function OperatorNote({ feature, foreign }) {
         <>
           <p><strong>{feature}</strong> needs the official Aqua Trivy Operator.</p>
           <p className="sec-dim" style={{ maxWidth: 460, textAlign: 'center' }}>
-            A different Trivy operator (<strong>{foreign.name}</strong>) is installed — its CRDs live under{' '}
+            A different Trivy operator (<strong>{foreign.name}</strong>) is installed. Its CRDs live under{' '}
             <code>{foreign.group}</code> and don’t include the config-audit or RBAC reports k8sight reads. Install the
             official Aqua operator (group <code>aquasecurity.github.io</code>) for resource best-practice and RBAC checks:
           </p>
