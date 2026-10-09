@@ -40,7 +40,7 @@ const NAV_GROUPS = [
   ] },
 ];
 
-export default function CommandPalette({ open, onClose, onNavigate, contexts = [], currentContext, onSwitchContext, onOpenPreferences, onRefresh, onSetTheme }) {
+export default function CommandPalette({ open, onClose, onNavigate, contexts = [], currentContext, onSwitchContext, onOpenPreferences, onRefresh, onSetTheme, prodMark }) {
   const [query, setQuery] = useState('');
   const [sel, setSel] = useState(0);
   const inputRef = useRef(null);
@@ -58,8 +58,18 @@ export default function CommandPalette({ open, onClose, onNavigate, contexts = [
       { id: 'act:theme-light', group: 'Actions', label: 'Theme: Light', icon: 'sun', run: () => onSetTheme?.('light') },
       { id: 'act:theme-system', group: 'Actions', label: 'Theme: System', icon: 'settings', run: () => onSetTheme?.('system') },
     );
+    if (prodMark && currentContext) {
+      const isProd = prodMark.isProd(currentContext);
+      cmds.push({
+        id: 'act:prodmark',
+        group: 'Actions',
+        label: isProd ? `Unmark "${currentContext}" as production` : `Mark "${currentContext}" as production`,
+        icon: isProd ? 'shieldCheck' : 'shield',
+        run: () => prodMark.toggle(currentContext),
+      });
+    }
     return cmds;
-  }, [contexts, currentContext, onNavigate, onSwitchContext, onOpenPreferences, onRefresh, onSetTheme]);
+  }, [contexts, currentContext, onNavigate, onSwitchContext, onOpenPreferences, onRefresh, onSetTheme, prodMark]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
