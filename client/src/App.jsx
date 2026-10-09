@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import './App.css';
 import Navigation from './components/Navigation';
+import useProductionMark from './hooks/useProductionMark';
 import { REFRESH_OPTIONS } from './components/RefreshControl';
 import ResourceViewer from './components/ResourceViewer';
 import Overview from './components/Overview';
@@ -58,6 +59,7 @@ function CachedViewSlot({ active, children }) {
 function App() {
   const toast = useToast();
   const [configStatus, setConfigStatus] = useState({ loaded: false, contexts: [] });
+  const prodMark = useProductionMark();
   const [configChecked, setConfigChecked] = useState(false);
   const [serverUnreachable, setServerUnreachable] = useState(false);
   // Cluster auth pre-check: { checked, ok, reason, message, currentContext, server }
@@ -662,6 +664,7 @@ function App() {
           onAddAws={() => setShowAws(true)}
           onAddGke={() => setShowGke(true)}
           initialSection={prefSection}
+          prodMark={prodMark}
           onClose={() => setResourceType(prefReturn || 'overview')}
         />
       );
@@ -695,8 +698,17 @@ function App() {
     return null;
   };
 
+  const currentIsProd = authOk && prodMark.isProd(configStatus.currentContext);
+
   return (
     <div className="app-shell">
+      {currentIsProd && prodMark.prefs.edge && (
+        <div
+          className="prod-edge"
+          aria-hidden="true"
+          style={{ '--prod-color': prodMark.prefs.color, '--prod-thick': `${prodMark.prefs.edgeThickness}px` }}
+        />
+      )}
       {authOk && (
         <TopBar
           onBack={goBack}
@@ -808,6 +820,8 @@ function App() {
             onAddGke={() => setShowGke(true)}
             onAddLocal={() => setForceConfigModal(true)}
             onOpenPreferences={() => openPreferences('general')}
+            prodMark={prodMark}
+            currentIsProd={currentIsProd}
           />
 
           <div className="content-col">
