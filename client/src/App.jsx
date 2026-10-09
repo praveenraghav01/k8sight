@@ -861,6 +861,7 @@ function App() {
           onOpenPreferences={() => openPreferences('general')}
           onRefresh={handleRefresh}
           onSetTheme={setTheme}
+          prodMark={prodMark}
         />
       )}
     </div>
