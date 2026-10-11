@@ -177,12 +177,22 @@ function createWindow() {
   });
 
   // Tag the document so the frontend can offset content below the traffic
-  // lights and expose a draggable region (CSS `.is-electron` rules).
+  // lights and expose a draggable region (CSS `.is-electron` rules). Also track
+  // fullscreen so overlays (e.g. the production-mark edge) can match the window:
+  // macOS rounds windowed corners (~10px) but is square in fullscreen.
+  const syncFullscreen = () => {
+    mainWindow?.webContents
+      .executeJavaScript(`document.documentElement.classList.toggle('is-fullscreen', ${!!mainWindow?.isFullScreen?.()})`)
+      .catch(() => {});
+  };
   mainWindow.webContents.on('did-finish-load', () => {
     mainWindow.webContents
       .executeJavaScript("document.documentElement.classList.add('is-electron')")
       .catch(() => {});
+    syncFullscreen();
   });
+  mainWindow.on('enter-full-screen', syncFullscreen);
+  mainWindow.on('leave-full-screen', syncFullscreen);
 
   // Show a lightweight loading page immediately.
   mainWindow.loadFile(path.join(__dirname, 'loading.html'));

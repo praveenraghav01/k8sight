@@ -4349,8 +4349,11 @@ button.sec-tr.row.sel { background: var(--accent-tint); }
   z-index: 9000;
   pointer-events: none;
   border: var(--prod-thick, 4px) solid var(--prod-color, #ff3b30);
-  border-radius: 3px;
+  border-radius: 0; /* browser tab / fullscreen: square window */
 }
+/* In the macOS desktop app the window has rounded corners while not fullscreen;
+   match them so the edge hugs the corner instead of cutting across it. */
+:root.is-electron:not(.is-fullscreen) .prod-edge { border-radius: 10px; }
 .nav-cluster { display: flex; align-items: center; gap: 8px; }
 .prod-badge {
   display: inline-flex; align-items: center; gap: 5px;
