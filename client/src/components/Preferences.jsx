@@ -13,6 +13,7 @@ import {
 const SECTIONS = [
   { key: 'general', label: 'General', icon: 'configuration' },
   { key: 'kubernetes', label: 'Kubernetes', icon: 'cluster' },
+  { key: 'production', label: 'Production clusters', icon: 'shield' },
   { key: 'integrations', label: 'Cloud Integrations', icon: 'hexagon' },
   { key: 'external-tools', label: 'External Tools', icon: 'sparkles' },
   { key: 'assistant', label: 'AI Assistant', icon: 'send' },
@@ -20,7 +21,7 @@ const SECTIONS = [
   { key: 'about', label: 'About', icon: 'details' },
 ];
 
-export default function Preferences({ configStatus, theme, onSetTheme, onChangeConfig, onAddAzure, onAddAws, onAddGke, initialSection, onClose }) {
+export default function Preferences({ configStatus, theme, onSetTheme, onChangeConfig, onAddAzure, onAddAws, onAddGke, initialSection, prodMark, onClose }) {
   const [section, setSection] = useState(initialSection || 'general');
   useEffect(() => { if (initialSection) setSection(initialSection); }, [initialSection]);
 
@@ -50,6 +51,7 @@ export default function Preferences({ configStatus, theme, onSetTheme, onChangeC
         )}
         {section === 'general' && <GeneralSection theme={theme} onSetTheme={onSetTheme} />}
         {section === 'kubernetes' && <KubernetesSection configStatus={configStatus} onChangeConfig={onChangeConfig} />}
+        {section === 'production' && <ProductionSection prodMark={prodMark} configStatus={configStatus} />}
         {section === 'integrations' && <IntegrationsSection onAddAzure={onAddAzure} onAddAws={onAddAws} onAddGke={onAddGke} />}
         {section === 'external-tools' && <ExternalToolsSection />}
         {section === 'assistant' && <AssistantSection />}
@@ -127,6 +129,66 @@ function KubernetesSection({ configStatus, onChangeConfig }) {
       </Field>
       <Field label="Available contexts">
         <span className="prefs-muted">{(configStatus?.contexts || []).length} context(s) across {(configStatus?.clusters || []).length} cluster(s)</span>
+      </Field>
+    </div>
+  );
+}
+
+/* ── Production clusters ─────────────────────────────────────────── */
+const PROD_COLORS = ['#ff3b30', '#ff9f0a', '#ffd60a', '#ff2d55', '#af52de', '#32ade6'];
+const PROD_THICKNESS = [{ k: 2, label: 'Thin' }, { k: 4, label: 'Medium' }, { k: 8, label: 'Thick' }];
+
+function ProductionSection({ prodMark, configStatus }) {
+  if (!prodMark) return null;
+  const { prefs, setPrefs, marks } = prodMark;
+  const Toggle = ({ on, onChange }) => (
+    <div className="prefs-seg">
+      {[{ k: true, label: 'On' }, { k: false, label: 'Off' }].map((o) => (
+        <button key={String(o.k)} className={`prefs-seg-btn ${on === o.k ? 'active' : ''}`} onClick={() => onChange(o.k)}>{o.label}</button>
+      ))}
+    </div>
+  );
+  const marked = Object.entries(marks || {}).filter(([, v]) => v).map(([k]) => k);
+  return (
+    <div className="prefs-section">
+      <h2 className="prefs-h2">Production clusters</h2>
+      <p className="prefs-lead">Make it obvious when the active context is a production cluster, so you are less likely to change the wrong environment. A context whose name contains <code>prod</code>, <code>production</code> or <code>prd</code> as a separate word is detected automatically; mark or unmark any context from the context switcher.</p>
+
+      <Field label="Window edge" hint="A coloured edge around the whole window while a production cluster is open.">
+        <div className="prefs-inline" style={{ gap: 12 }}>
+          <Toggle on={prefs.edge} onChange={(v) => setPrefs({ edge: v })} />
+          <div className="prefs-seg">
+            {PROD_THICKNESS.map((t) => (
+              <button key={t.k} className={`prefs-seg-btn ${prefs.edgeThickness === t.k ? 'active' : ''}`} disabled={!prefs.edge} onClick={() => setPrefs({ edgeThickness: t.k })}>{t.label}</button>
+            ))}
+          </div>
+        </div>
+      </Field>
+
+      <Field label="Header badge" hint="A PRODUCTION label next to the context in the sidebar.">
+        <Toggle on={prefs.badge} onChange={(v) => setPrefs({ badge: v })} />
+      </Field>
+
+      <Field label="Colour" hint="Used for the edge and the badge.">
+        <div className="prefs-inline" style={{ gap: 8 }}>
+          {PROD_COLORS.map((c) => (
+            <button
+              key={c}
+              className={`prod-swatch ${prefs.color === c ? 'active' : ''}`}
+              style={{ background: c }}
+              title={c}
+              aria-label={`Use ${c}`}
+              onClick={() => setPrefs({ color: c })}
+            />
+          ))}
+          <input type="color" className="prod-swatch-custom" value={prefs.color} title="Custom colour" onChange={(e) => setPrefs({ color: e.target.value })} />
+        </div>
+      </Field>
+
+      <Field label="Marked contexts" hint="Contexts you marked by hand. Automatic name matches are not listed here.">
+        {marked.length
+          ? <div className="prod-marked-list">{marked.map((m) => <code key={m} className="prefs-code">{m}</code>)}</div>
+          : <span className="prefs-muted">None yet. Mark a context from the context switcher (the shield icon).</span>}
       </Field>
     </div>
   );

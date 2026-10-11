@@ -30,7 +30,9 @@ export default function Navigation({
   onAddAws,
   onAddGke,
   onAddLocal,
-  onOpenPreferences
+  onOpenPreferences,
+  prodMark,
+  currentIsProd
 }) {
   // Route context changes through the app-level switch so the new cluster's
   // namespaces + resources are re-fetched (a plain POST leaves the UI empty).
@@ -199,7 +201,14 @@ export default function Navigation({
             <Icon name="settings" size={16} />
           </button>
         </div>
-        <div className="nav-cluster">Context</div>
+        <div className="nav-cluster">
+          Context
+          {currentIsProd && prodMark?.prefs?.badge && (
+            <span className="prod-badge" style={{ '--prod-color': prodMark.prefs.color }} title="You are working in a production cluster">
+              <span className="prod-badge-dot" /> PRODUCTION
+            </span>
+          )}
+        </div>
         <ContextSelector
           contexts={configStatus.contexts || []}
           contextsInfo={configStatus.contextsInfo}
@@ -209,6 +218,7 @@ export default function Navigation({
           onAddAws={onAddAws}
           onAddGke={onAddGke}
           onAddLocal={onAddLocal}
+          prodMark={prodMark}
         />
       </div>
 
