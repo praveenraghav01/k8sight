@@ -40,6 +40,27 @@ export function demoContextInfo() {
 const nowISO = () => new Date().toISOString();
 // A timestamp `mins` minutes in the past (creationTimestamps etc).
 const ago = (mins) => new Date(Date.now() - mins * 60_000).toISOString();
+// Flux demo clock: seeded timestamps drift forward with uptime (see fluxEvent).
+let fluxSeededAt = Date.now();
+let fluxSeeding = false;
+const fluxDrift = (iso) => (iso ? new Date(new Date(iso).getTime() + Date.now() - fluxSeededAt).toISOString() : iso);
+
+// Flux CD demo constants — declared up here because build() seeds the cluster at
+// module load, before declarations further down the file are initialized.
+const FLUX_CATEGORY = {
+  kustomization: 'kustomizations', helmrelease: 'helmreleases',
+  gitrepository: 'sources', ocirepository: 'sources', helmrepository: 'sources', bucket: 'sources', helmchart: 'sources', externalartifact: 'sources',
+  alert: 'notifications', provider: 'notifications', receiver: 'notifications',
+};
+const FLUX_KIND = {
+  kustomization: 'Kustomization', helmrelease: 'HelmRelease', gitrepository: 'GitRepository', ocirepository: 'OCIRepository',
+  helmrepository: 'HelmRepository', bucket: 'Bucket', helmchart: 'HelmChart', externalartifact: 'ExternalArtifact',
+  alert: 'Alert', provider: 'Provider', receiver: 'Receiver',
+};
+const FLUX_SUSPENDABLE = new Set(['kustomization', 'helmrelease', 'gitrepository', 'ocirepository', 'helmrepository', 'bucket', 'helmchart', 'alert', 'receiver']);
+const GIT_REV = 'master@sha1:a30fa3224289a3f3e413157104dee8844e329926';
+const OCI_REV = '6.14.0@sha256:272e33c79aa668777ec5c79248652deee2f34e785049c19607b9f571d1608ed4';
+const HELMREPO_REV = 'sha256:23d1b72c7e6b835b1eda38821cf65539042d6fa4ee2bf162e25e0474fc44b2fe';
 // Slight per-call jitter so live metrics "move" between polls.
 const jitter = (base, pct = 0.12) => Math.max(0, base * (1 + (Math.random() - 0.5) * pct));
 const round1 = (n) => +Number(n).toFixed(1);
@@ -437,6 +458,7 @@ const cluster = {
   crds: [],
   customResources: {}, // "group/version/plural" -> [objects]
   argo: { apps: [], projects: [], appsets: [], repos: [], clusters: [] },
+  flux: [], // Flux CD resources, stored in the server's parsed-row shape + detail fields
   events: [],
   // metrics baselines keyed by "ns/pod" and node name
   podMetricBase: {},
@@ -658,6 +680,7 @@ function podMetric(nsName, podName, cpuMilli, memBytes) {
   ];
 
   buildArgo();
+  buildFlux();
 })();
 
 // ----------------------------------------------------------------------------
@@ -733,6 +756,182 @@ function buildArgo() {
     { name: 'in-cluster', server: 'https://kubernetes.default.svc' },
     { name: 'demo-staging', server: 'https://10.0.5.1' },
   ];
+}
+
+// ------------------------------------------------------------------
+// Flux CD — a small podinfo GitOps setup. Each resource is stored in the same
+// parsed-row shape server.js returns from /api/flux/resources, plus `_`-prefixed
+// detail fields (conditions, annotations, finalizers, managed inventory, events).
+// ------------------------------------------------------------------
+function fluxRes(kindKey, namespace, name, o = {}) {
+  const ready = (o.state || 'Ready') === 'Ready';
+  const r = {
+    kindKey, kind: FLUX_KIND[kindKey], category: FLUX_CATEGORY[kindKey], name, namespace,
+    state: o.state || 'Ready', suspended: false, suspendable: FLUX_SUSPENDABLE.has(kindKey),
+    message: o.message || '', reason: o.reason || (ready ? 'Succeeded' : ''),
+    revision: o.revision || '', source: o.source || null,
+    lastReconciled: o.lastReconciled || ago(o.reconciledMins ?? 2), createdAt: o.createdAt || ago(4680),
+    interval: o.interval || '5m', url: o.url || '', type: o.type || '',
+    chart: o.chart || '', chartVersion: o.chartVersion || '', path: o.path || '', prune: !!o.prune,
+    targetNamespace: o.targetNamespace || '', lastAppliedRevision: o.lastAppliedRevision || o.revision || '',
+    _baseState: o.state || 'Ready',
+    _conditions: o.conditions || (ready
+      ? [{ type: 'Ready', status: 'True', reason: o.reason || 'Succeeded', message: o.message || '', lastTransitionTime: ago(o.reconciledMins ?? 2) }, ...(o.extraConditions || [])]
+      : [{ type: 'Reconciling', status: 'True', reason: 'Progressing', message: 'Reconciliation in progress', lastTransitionTime: ago(o.reconciledMins ?? 5) },
+         { type: 'Ready', status: 'False', reason: o.reason || 'ReconciliationFailed', message: o.message || '', lastTransitionTime: ago(o.reconciledMins ?? 5) }]),
+    _annotations: o.annotations || { 'kubectl.kubernetes.io/last-applied-configuration': `{"apiVersion":"…","kind":"${FLUX_KIND[kindKey]}","metadata":{"name":"${name}","namespace":"${namespace}"}}` },
+    _finalizers: o.finalizers || (kindKey === 'provider' ? [] : ['finalizers.fluxcd.io']),
+    _managed: o.managed || [],
+    _events: [],
+  };
+  return r;
+}
+// Seeded Flux timestamps are shifted forward by however long the demo has been
+// running, so "2m ago" stays "2m ago" and seeded events never age out of the
+// dashboard's 1h activity window. Anything created at runtime is left as-is.
+function fluxEvent(r, type, reason, message, count, minsAgo) {
+  r._events.push({ type, reason, message, count, at: ago(minsAgo), seed: fluxSeeding });
+}
+function fluxEventOut({ seed, ...e }) { return seed ? { ...e, at: fluxDrift(e.at) } : e; }
+
+function buildFlux() {
+  fluxSeededAt = Date.now();
+  fluxSeeding = true;
+  const fs = 'flux-system';
+  const svc = (ns, n) => ({ kind: 'Service', name: n, namespace: ns, group: '' });
+  const dep = (ns, n) => ({ kind: 'Deployment', name: n, namespace: ns, group: 'apps' });
+  const hpa = (ns, n) => ({ kind: 'HorizontalPodAutoscaler', name: n, namespace: ns, group: 'autoscaling' });
+
+  // ---- Sources (3/3 ready) ----
+  const gitRepo = fluxRes('gitrepository', fs, 'podinfo', {
+    url: 'https://github.com/stefanprodan/podinfo', revision: GIT_REV, interval: '1m', reason: 'Succeeded',
+    message: `stored artifact for revision '${GIT_REV}'`, reconciledMins: 1.75, createdAt: ago(4700),
+  });
+  fluxEvent(gitRepo, 'Normal', 'GitOperationSucceeded', `no changes since last reconciliation: observed revision '${GIT_REV}'`, 116, 1.75);
+  fluxEvent(gitRepo, 'Normal', 'NewArtifact', `stored artifact for commit 'Merge pull request #412 from stefanprodan/release-6.14.0'`, 1, 4600);
+
+  const ociRepo = fluxRes('ocirepository', fs, 'podinfo-oci', {
+    url: 'oci://ghcr.io/stefanprodan/manifests/podinfo', revision: OCI_REV, interval: '5m',
+    message: `stored artifact for digest '${OCI_REV}'`, reconciledMins: 6.3,
+  });
+  fluxEvent(ociRepo, 'Normal', 'ArtifactUpToDate', `artifact up-to-date with remote revision: '${OCI_REV}'`, 12, 6.3);
+
+  const helmRepo = fluxRes('helmrepository', fs, 'podinfo', {
+    url: 'https://stefanprodan.github.io/podinfo', type: 'default', revision: HELMREPO_REV, interval: '10m',
+    message: `stored artifact: revision '${HELMREPO_REV}'`, reconciledMins: 7.1,
+  });
+  fluxEvent(helmRepo, 'Normal', 'ArtifactUpToDate', `artifact up-to-date with remote revision: '${HELMREPO_REV}'`, 12, 7.1);
+
+  // ---- Kustomizations (3/4 ready, 1 reconciling) ----
+  const ksPodinfo = fluxRes('kustomization', fs, 'podinfo', {
+    source: { kind: 'GitRepository', name: 'podinfo', namespace: fs }, path: './kustomize', targetNamespace: 'podinfo', prune: true,
+    revision: GIT_REV, interval: '5m', reconciledMins: 2.1, createdAt: ago(4680),
+    message: `Applied revision: ${GIT_REV}`, reason: 'ReconciliationSucceeded',
+    extraConditions: [{ type: 'Healthy', status: 'True', reason: 'Succeeded', message: 'Health check passed' }],
+    managed: [svc('podinfo', 'podinfo'), dep('podinfo', 'podinfo'), hpa('podinfo', 'podinfo')],
+  });
+  fluxEvent(ksPodinfo, 'Normal', 'ReconciliationSucceeded', '(combined from similar events): Reconciliation finished in 74.636625ms, next run in 5m0s', 15, 2.1);
+
+  const ksOci = fluxRes('kustomization', fs, 'podinfo-oci', {
+    source: { kind: 'OCIRepository', name: 'podinfo-oci', namespace: fs }, path: './', targetNamespace: 'podinfo-oci', prune: true,
+    revision: OCI_REV, interval: '10m', reconciledMins: 7.8, message: `Applied revision: ${OCI_REV}`, reason: 'ReconciliationSucceeded',
+    managed: [svc('podinfo-oci', 'podinfo'), dep('podinfo-oci', 'podinfo'), hpa('podinfo-oci', 'podinfo')],
+  });
+  fluxEvent(ksOci, 'Normal', 'ReconciliationSucceeded', 'Reconciliation finished in 43.951708ms, next run in 10m0s', 1, 7.8);
+
+  const ksApp2 = fluxRes('kustomization', fs, 'dummy-app-2', {
+    source: { kind: 'GitRepository', name: 'podinfo', namespace: fs }, path: './kustomize', targetNamespace: 'dummy-app-2', prune: true,
+    revision: GIT_REV, interval: '15m', reconciledMins: 12, message: `Applied revision: ${GIT_REV}`, reason: 'ReconciliationSucceeded',
+    managed: [svc('dummy-app-2', 'podinfo'), dep('dummy-app-2', 'podinfo')],
+  });
+  fluxEvent(ksApp2, 'Normal', 'ReconciliationSucceeded', 'Reconciliation finished in 52.407208ms, next run in 15m0s', 1, 12);
+
+  const badPath = 'kustomization path not found: stat /tmp/kustomization-2425333066/this-path-does-not-exist: no such file or directory';
+  const ksApp1 = fluxRes('kustomization', fs, 'dummy-app-1', {
+    state: 'Reconciling', source: { kind: 'GitRepository', name: 'podinfo', namespace: fs }, path: './this-path-does-not-exist',
+    targetNamespace: 'dummy-app-1', prune: true, revision: GIT_REV, lastAppliedRevision: GIT_REV, interval: '10m',
+    reconciledMins: 7.27, reason: 'ArtifactFailed', message: badPath,
+    managed: [svc('dummy-app-1', 'podinfo'), dep('dummy-app-1', 'podinfo')],
+  });
+  [7.68, 17, 27, 37, 47, 57].forEach((m, i) => fluxEvent(ksApp1, 'Warning', 'ArtifactFailed',
+    `kustomization path not found: stat /tmp/kustomization-${[2425333066, 3065700036, 74904509, 3218940380, 4282917617, 3811965734][i]}/this-path-does-not-exist: no such file or directory`, 1, m));
+
+  // ---- Helm Releases (1/2 ready, 1 reconciling) ----
+  const hrA = fluxRes('helmrelease', 'helm-demo-a', 'demo-podinfo-a', {
+    source: { kind: 'HelmRepository', name: 'podinfo', namespace: fs }, chart: 'podinfo', chartVersion: '6.x',
+    revision: '6.14.0', targetNamespace: 'helm-demo-a', interval: '5m', reconciledMins: 6.3, reason: 'InstallSucceeded',
+    message: 'Helm install succeeded for release helm-demo-a/demo-podinfo-a.v1 with chart podinfo@6.14.0', createdAt: ago(4690),
+    extraConditions: [{ type: 'Released', status: 'True', reason: 'InstallSucceeded', message: 'Helm install succeeded' }],
+    managed: [svc('helm-demo-a', 'demo-podinfo-a'), dep('helm-demo-a', 'demo-podinfo-a')],
+  });
+  fluxEvent(hrA, 'Normal', 'InstallSucceeded', 'Helm install succeeded for release helm-demo-a/demo-podinfo-a.v1 with chart podinfo@6.14.0', 1, 4689);
+  fluxEvent(hrA, 'Normal', 'ArtifactUpToDate', "artifact up-to-date with remote revision: '6.14.0'", 12, 6.33);
+
+  const hrB = fluxRes('helmrelease', 'helm-demo-b', 'demo-podinfo-b', {
+    state: 'Reconciling', source: { kind: 'HelmRepository', name: 'podinfo', namespace: fs }, chart: 'podinf', chartVersion: '6.x',
+    revision: '6.14.0', lastAppliedRevision: '6.14.0', targetNamespace: 'helm-demo-b', interval: '5m', reconciledMins: 62,
+    reason: 'ArtifactFailed', createdAt: ago(4690),
+    message: "HelmChart 'flux-system/helm-demo-b-demo-podinfo-b' is not ready: invalid chart reference: no 'podinf' chart with version matching '6.x' found",
+  });
+  fluxEvent(hrB, 'Normal', 'HelmChartCreated', "created HelmChart object for release helm-demo-b/demo-podinfo-b", 1, 62);
+
+  // ---- Notifications ----
+  const provider = fluxRes('provider', fs, 'slack', { type: 'slack', interval: '', message: 'Initialized', reason: 'Succeeded', reconciledMins: 4500 });
+  const alert = fluxRes('alert', fs, 'on-call', { interval: '', message: 'Initialized', reason: 'Succeeded', reconciledMins: 4500 });
+  const receiver = fluxRes('receiver', fs, 'github-receiver', {
+    type: 'github', interval: '10m', reconciledMins: 4500, reason: 'Succeeded',
+    message: 'Receiver initialized for path: /hook/bed6d00b5555b1603e1f59b94d7fdbca58089cb5663633fb83f2815dc626d92b',
+  });
+
+  cluster.flux = [gitRepo, ociRepo, helmRepo, ksPodinfo, ksOci, ksApp2, ksApp1, hrA, hrB, provider, alert, receiver];
+  cluster.flux.forEach((r) => { r._seedReconciled = true; });
+  fluxSeeding = false;
+}
+
+function fluxRow(r) {
+  const row = Object.fromEntries(Object.entries(r).filter(([k]) => !k.startsWith('_')));
+  row.createdAt = fluxDrift(r.createdAt);
+  if (r._seedReconciled) row.lastReconciled = fluxDrift(r.lastReconciled);
+  return row;
+}
+function findFlux(kindKey, ns, name) { return cluster.flux.find((r) => r.kindKey === kindKey && r.namespace === ns && r.name === name); }
+
+function fluxOverview() {
+  const all = cluster.flux;
+  const summary = {};
+  for (const r of all) {
+    const s = (summary[r.category] = summary[r.category] || { total: 0, ready: 0, reconciling: 0, failed: 0, suspended: 0 });
+    s.total++;
+    if (r.state === 'Ready') s.ready++;
+    else if (r.state === 'Reconciling') s.reconciling++;
+    else if (r.state === 'Failed') s.failed++;
+    else if (r.state === 'Suspended') s.suspended++;
+  }
+  const attention = all.filter((r) => r.state !== 'Ready').map(fluxRow)
+    .sort((a, b) => (a.state === 'Failed' ? -1 : 1) - (b.state === 'Failed' ? -1 : 1));
+  const activity = all.flatMap((r) => r._events.map((e) => ({ kind: r.kind, name: r.name, namespace: r.namespace, ...fluxEventOut(e) })))
+    .filter((e) => Date.now() - new Date(e.at).getTime() < 60 * 60_000) // last ~1h, like Lens
+    .sort((a, b) => new Date(b.at) - new Date(a.at));
+  return {
+    total: all.length, ready: all.filter((r) => r.state === 'Ready').length,
+    healthy: !all.some((r) => r.state === 'Failed'), summary, attention, activity,
+  };
+}
+
+function fluxDetail(r) {
+  return {
+    summary: fluxRow(r),
+    spec: {
+      interval: r.interval, url: r.url, type: r.type, path: r.path, prune: r.prune, targetNamespace: r.targetNamespace, suspend: r.suspended,
+      ...(r.source ? { sourceRef: { kind: r.source.kind, name: r.source.name, namespace: r.source.namespace } } : {}),
+      ...(r.chart ? { chart: { spec: { chart: r.chart, version: r.chartVersion } } } : {}),
+    },
+    status: { lastAppliedRevision: r.lastAppliedRevision },
+    conditions: r._conditions.map((c) => (r._seedReconciled ? { ...c, lastTransitionTime: fluxDrift(c.lastTransitionTime) } : c)),
+    metadata: { annotations: r._annotations, labels: {}, finalizers: r._finalizers, creationTimestamp: fluxDrift(r.createdAt) },
+    managed: r._managed,
+    events: r._events.map(fluxEventOut).sort((a, b) => new Date(b.at) - new Date(a.at)),
+  };
 }
 
 // parseArgoApp — identical shape to server.js.
@@ -1605,6 +1804,50 @@ export function handle(req, res) {
     if (method === 'GET' && p === '/api/argocd/applicationsets') return json({ available: true, applicationSets: cluster.argo.appsets });
     if (method === 'GET' && p === '/api/argocd/repositories') return json({ repositories: cluster.argo.repos });
     if (method === 'GET' && p === '/api/argocd/clusters') return json({ clusters: cluster.argo.clusters });
+
+    // ---------- Flux CD ----------
+    if (method === 'GET' && p === '/api/flux/status') {
+      const kinds = Object.fromEntries(Object.keys(FLUX_KIND).map((k) => [k, true]));
+      return json({ installed: true, groups: { source: true, kustomize: true, helm: true, notification: true, image: false, kinds } });
+    }
+    if (method === 'GET' && p === '/api/flux/overview') return json(fluxOverview());
+    if (method === 'GET' && p === '/api/flux/resources') {
+      const kindKey = String(q.kind || '');
+      if (!FLUX_KIND[kindKey]) return json({ error: 'Unknown Flux kind' }, 400);
+      const resources = cluster.flux.filter((r) => r.kindKey === kindKey).map(fluxRow)
+        .sort((a, b) => `${a.namespace}/${a.name}`.localeCompare(`${b.namespace}/${b.name}`));
+      return json({ kind: FLUX_KIND[kindKey], kindKey, resources });
+    }
+    if (seg[1] === 'flux' && seg[2] === 'resource' && seg.length >= 6) {
+      const kindKey = seg[3], nsp = decodeURIComponent(seg[4]), name = decodeURIComponent(seg[5]), action = seg[6];
+      const r = findFlux(kindKey, nsp, name);
+      if (!r) return json({ error: `${FLUX_KIND[kindKey] || 'Resource'} ${nsp}/${name} not found` }, 404);
+      if (method === 'GET' && !action) return json(fluxDetail(r));
+      if (method === 'DELETE' && !action) {
+        cluster.flux = cluster.flux.filter((x) => x !== r);
+        return json({ success: true, message: `${name} deleted` });
+      }
+      if (method === 'POST' && action === 'reconcile') {
+        r.lastReconciled = nowISO();
+        if (r._seedReconciled) {
+          r._conditions = r._conditions.map((c) => ({ ...c, lastTransitionTime: fluxDrift(c.lastTransitionTime) }));
+          r._seedReconciled = false;
+        }
+        if (r.state === 'Ready') {
+          fluxEvent(r, 'Normal', r.category === 'sources' ? 'ArtifactUpToDate' : 'ReconciliationSucceeded',
+            r.category === 'sources' ? `artifact up-to-date with remote revision: '${r.revision}'` : 'Reconciliation finished, next run in ' + (r.interval || '5m'), 1, 0);
+        } else if (!r.suspended) {
+          fluxEvent(r, 'Warning', r.reason || 'ReconciliationFailed', r.message, 1, 0);
+        }
+        return json({ success: true, message: 'Reconciliation requested' });
+      }
+      if (method === 'POST' && (action === 'suspend' || action === 'resume')) {
+        r.suspended = action === 'suspend';
+        r.state = r.suspended ? 'Suspended' : r._baseState;
+        fluxEvent(r, 'Normal', r.suspended ? 'Suspended' : 'Resumed', `Reconciliation ${r.suspended ? 'suspended' : 'resumed'}`, 1, 0);
+        return json({ success: true, message: r.suspended ? 'Suspended' : 'Resumed' });
+      }
+    }
 
     // ---------- topology ----------
     if (method === 'GET' && seg[1] === 'topology' && seg[2]) return json(buildTopology(decodeURIComponent(seg[2])));
