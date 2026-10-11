@@ -1006,6 +1006,16 @@ export GOOGLE_CLIENT_SECRET='GOCSPX-...'</code></pre>
       <h2>Release notes</h2>
       <div class="tagline">What's new in each version. Installers for every release are on the <a href="https://github.com/praveenraghav01/k8sight/releases" target="_blank" rel="noopener">Releases</a> page.</div>
 
+      <h3>v1.7.0 <span class="rel-date">Oct 11, 2026</span>: Flux CD, Flagger &amp; a production guard</h3>
+      <p>GitOps comes to k8sight — Flux CD and Flagger, a production-cluster guard, and a much larger MCP toolset for AI agents.</p>
+      <ul>
+        <li><strong>Flux CD, built in</strong>: an auto-detected Flux section with a health dashboard, per-kind lists (Kustomizations, Helm releases, Git/OCI/Helm repositories, buckets, charts, alerts, providers and receivers) and a detail drawer with reconciliation status, source, managed resources and events. Reconcile, suspend/resume, delete and Ask AI from the drawer.</li>
+        <li><strong>Flagger progressive delivery</strong>: a canary list with phase, strategy (Canary / A&middot;B / Blue-Green / mirroring), target and progress, plus a rollout-timeline drawer (analysis &rarr; approval &rarr; promote &rarr; finalise &rarr; done, with a rolled-back state), metrics, webhooks and alerts. Restart, suspend/resume, skip analysis or delete.</li>
+        <li><strong>Production-cluster guard</strong>: mark a context as production &mdash; automatically by name (prod / production / prd) or by hand &mdash; and the whole window gets a coloured edge, a PRODUCTION badge and a PROD pill, so you never change the wrong environment. Tune the edge, colour and badge in <strong>Preferences &rarr; Production clusters</strong>.</li>
+        <li><strong>A bigger MCP toolset (36 &rarr; 54 tools)</strong>: the built-in MCP server now covers the Security Center, Flux, Flagger, costs and a richer Argo CD sync, so AI agents can see &mdash; and, behind the off-by-default write toggle, act on &mdash; more of your cluster.</li>
+      </ul>
+      <p><a href="https://github.com/praveenraghav01/k8sight/releases/tag/v1.7.0" target="_blank" rel="noopener">Release on GitHub &#8599;</a></p>
+
       <h3>v1.6.1 <span class="rel-date">Oct 5, 2026</span>: YAML editing, node operations &amp; metric history</h3>
       <p>A richer editor, hands-on node control, time-series metrics, and a hardened dependency stack.</p>
       <ul>
