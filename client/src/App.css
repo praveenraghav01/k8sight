@@ -934,6 +934,16 @@ body {
 }
 .ctx-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
 .ctx-option.active .ctx-dot { box-shadow: 0 0 0 2px var(--accent-tint); }
+.ctx-prodmark-row {
+  display: flex; align-items: center; gap: 7px; width: 100%;
+  padding: 9px 12px; border: none; border-top: 1px solid var(--border);
+  background: var(--bg-surface);
+  color: var(--text-secondary); font-size: 11.5px; font-weight: 600;
+  text-align: left; cursor: pointer;
+  transition: background 0.15s var(--ease-out), color 0.15s var(--ease-out);
+}
+.ctx-prodmark-row:hover { background: var(--bg-hover); color: var(--prod-color, var(--red)); }
+.ctx-prodmark-row.is-prod { color: var(--prod-color, var(--red)); }
 .ctx-add-row { display: flex; flex-direction: column; border-top: 1px solid var(--border); }
 .ctx-add-cluster {
   display: flex; align-items: center; gap: 7px;

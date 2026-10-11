@@ -141,6 +141,17 @@ export default function ContextSelector({ contexts = [], contextsInfo, currentCo
               </div>
             ))}
           </div>
+          {prodMark && currentContext && (
+            <button
+              className={`ctx-prodmark-row ${prodMark.isProd(currentContext) ? 'is-prod' : ''}`}
+              onClick={() => prodMark.toggle(currentContext)}
+              style={prodMark.isProd(currentContext) ? { '--prod-color': prodMark.prefs.color } : undefined}
+              title="Toggle whether this cluster is marked as production"
+            >
+              <Icon name={prodMark.isProd(currentContext) ? 'shieldCheck' : 'shield'} size={14} />
+              <span>{prodMark.isProd(currentContext) ? 'Unmark this cluster as production' : 'Mark this cluster as production'}</span>
+            </button>
+          )}
           {(onAddAzure || onAddAws || onAddGke || onAddLocal) && (
             <div className="ctx-add-row">
               <button className={`ctx-add-cluster ${addOpen ? 'open' : ''}`} onClick={() => setAddOpen((o) => !o)}>
