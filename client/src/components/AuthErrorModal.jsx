@@ -228,7 +228,7 @@ export default function AuthErrorModal({ auth, onRetry, onChangeConfig, retrying
 
         <div className="modal-actions auth-actions">
           {onDemo && (
-            <button className="modal-btn btn-demo" onClick={onDemo} disabled={retrying} title="Explore a synthetic cluster — no real cluster needed">
+            <button className="modal-btn btn-demo" onClick={onDemo} disabled={retrying} title="Explore a synthetic cluster (no real cluster needed)">
               <Icon name="sparkles" size={14} /> Demo
             </button>
           )}
@@ -263,7 +263,7 @@ export default function AuthErrorModal({ auth, onRetry, onChangeConfig, retrying
                   )}
                   {onChangeConfig && (
                     <button className="auth-add-item" role="menuitem" onClick={() => { setAddOpen(false); onChangeConfig(); }}>
-                      <Icon name="box" size={16} /> Local — load kubeconfig
+                      <Icon name="box" size={16} /> Local: load kubeconfig
                     </button>
                   )}
                 </div>

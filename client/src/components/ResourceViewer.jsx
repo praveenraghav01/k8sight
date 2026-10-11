@@ -168,13 +168,13 @@ export default function ResourceViewer({
   const kindLabel = (RESOURCE_LABELS[resourceType]?.label || resourceType).replace(/s$/, '');
   const askAi = (res, action) => {
     const where = `the Kubernetes ${kindLabel} "${res.name}"${res.namespace ? ` in namespace ${res.namespace}` : ''}`;
-    const ctx = 'Your kubeconfig context is already set to this cluster — use kubectl directly.';
+    const ctx = 'Your kubeconfig context is already set to this cluster, so use kubectl directly.';
     const prompts = {
       summarize: `Summarize ${where}: its purpose, current status and health, and anything notable. ${ctx}`,
       events: `Analyze the recent events for ${where}. Inspect kubectl events / describe, surface any warnings or errors, and explain the likely cause and how to fix them. ${ctx}`,
       metrics: `Analyze resource usage (CPU and memory) for ${where}. Use kubectl top plus the configured requests/limits; flag saturation, throttling or waste and recommend right-sizing. ${ctx}`,
       logs: `Analyze the logs of ${where}. Fetch recent logs with kubectl logs, surface errors and warnings with their likely root cause, and suggest next steps. ${ctx}`,
-      related: `Find and analyze the resources related to ${where} — owner references, selectors, Services, Endpoints, ConfigMaps/Secrets and PVCs. Explain how they connect and whether any are unhealthy. ${ctx}`,
+      related: `Find and analyze the resources related to ${where}: owner references, selectors, Services, Endpoints, ConfigMaps/Secrets and PVCs. Explain how they connect and whether any are unhealthy. ${ctx}`,
     };
     toast.info(`${res.name} · ${action}`, { title: askLabel() });
     window.dispatchEvent(new CustomEvent('assistant:ask', { detail: { prompt: prompts[action] } }));
@@ -272,7 +272,7 @@ export default function ResourceViewer({
     }
     const verb = type === 'bulkDelete' ? 'Deleted' : 'Restarted';
     if (failed === 0) toast.success(`${verb} ${ok} item${ok === 1 ? '' : 's'}`, { title: 'Bulk action' });
-    else toast.error(`${verb} ${ok}, ${failed} failed — ${lastErr}`, { title: 'Bulk action' });
+    else toast.error(`${verb} ${ok}, ${failed} failed: ${lastErr}`, { title: 'Bulk action' });
     setActionModal(null);
     setSelectedRows(new Set());
     onSelectResource(null);
@@ -434,11 +434,11 @@ export default function ResourceViewer({
       }
       case 'CPU': {
         const m = podMetrics[`${resource.namespace}/${resource.name}`];
-        return m ? <span style={{ color: '#58a6ff', fontFamily: 'var(--mono)' }}>{fmtCpu(m.cpuMilli)}</span> : '—';
+        return m ? <span style={{ color: '#58a6ff', fontFamily: 'var(--mono)' }}>{fmtCpu(m.cpuMilli)}</span> : '-';
       }
       case 'Memory': {
         const m = podMetrics[`${resource.namespace}/${resource.name}`];
-        return m ? <span style={{ color: '#bc8cff', fontFamily: 'var(--mono)' }}>{fmtMem(m.memBytes)}</span> : '—';
+        return m ? <span style={{ color: '#bc8cff', fontFamily: 'var(--mono)' }}>{fmtMem(m.memBytes)}</span> : '-';
       }
       case 'Restarts':
         return resource.restarts != null ? resource.restarts : '0';

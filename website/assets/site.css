@@ -139,7 +139,7 @@
   .announce .arr { flex: none; display: grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; background: var(--panel-2); color: var(--text); }
   .announce .arr svg { width: 13px; height: 13px; }
 
-  /* Academy promo bar — top strip. Fixed brand-blue gradient so white text keeps
+  /* Academy promo bar: top strip. Fixed brand-blue gradient so white text keeps
      contrast in both light and dark themes. */
   .promo-bar { position: relative; display: flex; align-items: center; justify-content: center; gap: 10px; padding: 9px 46px 9px 18px; background: linear-gradient(90deg, #0057d8, #2b8bff); color: #fff; font-size: 13.5px; line-height: 1.35; text-align: center; }
   .promo-bar[hidden] { display: none; }
@@ -222,6 +222,19 @@
   .sec-head h2 { font-size: clamp(30px, 4vw, 48px); letter-spacing: -0.03em; font-weight: 700; margin: 14px auto 18px; line-height: 1.1; max-width: 22ch; color: var(--text); }
   .sec-head p { color: var(--text-dim); font-size: clamp(16px, 1.8vw, 18px); line-height: 1.6; }
   .sec-head p b { color: var(--text); font-weight: 600; }
+
+  /* ---------- Comparison table (same look as the docs page's) ---------- */
+  .cmp-wrap { overflow-x: auto; max-width: 980px; margin: 0 auto 20px; border: 1px solid var(--line); border-radius: 12px; }
+  table.cmp { width: 100%; border-collapse: collapse; font-size: 14.5px; min-width: 640px; }
+  table.cmp th, table.cmp td { padding: 12px 14px; text-align: center; border-bottom: 1px solid var(--line); }
+  table.cmp tr:last-child th, table.cmp tr:last-child td { border-bottom: 0; }
+  table.cmp thead th { font-weight: 600; color: var(--text); background: var(--panel); }
+  table.cmp thead th.pick { color: var(--accent); }
+  table.cmp tbody th { text-align: left; font-weight: 500; color: var(--text-dim); width: 34%; }
+  table.cmp td.yes { color: var(--green); font-weight: 600; }
+  table.cmp td.no { color: var(--text-dim); }
+  table.cmp td small { display: block; font-size: 12px; font-weight: 400; color: var(--text-dim); }
+  table.cmp col.pick, table.cmp td.pickcol { background: color-mix(in srgb, var(--accent) 7%, transparent); }
 
   /* ---------- Feature cards ---------- */
   .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
@@ -450,7 +463,9 @@
   .chip .d { width: 8px; height: 8px; border-radius: 50%; }
 
   /* Overview tiles on the home page, and "more features" links on each page */
-  .feature-tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  /* Flex rather than grid so a short last row is centred instead of left-aligned. */
+  .feature-tiles { display: flex; flex-wrap: wrap; justify-content: center; gap: 16px; }
+  .feature-tiles > .ftile { flex: 0 0 calc((100% - 32px) / 3); min-width: 0; }
   .ftile { display: flex; flex-direction: column; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; color: var(--text); transition: border-color .2s; }
   .ftile:hover { border-color: var(--border-2); text-decoration: none; }
   .ftile .thumb { aspect-ratio: 16 / 10; overflow: hidden; border-bottom: 1px solid var(--line); background: var(--bg); }
@@ -472,7 +487,7 @@
   .ftile .more svg { width: 14px; height: 14px; transition: transform .2s var(--ease-out); }
   .ftile:hover .more svg { transform: translateX(3px); }
 
-  .more-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; }
+  .more-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
   .more-link { display: flex; flex-direction: column; gap: 6px; padding: 20px; border: 1px solid var(--line); border-radius: 14px; background: var(--panel); color: var(--text); transition: border-color .2s; }
   .more-link:hover { border-color: var(--border-2); text-decoration: none; }
   .more-link b { font-size: 15px; font-weight: 600; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
@@ -485,10 +500,11 @@
 
   .guide-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 8px; }
 
-  @media (max-width: 1000px) { .more-grid { grid-template-columns: repeat(3, 1fr); } }
-  @media (max-width: 900px) { .feature-tiles, .guide-grid { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 900px) { .feature-tiles > .ftile { flex-basis: calc((100% - 16px) / 2); } }
+  @media (max-width: 900px) { .guide-grid { grid-template-columns: repeat(2, 1fr); } }
   @media (max-width: 560px) {
-    .feature-tiles, .guide-grid, .more-grid { grid-template-columns: 1fr; }
+    .guide-grid, .more-grid { grid-template-columns: 1fr; }
+    .feature-tiles > .ftile { flex-basis: 100%; }
     .page-hero { padding: 56px 0 40px; }
   }
 

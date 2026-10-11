@@ -201,7 +201,7 @@ export default function ArgoCD({ refreshSignal = 0, view, onViewChange }) {
     }
     const verb = bulk.type === 'sync' ? 'Synced' : 'Refreshed';
     if (!failed) toast.success(`${verb} ${ok} application${ok === 1 ? '' : 's'}`, { title: 'ArgoCD' });
-    else toast.error(`${verb} ${ok}, ${failed} failed — ${lastErr}`, { title: 'ArgoCD' });
+    else toast.error(`${verb} ${ok}, ${failed} failed: ${lastErr}`, { title: 'ArgoCD' });
     setBulk(null); setSelRows(new Set()); setTimeout(() => load({ silent: true }), 1000);
   };
   const doDelete = async () => {
@@ -229,7 +229,7 @@ export default function ArgoCD({ refreshSignal = 0, view, onViewChange }) {
     const bad = (d.resources || []).filter((r) => r.syncStatus !== 'Synced' || (r.healthStatus && r.healthStatus !== 'Healthy'));
     const lines = [
       `Analyze the current condition of the ArgoCD Application "${a.name}" (namespace ${a.namespace}, project ${a.project}).`,
-      `Sync status: ${a.syncStatus}. Health status: ${a.healthStatus}${a.healthMessage ? ` — ${a.healthMessage}` : ''}.`,
+      `Sync status: ${a.syncStatus}. Health status: ${a.healthStatus}${a.healthMessage ? ` (${a.healthMessage})` : ''}.`,
       a.repoURL ? `Source: ${a.repoURL}${a.path ? ` (path ${a.path})` : ''} @ ${a.targetRevision || 'HEAD'}.` : '',
       `Destination: cluster ${a.destName || a.destServer || '?'}, namespace ${a.destNamespace || '?'}.`,
       bad.length ? `Resources needing attention:\n${bad.slice(0, 25).map((r) => `- ${r.kind}/${r.name}: sync=${r.syncStatus} health=${r.healthStatus || 'n/a'}${r.healthMessage ? ` (${r.healthMessage})` : ''}`).join('\n')}` : 'All managed resources are Synced and Healthy.',
@@ -512,7 +512,7 @@ export default function ArgoCD({ refreshSignal = 0, view, onViewChange }) {
                         <tr key={i} className="resource-table-row">
                           <td><a className="xlink" href={r.url.startsWith('http') ? r.url : `https://${r.url}`} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}>{r.url}</a></td>
                           <td><span className="argo-badge muted">{r.type}</span></td>
-                          <td>{r.appCount || (r.source === 'secret' ? '—' : 0)}</td>
+                          <td>{r.appCount || (r.source === 'secret' ? '-' : 0)}</td>
                           <td className="drawer-dim">{r.source === 'secret' ? 'configured' : 'from applications'}</td>
                         </tr>
                       ))}
@@ -602,10 +602,10 @@ export default function ArgoCD({ refreshSignal = 0, view, onViewChange }) {
             <h3 className="action-modal-title"><Icon name="rocket" size={16} /> Sync {syncDialog.app.name}</h3>
             {syncDialog.confirmStep === 2 ? (
               <p className="action-modal-body">
-                <b>Confirm sync</b> — apply the target Git state to <b>{syncDialog.app.name}</b>
+                <b>Confirm sync:</b> apply the target Git state to <b>{syncDialog.app.name}</b>
                 {syncDialog.revision ? <> at revision <b>{syncDialog.revision}</b></> : null}
                 {syncDialog.prune ? <>, and <b>prune</b> resources no longer in Git</> : null}
-                {syncDialog.dryRun ? ' (dry run — nothing is applied)' : ''}?
+                {syncDialog.dryRun ? ' (dry run, nothing is applied)' : ''}?
               </p>
             ) : (
               <>
@@ -834,7 +834,7 @@ function SummaryTab({ detail, attentionResources }) {
             {detail.syncPolicy.automated.prune && <span className="argo-badge muted">prune</span>}
             {detail.syncPolicy.automated.selfHeal && <span className="argo-badge muted">self-heal</span>}
           </div>
-        ) : <div className="argo-msg">Manual — syncs are triggered by hand.</div>}
+        ) : <div className="argo-msg">Manual: syncs are triggered by hand.</div>}
         {detail.syncPolicy?.syncOptions?.length > 0 && (
           <div className="argo-status-row" style={{ marginTop: 8 }}>
             {detail.syncPolicy.syncOptions.map((o, i) => <span key={i} className="argo-badge muted">{o}</span>)}

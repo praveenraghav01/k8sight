@@ -5,20 +5,20 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
 <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)" />
-<title>k8sight — Privacy Policy</title>
-<meta name="description" content="k8sight privacy policy — the app runs entirely on your machine; we collect nothing." />
+<title>Privacy Policy | k8sight</title>
+<meta name="description" content="k8sight privacy policy: the app runs entirely on your machine; we collect nothing." />
 <link rel="canonical" href="https://k8sight.in/privacy" />
 <meta property="og:type" content="website" />
 <meta property="og:site_name" content="k8sight" />
 <meta property="og:url" content="https://k8sight.in/privacy" />
-<meta property="og:title" content="k8sight — Privacy Policy" />
+<meta property="og:title" content="Privacy Policy | k8sight" />
 <meta property="og:description" content="k8sight runs entirely on your machine. We operate no servers and collect none of your data." />
 <meta property="og:image" content="https://k8sight.in/assets/og-image.png" />
 <meta property="og:image:width" content="1200" />
 <meta property="og:image:height" content="630" />
-<meta property="og:image:alt" content="k8sight — a beautiful native desktop UI for your Kubernetes clusters" />
+<meta property="og:image:alt" content="k8sight, a beautiful native desktop UI for your Kubernetes clusters" />
 <meta name="twitter:card" content="summary_large_image" />
-<meta name="twitter:title" content="k8sight — Privacy Policy" />
+<meta name="twitter:title" content="Privacy Policy | k8sight" />
 <meta name="twitter:description" content="k8sight runs entirely on your machine. We operate no servers and collect none of your data." />
 <meta name="twitter:image" content="https://k8sight.in/assets/og-image.png" />
 <link rel="icon" href="assets/icon.svg" type="image/svg+xml" />
@@ -111,7 +111,7 @@
 
   .wrap { max-width: var(--maxw); margin: 0 auto; padding: 0 22px; }
 
-  /* Apple keeps backgrounds clean — a whisper of a glow only */
+  /* Apple keeps backgrounds clean: a whisper of a glow only */
   .bg-glow {
     position: fixed; inset: 0; z-index: -1; pointer-events: none;
     background: radial-gradient(1200px 700px at 50% -10%, rgba(0,113,227,.05), transparent 60%);
@@ -299,6 +299,19 @@
   .toc a:hover { color: var(--text); }
   .tbl-wrap { border-color: var(--line); }
   table.data thead th { background: var(--panel); }
+
+  /* Academy promo bar (same rules as assets/site.css, which this page does not load): top strip. Fixed brand-blue gradient so white text keeps
+     contrast in both light and dark themes. */
+  .promo-bar { position: relative; display: flex; align-items: center; justify-content: center; gap: 10px; padding: 9px 46px 9px 18px; background: linear-gradient(90deg, #0057d8, #2b8bff); color: #fff; font-size: 13.5px; line-height: 1.35; text-align: center; }
+  .promo-bar[hidden] { display: none; }
+  .promo-inner { display: inline-flex; align-items: center; gap: 10px; color: #fff; text-decoration: none; flex-wrap: wrap; justify-content: center; }
+  .promo-badge { background: rgba(255,255,255,.2); border: 1px solid rgba(255,255,255,.4); padding: 1px 8px; border-radius: 999px; font-size: 10.5px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; }
+  .promo-text b { font-weight: 600; }
+  .promo-arrow { transition: transform .15s ease; font-weight: 600; }
+  .promo-inner:hover .promo-arrow { transform: translateX(3px); }
+  .promo-close { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); background: none; border: none; color: rgba(255,255,255,.85); font-size: 20px; line-height: 1; cursor: pointer; padding: 0 6px; border-radius: 6px; }
+  .promo-close:hover { background: rgba(255,255,255,.2); color: #fff; }
+  @media (max-width: 640px) { .promo-bar { font-size: 12.5px; padding: 8px 40px 8px 12px; } .promo-badge { display: none; } }
 </style>
 <script>
   // Set theme before first paint to avoid a flash.
@@ -345,6 +358,7 @@
           <a href="ai.html">AI</a>
           <a href="cloud.html">Cloud</a>
           <a href="argocd.html">Argo CD</a>
+          <a href="flux.html">Flux</a>
           <a href="security.html">Security</a>
           <a href="costs.html">Costs</a>
           <a href="docs.html">Docs</a>
@@ -402,12 +416,12 @@
     <li>The app runs <strong>entirely on your local machine</strong>. There is no k8sight server, cloud service, or database that receives your information.</li>
     <li>The app sends <strong>no telemetry, analytics, crash reports, usage statistics, or diagnostic data</strong> to us or to any third party.</li>
     <li>The app requires <strong>no account, registration, sign-up, or login with us</strong>.</li>
-    <li>All processing — reading configuration, talking to clusters, rendering resources, generating auth tokens — happens locally on your device.</li>
+    <li>All processing (reading configuration, talking to clusters, rendering resources, generating auth tokens) happens locally on your device.</li>
   </ul>
   <p>Because of this design, we do not "collect" personal data in the conventional sense. The sections below describe the data the app <em>accesses locally on your behalf</em> and the direct connections it makes to services you configure.</p>
 
   <h2 id="p3">3. Information the app accesses (and where it stays)</h2>
-  <p>To perform its function, the app reads and works with the following categories of data. In every case the data stays on your machine or travels <strong>directly</strong> between your machine and a service you configured — never through us.</p>
+  <p>To perform its function, the app reads and works with the following categories of data. In every case the data stays on your machine or travels <strong>directly</strong> between your machine and a service you configured, never through us.</p>
   <div class="tbl-wrap">
     <table class="data">
       <thead>
@@ -415,17 +429,17 @@
       </thead>
       <tbody>
         <tr>
-          <td><strong>Kubeconfig &amp; cluster resources</strong> — contexts, cluster endpoints, and the Kubernetes objects you view (pods, deployments, services, logs, events, metrics, etc.)</td>
+          <td><strong>Kubeconfig &amp; cluster resources</strong>: contexts, cluster endpoints, and the Kubernetes objects you view (pods, deployments, services, logs, events, metrics, etc.)</td>
           <td>To display and let you operate your clusters.</td>
           <td>Read from your local kubeconfig (<code>~/.kube/config</code>). Cluster traffic goes directly between your machine and your Kubernetes API servers.</td>
         </tr>
         <tr>
-          <td><strong>Cloud credentials &amp; tokens</strong> — AWS, Azure, and Google Cloud access/refresh tokens or keys you provide when connecting clusters</td>
+          <td><strong>Cloud credentials &amp; tokens</strong>: AWS, Azure, and Google Cloud access/refresh tokens or keys you provide when connecting clusters</td>
           <td>To discover your clusters and write kubeconfig entries so you can connect without a CLI.</td>
           <td>Stored locally (e.g. <code>~/.aws</code>, <code>~/.kube</code>, <code>~/.config/k8s-manager/</code>) and used only to call that provider's APIs directly from your machine.</td>
         </tr>
         <tr>
-          <td><strong>App settings &amp; preferences</strong> — theme, chosen integrations, MCP read/write toggle, AI configuration</td>
+          <td><strong>App settings &amp; preferences</strong>: theme, chosen integrations, MCP read/write toggle, AI configuration</td>
           <td>To remember your choices between sessions.</td>
           <td>Stored locally in <code>~/.config/k8s-manager/settings.json</code> and browser local storage.</td>
         </tr>
@@ -451,7 +465,7 @@
   </div>
   <p>The specific Google user data the app accesses is limited to: your Google account identity for the sign-in, the list of Google Cloud <strong>projects</strong> and <strong>GKE clusters</strong> visible to your account, and OAuth <strong>tokens</strong> (a refresh token and derived access tokens).</p>
   <p><strong>Storage and handling.</strong> The refresh token and derived credentials are stored <strong>only on your local device</strong> at <code>~/.config/k8s-manager/gke/credentials.json</code> with file permissions restricted to your user account (mode <code>600</code>). These tokens are <strong>never</strong> transmitted to us or to any third party; they are sent only to Google's own OAuth and API endpoints to authenticate you. We have no server that could receive them.</p>
-  <p><strong>Revoking access.</strong> You can revoke k8sight's access to your Google account at any time by: signing out inside the app; deleting <code>~/.config/k8s-manager/gke/credentials.json</code>; or visiting <a href="https://myaccount.google.com/permissions" target="_blank" rel="noopener">myaccount.google.com/permissions</a> and removing k8sight. Revoking does not delete anything from your device automatically — remove the local file if you also want the local copy gone.</p>
+  <p><strong>Revoking access.</strong> You can revoke k8sight's access to your Google account at any time by: signing out inside the app; deleting <code>~/.config/k8s-manager/gke/credentials.json</code>; or visiting <a href="https://myaccount.google.com/permissions" target="_blank" rel="noopener">myaccount.google.com/permissions</a> and removing k8sight. Revoking does not delete anything from your device automatically. Remove the local file if you also want the local copy gone.</p>
 
   <h2 id="p5">5. Limited Use disclosure</h2>
   <p>k8sight's use and transfer of information received from Google APIs to any other app adheres to the <a href="https://developers.google.com/terms/api-services-user-data-policy" target="_blank" rel="noopener">Google API Services User Data Policy</a>, including the <strong>Limited Use</strong> requirements. Specifically, information received from Google APIs is:</p>
@@ -461,7 +475,7 @@
     <li><strong>not</strong> used or transferred for serving advertising, including retargeting, personalized, or interest-based advertising; and</li>
     <li><strong>not</strong> read by any human, unless (i) you give affirmative agreement for specific data, (ii) it is necessary for security purposes (such as investigating abuse), or (iii) it is required to comply with applicable law.</li>
   </ul>
-  <p>In practice, because k8sight has no servers, none of your Google user data ever reaches us — it stays on your device.</p>
+  <p>In practice, because k8sight has no servers, none of your Google user data ever reaches us. It stays on your device.</p>
 
   <h2 id="p6">6. AWS and Azure sign-in</h2>
   <p>Connecting Amazon EKS or Azure AKS clusters is also optional and works the same local-first way. AWS sign-in (IAM Identity Center / SSO, access keys, or assume-role) and Azure sign-in (in-browser OAuth or the <code>az</code> CLI) authenticate <strong>directly</strong> with those providers. The resulting credentials and tokens are stored locally and used only to discover clusters and write kubeconfig entries on your machine. None of it is sent to us. Your use of AWS and Azure is governed by their respective privacy policies.</p>
@@ -469,7 +483,7 @@
   <h2 id="p7">7. Optional AI assistant (bring your own model)</h2>
   <p>k8sight includes an optional AI assistant that is <strong>disabled until you configure it</strong> with your own OpenAI-compatible API endpoint and API key (for example OpenAI, Azure OpenAI, or a self-hosted gateway such as LiteLLM or TrueFoundry). If you enable and use it:</p>
   <ul>
-    <li>Relevant, <strong>read-only</strong> cluster context needed to answer your question is sent <strong>directly to the endpoint you chose</strong> — never to us.</li>
+    <li>Relevant, <strong>read-only</strong> cluster context needed to answer your question is sent <strong>directly to the endpoint you chose</strong>, never to us.</li>
     <li>Values that look like secrets are <strong>redacted</strong> before the request is sent.</li>
     <li>Your API key is stored <strong>locally</strong> on your device.</li>
   </ul>
@@ -519,6 +533,7 @@
       <a href="ai.html">AI</a>
       <a href="cloud.html">Cloud</a>
       <a href="argocd.html">Argo CD</a>
+      <a href="flux.html">Flux</a>
       <a href="security.html">Security</a>
       <a href="costs.html">Costs</a>
       <a href="index.html#download">Download</a>
@@ -536,7 +551,7 @@
 </footer>
 
 <script>
-  // Theme toggle (light / dark) — persisted, defaults to system preference.
+  // Theme toggle (light / dark): persisted, defaults to system preference.
   // Which icon shows is handled entirely in CSS via [data-theme].
   (function () {
     const root = document.documentElement;

@@ -11,8 +11,8 @@ import useMetricHistory from '../hooks/useMetricHistory';
 
 const fmtCpuM = (m) => (m >= 1000 ? `${(m / 1000).toFixed(2)} cores` : `${Math.round(m)}m`);
 const fmtGi = (gi) => `${gi.toFixed(1)} Gi`;
-const fmtCpuValue = (m) => (m == null ? '—' : fmtCpuM(m));
-const fmtMemValue = (bytes) => (bytes == null ? '—' : fmtGi(bytes / 1024 ** 3));
+const fmtCpuValue = (m) => (m == null ? '-' : fmtCpuM(m));
+const fmtMemValue = (bytes) => (bytes == null ? '-' : fmtGi(bytes / 1024 ** 3));
 
 const formatAge = (createdAt) => {
   if (!createdAt) return '-';
