@@ -358,6 +358,7 @@ function AssistantSection() {
     <div className="prefs-section">
       <h2 className="prefs-h2">AI Assistant</h2>
       <p className="prefs-lead">The built-in assistant connects to any OpenAI-compatible endpoint (TrueFoundry, OpenAI, Azure, LiteLLM…). Used when "Built-in assistant" is selected under External Tools.</p>
+      <div className="prefs-status warn" style={{ alignItems: 'flex-start', lineHeight: 1.5 }}><span className="prefs-status-dot" style={{ marginTop: 6 }} /><span>What is shared: when you ask a question, the assistant sends your question, the current cluster context and the data it looks up (resource details, recent events and pod logs) to this endpoint. Secret values, credentials, emails and card numbers are masked first, but logs can still contain other personal data. Use an endpoint your organisation has approved; plain http:// is only allowed for a model on this machine.</span></div>
 
       {status && (
         <div className={`prefs-badge-row ${status.enabled ? 'ok' : ''}`}>

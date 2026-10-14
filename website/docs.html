@@ -893,6 +893,13 @@ export GOOGLE_CLIENT_SECRET='GOCSPX-...'</code></pre>
       <div class="tagline">A read-only, tool-using debugging session. Bring your own LLM.</div>
       <p>The built-in assistant is a <strong>read-only</strong>, tool-using session over live cluster data: it can read logs, events and resource specs to help debug, but it can't change anything. Connect <strong>any OpenAI-compatible endpoint</strong> (TrueFoundry, OpenAI, Azure OpenAI, LiteLLM, …) in <strong>Preferences → AI</strong> or via env vars. <strong>Secrets are redacted</strong> before anything leaves the app.</p>
       <p>Right-click a resource (or use the drawer) → <strong>Ask AI</strong> to hand it to the assistant for a summary, event/log analysis, or fix suggestions.</p>
+      <h3>What it sends, and how it's protected</h3>
+      <ul>
+        <li>Your question, the current cluster context, and the data it looks up (resource details, events, pod logs) go to the endpoint you configured, and nowhere else.</li>
+        <li>Before sending, k8sight strips escape codes and invisible characters, and masks Secret values, credentials (private keys, tokens, cloud keys, passwords in URLs and settings), emails, card numbers and secret-looking env values. Masking is pattern-based, so logs can still contain other personal data.</li>
+        <li>Cluster text is marked as untrusted data, so instructions hidden in logs or annotations aren't treated as commands. MCP agents get the same treatment.</li>
+        <li>Endpoints must use <code>https://</code>; plain <code>http://</code> is only allowed for a model running on this machine (e.g. Ollama on localhost).</li>
+      </ul>
     </article>
 
     <!-- ============ Coding agents ============ -->
