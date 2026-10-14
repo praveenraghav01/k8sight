@@ -36,8 +36,9 @@ python3 -m http.server 4321 -d website
 - **macOS release**: the download buttons point to the repo's
   `/releases/latest`. Publish the `.dmg` as a GitHub Release asset; no site
   change is needed. Update the version badge in `index.html` if you want it shown.
-- **Docker image**: the pull/run commands reference
-  `praveenraghav/k8s-manager-ui:latest`. Change the tag in `index.html` if needed.
+- **Docker image**: no current image is published; `docs.html` shows how to
+  build it locally (`docker build -t k8sight .`). Update those commands if an
+  image is published again.
 
 ## Hosting
 

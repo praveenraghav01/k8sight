@@ -508,11 +508,12 @@
       <h3>Desktop app (recommended)</h3>
       <p>Download the build for your OS from the <a href="index.html#download">downloads section</a> or the <a href="https://github.com/praveenraghav01/k8sight/releases" target="_blank" rel="noopener">GitHub releases</a> page: macOS (Apple Silicon &amp; Intel), Windows and Linux. It bundles everything it needs; open it and it reads your <code>~/.kube/config</code>.</p>
       <h3>Docker</h3>
-      <p>Run the published image and mount your kubeconfig. Publishing to <code>127.0.0.1</code> keeps the API off your network (see <a href="#security">Security</a>):</p>
-      <pre><code>docker run --rm -p 127.0.0.1:8080:3001 \
+      <p>Build the image from the repository and mount your kubeconfig. Publishing to <code>127.0.0.1</code> keeps the API off your network (see <a href="#security">Security</a>):</p>
+      <pre><code>docker build -t k8sight .
+docker run --rm -p 127.0.0.1:8080:3001 \
   -v "$HOME/.kube:/home/node/.kube:ro" \
-  praveenraghav/k8s-manager-ui:latest</code></pre>
-      <p>Then open <a href="http://localhost:8080" target="_blank" rel="noopener">http://localhost:8080</a>.</p>
+  k8sight</code></pre>
+      <p>Then open the access link from the container log (<code>docker logs &lt;container&gt;</code>) on your published port, e.g. <code>http://localhost:8080/?token=…</code>. A new token is created on every start.</p>
       <h3>From source</h3>
       <pre><code>git clone https://github.com/praveenraghav01/k8sight
 cd k8sight
@@ -750,7 +751,7 @@ npm start          # prints the access link: http://127.0.0.1:3001/?token=…</c
       <pre><code>docker run --rm -p 127.0.0.1:8080:3001 \
   --add-host=host.docker.internal:host-gateway \
   -v "$HOME/.kube:/home/node/.kube:ro" \
-  praveenraghav/k8s-manager-ui:latest</code></pre>
+  k8sight</code></pre>
       <p>…and set the context's <code>server:</code> to <code>https://host.docker.internal:&lt;port&gt;</code> with <code>insecure-skip-tls-verify: true</code>.</p>
       <h3>OIDC / kubelogin clusters</h3>
       <p>Contexts that authenticate with <code>kubectl oidc-login</code> (kubelogin) work, and the Docker image bundles the plugin. Since a container can't open a browser, log in on the host first (<code>kubectl get nodes</code> triggers the browser login and caches a token under <code>~/.kube/cache/oidc-login/</code>), then mount <code>~/.kube</code> <strong>read-write</strong> so kubelogin can refresh from inside the container.</p>

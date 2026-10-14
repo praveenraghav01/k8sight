@@ -118,12 +118,13 @@ npm run dist        # builds the UI and packages for the current OS → release/
 
 ### Docker
 
-The image bundles Node, `kubectl`, and `kubelogin`, and serves the UI + API on port `3001` as the unprivileged `node` user.
+The image bundles Node, `kubectl`, `kubelogin` and Trivy, and serves the UI + API on port `3001` as the unprivileged `node` user. Build it from this repository (no current image is published):
 
 ```bash
+docker build -t k8sight .
 docker run --rm -p 127.0.0.1:8080:3001 \
   -v "$HOME/.kube:/home/node/.kube:ro" \
-  praveenraghav/k8s-manager-ui:latest
+  k8sight
 ```
 
 Open the access link from the container log (`docker logs <container>`): `http://localhost:3001/?token=…`. Use your published port, e.g. `http://localhost:8080/?token=…`. A new token is generated on every start.
