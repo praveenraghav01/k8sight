@@ -62,15 +62,11 @@ RUN apk upgrade --no-cache \
 # Backend deps + source, and the built frontend
 COPY --from=server-deps /app/node_modules ./node_modules
 COPY package*.json ./
-COPY server.js ./
-COPY assistant.js ./
-COPY mcp.js ./
-COPY mcp-stdio.js ./
-COPY aws-eks.js ./
-COPY eks-token.js ./
-COPY azure-aks.js ./
-COPY azure-token.js ./
-COPY trivy-scan.js ./
+# All backend modules (server, assistant, MCP, cloud integrations, demo mode,
+# kubeconfig token helpers) and the shared lib/ helpers. Copy by pattern so a
+# new module can't be silently left out of the image again.
+COPY *.js ./
+COPY lib/ ./lib/
 COPY --from=client-build /app/client/dist ./client/dist
 
 # The server binds 127.0.0.1 by default (so a local install isn't exposed to the
@@ -89,9 +85,9 @@ EXPOSE 3001
 # package "overview". The release workflow's docker/metadata-action overrides
 # source/revision/created automatically; set IMAGE_SOURCE for manual builds.
 # ------------------------------------------------------------------
-ARG APP_VERSION="1.3.0"
-LABEL org.opencontainers.image.title="Kubernetes Manager UI" \
-      org.opencontainers.image.description="Web UI to browse and operate Kubernetes clusters — workloads, nodes, events, logs, in-browser exec/terminal, service port-forwarding, Helm releases, RBAC and CRDs. Reads your kubeconfig and serves the UI + REST API on port 3001." \
+ARG APP_VERSION="dev"
+LABEL org.opencontainers.image.title="k8sight" \
+      org.opencontainers.image.description="k8sight: browse and operate Kubernetes clusters from your kubeconfig (workloads, logs, shells, topology, Helm, Argo CD, Flux, Flagger, security and costs). Serves the UI and API on port 3001; open the access link printed at startup." \
       org.opencontainers.image.version="${APP_VERSION}" \
       org.opencontainers.image.licenses="MIT"
 

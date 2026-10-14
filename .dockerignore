@@ -1,0 +1,16 @@
+# Keep the build context small and free of host-specific or private files.
+.git
+node_modules
+client/node_modules
+client/dist
+release
+dist-helpers
+bin
+coverage
+*.log
+.env*
+gke-oauth.json
+review-pack
+website
+.github
+.claude
