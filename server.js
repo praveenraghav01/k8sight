@@ -213,6 +213,21 @@ app.use((req, res, next) => {
   return next();
 });
 
+// Rate-limit the API/MCP surface *before* the auth check, so the authorization
+// handler itself is throttled (e.g. a runaway client or same-origin script
+// hammering the API, or token-guessing against the auth check). The server binds
+// to loopback and enforces same-origin, so this is defense-in-depth rather than a
+// perimeter control — hence a generous fixed-window cap.
+const apiLimiter = rateLimit({
+  windowMs: 60_000,
+  limit: Number(process.env.RATE_LIMIT_MAX) || 1000, // requests/min/IP
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  message: { error: 'Too many requests' },
+});
+app.use('/api', apiLimiter);
+app.use('/mcp', apiLimiter);
+
 app.use((req, res, next) => {
   if (!req.path.startsWith('/api') && !req.path.startsWith('/mcp')) return next();
   const scope = scopeFor(presentedToken(req.headers, req.originalUrl), tokens());
@@ -230,20 +245,6 @@ app.use((req, res, next) => {
   }
   return next();
 });
-
-// Rate-limit the API/MCP surface. The server binds to loopback and enforces
-// same-origin, so this is defense-in-depth (a runaway client or same-origin
-// script hammering the API) rather than a perimeter control — hence a generous
-// fixed-window cap.
-const apiLimiter = rateLimit({
-  windowMs: 60_000,
-  limit: Number(process.env.RATE_LIMIT_MAX) || 1000, // requests/min/IP
-  standardHeaders: 'draft-7',
-  legacyHeaders: false,
-  message: { error: 'Too many requests' },
-});
-app.use('/api', apiLimiter);
-app.use('/mcp', apiLimiter);
 
 app.use(express.json());
 
