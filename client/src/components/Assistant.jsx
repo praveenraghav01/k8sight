@@ -199,6 +199,7 @@ export default function Assistant({ context }) {
             {enabled === false && editable && (
               <div className="assistant-empty">
                 <p><strong>Connect an LLM API</strong> to enable the assistant. Any OpenAI-compatible endpoint works (TrueFoundry, OpenAI, Azure, LiteLLM, …). Stored on this machine for next time.</p>
+                <p className="assistant-notice">What is shared: when you ask a question, the assistant sends your question, the current cluster context and the data it looks up (resource details, recent events and pod logs) to this endpoint. Secret values, credentials, emails and card numbers are masked first, but logs can still contain other personal data. Use an endpoint your organisation has approved; plain http:// is only allowed for a model on this machine.</p>
                 <form className="assistant-key-form" onSubmit={(e) => { e.preventDefault(); saveConfig(); }}>
                   <label className="assistant-field-label">API base URL</label>
                   <input type="text" value={urlInput} onChange={(e) => setUrlInput(e.target.value)} placeholder="https://<org>.truefoundry.cloud/api/llm/api/inference/openai" autoComplete="off" spellCheck={false} autoFocus />

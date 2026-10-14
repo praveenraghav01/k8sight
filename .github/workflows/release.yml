@@ -71,26 +71,77 @@ jobs:
       - name: Run tests
         run: npm test
 
+      # Never publish an unsigned macOS build: without these secrets the app
+      # would be ad-hoc signed and not notarized (Gatekeeper blocks it).
+      - name: Require macOS signing and notarization secrets
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          missing=""
+          for v in CSC_LINK CSC_KEY_PASSWORD APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID; do
+            [ -n "${!v}" ] || missing="$missing $v"
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::macOS signing/notarization secrets missing:$missing. Refusing to build an unsigned release."
+            exit 1
+          fi
+
+      # Windows: signed when a code-signing certificate is configured
+      # (WIN_CSC_LINK = base64 .pfx, WIN_CSC_KEY_PASSWORD, and the certificate's
+      # subject name in the WIN_PUBLISHER_NAME variable so auto-updates verify
+      # the signature). Until then the build is unsigned, flagged as a warning.
+      - name: Windows signing status
+        if: runner.os == 'Windows'
+        shell: bash
+        env:
+          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          WIN_PUBLISHER_NAME: ${{ vars.WIN_PUBLISHER_NAME }}
+        run: |
+          if [ -z "$WIN_CSC_LINK" ]; then
+            echo "::warning::Windows build is UNSIGNED: set the WIN_CSC_LINK / WIN_CSC_KEY_PASSWORD secrets and the WIN_PUBLISHER_NAME variable to sign it."
+          elif [ -z "$WIN_PUBLISHER_NAME" ]; then
+            echo "::error::WIN_CSC_LINK is set but the WIN_PUBLISHER_NAME variable is not; auto-update signature checks need it."
+            exit 1
+          fi
+
       - name: Build & package
         # `npm run dist` runs the client build then electron-builder for the
         # host OS. --publish never keeps electron-builder from uploading; the
-        # dedicated release job below handles publishing.
-        run: npm run dist
+        # dedicated release job below handles publishing. On Windows with a
+        # certificate, publisherName makes electron-updater verify that updates
+        # are signed by the same publisher.
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "Windows" ] && [ -n "$WIN_CSC_LINK" ]; then
+            npm run dist -- -c.win.publisherName="$WIN_PUBLISHER_NAME"
+          else
+            npm run dist
+          fi
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # --- macOS code signing + notarization (ignored on Windows/Linux) ---
           # electron-builder imports the base64-encoded Developer ID .p12 from
           # CSC_LINK into a temporary keychain and signs with the Hardened
-          # Runtime entitlements in build/. If these secrets are unset the mac
-          # build stays unsigned (a warning, not a failure), so the pipeline
-          # keeps working until they're configured. Required repo secrets:
+          # Runtime entitlements in build/. The step above fails the run if
+          # these are missing. Passed on macOS only, so Windows never falls
+          # back to the Apple certificate. Required repo secrets:
           #   MAC_CSC_LINK               base64 of the Developer ID .p12
           #   MAC_CSC_KEY_PASSWORD       password for that .p12
           #   APPLE_ID                   Apple ID email (notarization)
           #   APPLE_APP_SPECIFIC_PASSWORD  app-specific password
           #   APPLE_TEAM_ID              10-char Developer Team ID
-          CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
-          CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+          CSC_LINK: ${{ runner.os == 'macOS' && secrets.MAC_CSC_LINK || '' }}
+          CSC_KEY_PASSWORD: ${{ runner.os == 'macOS' && secrets.MAC_CSC_KEY_PASSWORD || '' }}
+          # --- Windows code signing (optional until a certificate exists) ---
+          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+          WIN_PUBLISHER_NAME: ${{ vars.WIN_PUBLISHER_NAME }}
           # Consumed by electron/notarize.cjs (afterSign hook).
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
@@ -146,6 +197,14 @@ jobs:
           path: dist
           merge-multiple: true
 
+      # Checksums for every published file, so downloads can be verified
+      # (especially the Windows and Linux builds, which aren't signed yet).
+      - name: Generate SHA256SUMS
+        run: |
+          cd dist
+          sha256sum *.dmg *.exe *.AppImage *.deb *.zip > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
@@ -166,6 +225,8 @@ jobs:
             | Linux | **`k8sight-linux.AppImage`** or **`k8sight-linux.deb`** |
 
             Already installed? k8sight updates itself; the other files here are what it uses to do that.
+
+            Verify a download: compare it with **`SHA256SUMS.txt`** (`shasum -a 256 <file>` on macOS/Linux, `Get-FileHash <file>` on Windows).
           generate_release_notes: true
           fail_on_unmatched_files: true
           files: |
@@ -176,3 +237,4 @@ jobs:
             dist/*.zip
             dist/latest*.yml
             dist/*.blockmap
+            dist/SHA256SUMS.txt

@@ -33,6 +33,7 @@ import { detectForeignTrivy } from './lib/trivy-detect.mjs';
 import { tokenHelperPath } from './lib/resource-path.mjs';
 import { newToken, presentedToken, scopeFor, hostAllowed, authorize } from './lib/local-auth.mjs';
 import { redactApiResponse } from './lib/redact.mjs';
+import { writePrivateFile, hardenAppFiles } from './lib/secure-fs.mjs';
 
 // node-pty powers the pod terminal (a real PTY bridged to `kubectl exec`). Load
 // it defensively so a missing/unbuildable native module never crashes the whole
@@ -386,8 +387,7 @@ function readSettings() {
 function writeSettings(patch) {
   const next = { ...readSettings(), ...patch };
   try {
-    fs.mkdirSync(SETTINGS_DIR, { recursive: true });
-    fs.writeFileSync(SETTINGS_FILE, JSON.stringify(next, null, 2), { mode: 0o600 });
+    writePrivateFile(SETTINGS_FILE, JSON.stringify(next, null, 2));
   } catch (e) { /* best-effort */ }
   return next;
 }
@@ -804,8 +804,7 @@ app.post('/api/azure/import', async (req, res) => {
         const raw = await azure.getClusterKubeconfig(c.subscriptionId, c.resourceGroup, c.name, admin);
         const kc = admin ? raw : nativizeAksExec(raw);
         const merged = mergeKubeconfigYaml(p, kc);
-        fs.mkdirSync(path.dirname(p), { recursive: true }); // persist incrementally
-        fs.writeFileSync(p, yaml.dump(merged), { mode: 0o600 });
+        writePrivateFile(p, yaml.dump(merged)); // persist incrementally; owner-only
       }
       imported.push(c.name);
     } catch (e) {
@@ -5402,7 +5401,7 @@ app.post('/mcp', async (req, res) => {
         onsessioninitialized: (id) => { mcpTransports[id] = transport; },
       });
       transport.onclose = () => { if (transport.sessionId) delete mcpTransports[transport.sessionId]; };
-      const mcp = createMcpServer({ version: getAppVersion(), allowWrite: mcpAllowWrite, apiToken: getMcpToken(), baseURL: `http://127.0.0.1:${PORT}` });
+      const mcp = createMcpServer({ version: getAppVersion(), allowWrite: mcpAllowWrite, allowSecrets: mcpAllowSecrets, apiToken: getMcpToken(), baseURL: `http://127.0.0.1:${PORT}` });
       await mcp.connect(transport);
     } else {
       return res.status(400).json({ jsonrpc: '2.0', error: { code: -32000, message: 'Bad Request: no valid session id (send an initialize request first)' }, id: null });
@@ -5628,6 +5627,8 @@ wss.on('error', handleServerError);
 // other hosts on the LAN. Set HOST=0.0.0.0 to expose it (the Docker image does
 // this so its published port works); prefer `-p 127.0.0.1:8080:3001` there.
 const HOST = process.env.HOST || '127.0.0.1';
+// Tighten permissions on credential files written by older versions.
+try { const fixed = hardenAppFiles(); if (fixed.length) console.log(`Restricted permissions on ${fixed.length} k8sight file(s) to owner-only.`); } catch { /* best-effort */ }
 server.listen(PORT, HOST, () => {
   const shown = HOST === '0.0.0.0' ? 'localhost' : HOST;
   console.log(`Server running on http://${shown}:${PORT}${HOST === '0.0.0.0' ? ' (bound 0.0.0.0)' : ''}`);

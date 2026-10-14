@@ -17,20 +17,33 @@ import { z } from 'zod';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
+import { sanitizeText, scrubSensitive, wrapUntrusted } from './lib/scrub.mjs';
 
 // The backend requires a token on every request. In-process (server.js) the
 // MCP token is passed in; the stdio bridge reads it from the app's settings
 // file (or K8SIGHT_MCP_TOKEN). Calls made with it are MCP-scoped on the
 // server: no shells or local exec, writes only when enabled, and Secret
 // values redacted unless the user opted in.
-const storedMcpToken = () => {
-  try {
-    const s = JSON.parse(fs.readFileSync(path.join(os.homedir(), '.config', 'k8s-manager', 'settings.json'), 'utf8'));
-    return typeof s.mcpToken === 'string' ? s.mcpToken : null;
-  } catch { return null; }
+const storedSettings = () => {
+  try { return JSON.parse(fs.readFileSync(path.join(os.homedir(), '.config', 'k8s-manager', 'settings.json'), 'utf8')); } catch { return {}; }
+};
+const storedMcpToken = () => (typeof storedSettings().mcpToken === 'string' ? storedSettings().mcpToken : null);
+
+// Pod logs are capped so one call can't flood an agent's context.
+const MAX_LOG_LINES = 2000;
+const MAX_LOG_CHARS = 100_000;
+const capLogs = (text) => {
+  if (typeof text !== 'string') return text;
+  let lines = text.split('\n');
+  let note = '';
+  if (lines.length > MAX_LOG_LINES) { note = `[showing the last ${MAX_LOG_LINES} of ${lines.length} lines]\n`; lines = lines.slice(-MAX_LOG_LINES); }
+  let out = lines.join('\n');
+  if (out.length > MAX_LOG_CHARS) { note = `[showing the last ${MAX_LOG_CHARS} characters]\n`; out = out.slice(-MAX_LOG_CHARS); }
+  return note + out;
 };
 
-export function createMcpServer({ baseURL, version, allowWrite, apiToken } = {}) {
+export function createMcpServer({ baseURL, version, allowWrite, allowSecrets, apiToken } = {}) {
+  if (typeof allowSecrets !== 'boolean') allowSecrets = storedSettings().mcpAllowSecrets === true;
   const base = baseURL || process.env.MCP_API_BASE || `http://127.0.0.1:${process.env.K8SIGHT_PORT || 3001}`;
   const token = apiToken || process.env.K8SIGHT_MCP_TOKEN || storedMcpToken();
   // Prefer an explicit flag (the app's persisted UI setting); fall back to the
@@ -86,9 +99,15 @@ export function createMcpServer({ baseURL, version, allowWrite, apiToken } = {})
   };
   server.k8sightTools = toolNames;
 
-  const ok = (data) => ({
-    content: [{ type: 'text', text: typeof data === 'string' ? data : JSON.stringify(data, null, 2) }],
-  });
+  // Every result is cluster data, which other people can write (logs, events,
+  // annotations...). Strip control and invisible characters, mask credentials
+  // and personal data unless raw access is allowed, and label it as untrusted
+  // so the agent treats it as data, not instructions.
+  const ok = (data) => {
+    const raw = typeof data === 'string' ? data : JSON.stringify(data, null, 2);
+    const clean = allowSecrets ? sanitizeText(raw) : scrubSensitive(sanitizeText(raw));
+    return { content: [{ type: 'text', text: wrapUntrusted(clean) }] };
+  };
   const fail = (msg) => ({ content: [{ type: 'text', text: `Error: ${msg}` }], isError: true });
   const wrap = (fn) => async (args) => {
     try { return await fn(args || {}); }
@@ -187,7 +206,7 @@ export function createMcpServer({ baseURL, version, allowWrite, apiToken } = {})
     },
   }, wrap(async ({ namespace, pod, container, tail }) => {
     const { data } = await api.get(`/api/logs/${encodeURIComponent(namespace)}/${encodeURIComponent(pod)}`, { params: { container, tail } });
-    return ok(data.logs ?? data);
+    return ok(capLogs(data.logs ?? data));
   }));
 
   server.registerTool('get_events', {
