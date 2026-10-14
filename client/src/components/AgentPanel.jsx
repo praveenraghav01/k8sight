@@ -1,5 +1,4 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { wsUrl } from '../lib/auth';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
@@ -90,10 +89,11 @@ export default function AgentPanel({ context, onOpenChange }) {
 
   const connect = (term, fit) => {
     setStatus('connecting');
+    const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
     const params = new URLSearchParams({ agent: session.agentId });
     if (session.command) params.set('command', session.command);
     if (session.prompt) params.set('prompt', session.prompt);
-    const ws = new WebSocket(wsUrl('/ws/exec', params));
+    const ws = new WebSocket(`${proto}://${window.location.host}/ws/exec?${params.toString()}`);
     wsRef.current = ws;
     ws.onopen = () => { setStatus('connected'); try { fit.fit(); } catch { /* ignore */ } ws.send(JSON.stringify({ type: 'resize', cols: term.cols, rows: term.rows })); term.focus(); };
     ws.onmessage = (e) => term.write(e.data);

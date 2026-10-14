@@ -78,7 +78,7 @@ k8sight is a **desktop UI for clusters you already have**: closest in spirit to 
 | Built-in security scan (image CVEs, config, RBAC) | ✅ *bundled Trivy* | via add-ons | ❌ | ❌ |
 | Cost view (OpenCost/Kubecost) | ✅ | via add-ons | ❌ | ❌ |
 | Built-in AI assistant | ✅ *any OpenAI-compatible model* | ✅ *Liz, Rancher Prime* | ✅ *Lens Prism* | ❌ |
-| MCP server for your own agents | ✅ *42 read + 12 write tools* | ✅ *Rancher Prime* | ✅ *since March 2026* | ❌ |
+| MCP server for your own agents | ✅ *43 read + 11 write tools* | ✅ *Rancher Prime* | ✅ *since March 2026* | ❌ |
 | GitOps views | ✅ *Argo CD, Flux, Flagger* | Fleet | Flux | ❌ |
 | Try with no cluster (demo mode) | ✅ | ❌ | ❌ | ❌ |
 | One-click cloud onboarding (no CLI) | ✅ *EKS, AKS, GKE* | ✅ | AWS & Azure | ❌ |
@@ -118,19 +118,18 @@ npm run dist        # builds the UI and packages for the current OS → release/
 
 ### Docker
 
-The image bundles Node, `kubectl`, `kubelogin` and Trivy, and serves the UI + API on port `3001` as the unprivileged `node` user. Build it from this repository (no current image is published):
+The image bundles Node, `kubectl`, and `kubelogin`, and serves the UI + API on port `3001` as the unprivileged `node` user.
 
 ```bash
-docker build -t k8sight .
 docker run --rm -p 127.0.0.1:8080:3001 \
   -v "$HOME/.kube:/home/node/.kube:ro" \
-  k8sight
+  praveenraghav/k8s-manager-ui:latest
 ```
 
-Open the access link from the container log (`docker logs <container>`): `http://localhost:3001/?token=…`. Use your published port, e.g. `http://localhost:8080/?token=…`. A new token is generated on every start.
+Open **http://localhost:8080**.
 
 > [!WARNING]
-> Publish to `127.0.0.1` to keep the API off your network. If you expose it beyond loopback (`-p 8080:3001`, or behind a proxy), list the hostname in `ALLOWED_HOSTS`; the access token still protects it, but treat it like any credential (see [Security](#security)).
+> Publishing to `127.0.0.1` keeps the unauthenticated API off your network. Expose it (`-p 8080:3001` / `HOST=0.0.0.0`) only behind an authenticating proxy (see [Security](#security)).
 
 <details>
 <summary>Docker notes (local clusters, OIDC)</summary>
@@ -148,7 +147,7 @@ npm install && npm install --prefix client
 npm run dev         # UI on http://localhost:3000, API on :3001
 ```
 
-For a single-port production run: `npm run build && npm start`, then open the **access link** the server prints (`http://127.0.0.1:3001/?token=…`). In dev, open the same link on port 3000.
+For a single-port production run: `npm run build && npm start`, then open **http://localhost:3001**.
 
 ## Usage
 
@@ -160,28 +159,25 @@ For a single-port production run: `npm run build && npm start`, then open the **
 
 ## Connect AI agents (MCP)
 
-The app is also an [MCP](https://modelcontextprotocol.io) server exposing the same capabilities as the UI: **42 read tools** (contexts, resources, logs, events, topology, metrics, Helm, CRDs, costs, Security Center findings, Argo CD, Flux and Flagger) plus **12 write tools** (`switch_context`, `apply_yaml`, `delete_resource`, `scale_workload`, `rollout_restart`, `sync_argocd_app`, `refresh_argocd_app`, `reconcile_flux_resource`, `suspend_flux_resource`, `restart_canary`, `suspend_canary`, `set_canary_skip_analysis`). Tools carry MCP `readOnlyHint` / `destructiveHint` annotations so clients can ask before changes.
+The app is also an [MCP](https://modelcontextprotocol.io) server exposing the same capabilities as the UI: **43 read tools** (contexts, resources, logs, events, topology, metrics, Helm, CRDs, costs, Security Center findings, Argo CD, Flux and Flagger) plus **11 write tools** (`apply_yaml`, `delete_resource`, `scale_workload`, `rollout_restart`, `sync_argocd_app`, `refresh_argocd_app`, `reconcile_flux_resource`, `suspend_flux_resource`, `restart_canary`, `suspend_canary`, `set_canary_skip_analysis`).
 
 > [!NOTE]
-> - Agents need the **MCP access token** from **Preferences → MCP Server** (copy the ready-made command there). It only allows MCP tools: no shells, no local commands, and no changes unless write access is on. **Rotate** it to disconnect every configured agent.
-> - Write tools are **off by default**. Enable them in **Preferences → MCP Server → Write access**, or start with `MCP_ALLOW_WRITE=1`. Reconnect the agent to pick up the new tool set.
-> - **Secret values are redacted** for agents (`<redacted>`), including Secret-looking Helm values. Raw values can be allowed in **Preferences → MCP Server → Secret values**.
+> Write tools are **off by default**. Enable them in **Preferences → MCP Server → Write access**, or start with `MCP_ALLOW_WRITE=1`. Reconnect the agent to pick up the new tool set.
 
-**HTTP** (recommended): while the app runs, agents connect to `http://localhost:3001/mcp` with the token:
+**HTTP** (recommended): while the app runs, agents connect to `http://localhost:3001/mcp`:
 
 ```bash
-claude mcp add --transport http k8sight http://localhost:3001/mcp \
-  --header "Authorization: Bearer <token from Preferences → MCP Server>"
+claude mcp add --transport http k8sight http://localhost:3001/mcp
 ```
 
-**Stdio**: for agents launched by command; the app must be running. The bridge reads the token from the app's settings automatically (or `K8SIGHT_MCP_TOKEN`):
+**Stdio**: for agents launched by command; the app must be running:
 
 ```jsonc
 {
   "mcpServers": {
     "k8sight": {
       "command": "node",
-      "args": ["/absolute/path/to/k8sight/mcp-stdio.js"],
+      "args": ["/absolute/path/to/k8s-manager-ui/mcp-stdio.js"],
       "env": { "MCP_API_BASE": "http://127.0.0.1:3001", "MCP_ALLOW_WRITE": "0" }
     }
   }
@@ -202,24 +198,15 @@ All tools act on the **currently selected context**. Run the bridge standalone w
 | `MCP_API_BASE` | API base URL the stdio MCP bridge targets | `http://127.0.0.1:3001` |
 | `HOST` | Interface the backend binds | `127.0.0.1` (Docker sets `0.0.0.0`) |
 | `ALLOWED_ORIGINS` | Extra browser origins allowed to call `/api` and `/mcp` (comma-separated) | none |
-| `ALLOWED_HOSTS` | Extra `Host` names accepted besides `localhost` / `127.0.0.1` (e.g. a reverse proxy) | none |
-| `K8SIGHT_API_TOKEN` | Fixed UI access token instead of a random one per start (development only) | random |
-| `K8SIGHT_MCP_TOKEN` | MCP token for the stdio bridge (otherwise read from the app's settings) | from settings |
-| `K8SIGHT_PORT` | Backend port | `3001` |
 
 ## Security
 
 > [!IMPORTANT]
-> The API and the `/ws/exec` shell carry your kubeconfig's full read/write access, so every request must carry an **access token**. Other local processes, other users on the machine and web pages don't have it.
+> The API and the `/ws/exec` shell carry your kubeconfig's full read/write access with **no per-request auth**, so the backend is locked to the local machine.
 
-- **Access token on everything**: every `/api`, `/mcp` and `/ws/exec` request needs a token. The desktop app creates a new one each launch and hands it only to its own window; browser/Docker runs print it in the startup link.
-- **Separate, restricted MCP token**: agents use their own token. It can't open shells, run local commands, change k8sight's settings or read the assistant's API key, and can only change the cluster when write access is on. Secret values are redacted for it by default.
-- **Host allow-list**: only `localhost` / `127.0.0.1` (plus `ALLOWED_HOSTS`) are accepted, which blocks DNS-rebinding attacks from web pages.
 - **Loopback by default**: binds `127.0.0.1`; set `HOST=0.0.0.0` only to expose it deliberately (the Docker image does this so its published port works).
-- **Same-origin only**: a page on another origin can't drive the API or the exec WebSocket.
-- **AI data handling**: the built-in assistant only talks to `https://` endpoints (plain `http://` only for a model on localhost). Before anything is sent to the model or to MCP agents, k8sight strips escape codes and invisible characters, masks credentials and personal data (private keys, tokens, cloud keys, passwords in URLs and settings, emails, card numbers, secret-looking env values), and marks cluster text as untrusted data so it can't pass as instructions. Masking is pattern-based, so treat logs as potentially sensitive anyway.
-- **Credential files are owner-only**: kubeconfigs, `~/.aws/credentials` and k8sight's own config are written `0600` (folders `0700`), and older files are tightened on startup.
-- **Verified downloads**: Trivy and Helm (and kubectl, kubelogin and Trivy in the Docker image) are pinned versions checked against SHA-256 hashes committed in this repository. Release builds fail without macOS signing, and every release includes `SHA256SUMS.txt`.
+- **Same-origin only**: a page on another origin can't drive the API or the exec WebSocket. Non-browser MCP clients are unaffected.
+- **When exposing it**, publish to loopback and/or put an authenticating proxy in front, and add proxy origins via `ALLOWED_ORIGINS`.
 
 ## Architecture
 

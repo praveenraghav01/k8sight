@@ -508,18 +508,17 @@
       <h3>Desktop app (recommended)</h3>
       <p>Download the build for your OS from the <a href="index.html#download">downloads section</a> or the <a href="https://github.com/praveenraghav01/k8sight/releases" target="_blank" rel="noopener">GitHub releases</a> page: macOS (Apple Silicon &amp; Intel), Windows and Linux. It bundles everything it needs; open it and it reads your <code>~/.kube/config</code>.</p>
       <h3>Docker</h3>
-      <p>Build the image from the repository and mount your kubeconfig. Publishing to <code>127.0.0.1</code> keeps the API off your network (see <a href="#security">Security</a>):</p>
-      <pre><code>docker build -t k8sight .
-docker run --rm -p 127.0.0.1:8080:3001 \
+      <p>Run the published image and mount your kubeconfig. Publishing to <code>127.0.0.1</code> keeps the API off your network (see <a href="#security">Security</a>):</p>
+      <pre><code>docker run --rm -p 127.0.0.1:8080:3001 \
   -v "$HOME/.kube:/home/node/.kube:ro" \
-  k8sight</code></pre>
-      <p>Then open the access link from the container log (<code>docker logs &lt;container&gt;</code>) on your published port, e.g. <code>http://localhost:8080/?token=…</code>. A new token is created on every start.</p>
+  praveenraghav/k8s-manager-ui:latest</code></pre>
+      <p>Then open <a href="http://localhost:8080" target="_blank" rel="noopener">http://localhost:8080</a>.</p>
       <h3>From source</h3>
       <pre><code>git clone https://github.com/praveenraghav01/k8sight
 cd k8sight
 npm install &amp;&amp; (cd client &amp;&amp; npm install)
 npm run build
-npm start          # prints the access link: http://127.0.0.1:3001/?token=…</code></pre>
+npm start          # http://localhost:3001</code></pre>
       <p>Prerequisites: <strong>Node 18+</strong>. A local <code>kubectl</code>/<code>helm</code> is optional. It&rsquo;s used only for a few features (Helm, CRDs, ArgoCD, the in-pod shell); core browsing talks to the API server directly.</p>
     </article>
 
@@ -529,7 +528,7 @@ npm start          # prints the access link: http://127.0.0.1:3001/?token=…</c
       <div class="tagline">Desktop, single-port web server, or Docker.</div>
       <ul>
         <li><strong>Desktop app</strong>: launch it like any app; it runs the backend internally and serves the UI. Best for local clusters that listen on <code>127.0.0.1</code>.</li>
-        <li><strong>Web (single port)</strong>: <code>npm start</code> serves the built UI + API on port 3001; open the <strong>access link</strong> it prints (<code>/?token=…</code>).</li>
+        <li><strong>Web (single port)</strong>: <code>npm start</code> serves the built UI + API on <strong>http://localhost:3001</strong>.</li>
         <li><strong>Dev (hot reload)</strong>: <code>npm run dev</code> runs the API on 3001 and Vite on <strong>3000</strong> (which proxies <code>/api</code> and <code>/ws</code>).</li>
         <li><strong>Docker</strong>: see <a href="#install">Install</a>; the image bundles Node, <code>kubectl</code> and <code>kubelogin</code>.</li>
       </ul>
@@ -751,7 +750,7 @@ npm start          # prints the access link: http://127.0.0.1:3001/?token=…</c
       <pre><code>docker run --rm -p 127.0.0.1:8080:3001 \
   --add-host=host.docker.internal:host-gateway \
   -v "$HOME/.kube:/home/node/.kube:ro" \
-  k8sight</code></pre>
+  praveenraghav/k8s-manager-ui:latest</code></pre>
       <p>…and set the context's <code>server:</code> to <code>https://host.docker.internal:&lt;port&gt;</code> with <code>insecure-skip-tls-verify: true</code>.</p>
       <h3>OIDC / kubelogin clusters</h3>
       <p>Contexts that authenticate with <code>kubectl oidc-login</code> (kubelogin) work, and the Docker image bundles the plugin. Since a container can't open a browser, log in on the host first (<code>kubectl get nodes</code> triggers the browser login and caches a token under <code>~/.kube/cache/oidc-login/</code>), then mount <code>~/.kube</code> <strong>read-write</strong> so kubelogin can refresh from inside the container.</p>
@@ -893,13 +892,6 @@ export GOOGLE_CLIENT_SECRET='GOCSPX-...'</code></pre>
       <div class="tagline">A read-only, tool-using debugging session. Bring your own LLM.</div>
       <p>The built-in assistant is a <strong>read-only</strong>, tool-using session over live cluster data: it can read logs, events and resource specs to help debug, but it can't change anything. Connect <strong>any OpenAI-compatible endpoint</strong> (TrueFoundry, OpenAI, Azure OpenAI, LiteLLM, …) in <strong>Preferences → AI</strong> or via env vars. <strong>Secrets are redacted</strong> before anything leaves the app.</p>
       <p>Right-click a resource (or use the drawer) → <strong>Ask AI</strong> to hand it to the assistant for a summary, event/log analysis, or fix suggestions.</p>
-      <h3>What it sends, and how it's protected</h3>
-      <ul>
-        <li>Your question, the current cluster context, and the data it looks up (resource details, events, pod logs) go to the endpoint you configured, and nowhere else.</li>
-        <li>Before sending, k8sight strips escape codes and invisible characters, and masks Secret values, credentials (private keys, tokens, cloud keys, passwords in URLs and settings), emails, card numbers and secret-looking env values. Masking is pattern-based, so logs can still contain other personal data.</li>
-        <li>Cluster text is marked as untrusted data, so instructions hidden in logs or annotations aren't treated as commands. MCP agents get the same treatment.</li>
-        <li>Endpoints must use <code>https://</code>; plain <code>http://</code> is only allowed for a model running on this machine (e.g. Ollama on localhost).</li>
-      </ul>
     </article>
 
     <!-- ============ Coding agents ============ -->
@@ -915,9 +907,7 @@ export GOOGLE_CLIENT_SECRET='GOCSPX-...'</code></pre>
       <div class="tagline">Let any MCP-compatible agent drive your connected cluster.</div>
       <p>k8sight is also an <strong>MCP server</strong>: it exposes its Kubernetes capabilities as tools so any MCP client (Claude Code, Claude Desktop, Cursor, …) can operate the cluster it's connected to, using the same kubeconfig and selected context. It's served over <strong>Streamable HTTP</strong> at <code>/mcp</code> and over <strong>stdio</strong>.</p>
       <p>Add it to Claude Code:</p>
-      <pre><code>claude mcp add --transport http k8sight http://localhost:3001/mcp \
-  --header "Authorization: Bearer &lt;token from Preferences → MCP Server&gt;"</code></pre>
-      <p>Agents need the <strong>MCP access token</strong> shown in <strong>Preferences → MCP Server</strong> (with ready-to-copy commands). It only allows MCP tools: no shells, no local commands, and no changes unless write access is on. <strong>Rotate</strong> it to disconnect every configured agent. The stdio bridge (<code>npm run mcp</code>) reads it automatically.</p>
+      <pre><code>claude mcp add --transport http k8sight http://localhost:3001/mcp</code></pre>
       <h3>What agents can use</h3>
       <ul>
         <li><strong>Cluster</strong>: contexts, namespaces, every resource kind, YAML, logs, events, topology, nodes and live metrics, storage, RBAC, Helm releases and custom resources.</li>
@@ -927,8 +917,7 @@ export GOOGLE_CLIENT_SECRET='GOCSPX-...'</code></pre>
         <li><strong>Flux CD</strong>: an overview of what isn&rsquo;t ready and recent events, every Flux kind and one resource in full; reconcile, suspend and resume.</li>
         <li><strong>Flagger</strong>: canaries with phase, strategy and progress, one canary in full (metrics, webhooks, generated objects, events); restart, suspend and skip analysis.</li>
       </ul>
-      <p><strong>Read tools are always available; write tools (including switching cluster context) are off by default</strong>: enable them with <code>MCP_ALLOW_WRITE=1</code> (or the Preferences toggle) only when you want an agent to be able to change the cluster. Tools carry MCP <code>readOnlyHint</code> / <code>destructiveHint</code> annotations.</p>
-      <p><strong>Secret values are redacted for agents</strong> (<code>&lt;redacted&gt;</code>), including Secret-looking Helm values, because agents send what they read to their AI provider. Raw values can be allowed in <strong>Preferences → MCP Server → Secret values</strong>.</p>
+      <p><strong>Read tools are always available; write/destructive tools are off by default</strong>: enable them with <code>MCP_ALLOW_WRITE=1</code> (or the Preferences toggle) only when you want an agent to be able to mutate the cluster.</p>
     </article>
 
     <!-- ============ Security ============ -->
@@ -951,7 +940,7 @@ export GOOGLE_CLIENT_SECRET='GOCSPX-...'</code></pre>
             <tr><th scope="row">Built-in security scan (CVEs, config, RBAC)</th><td class="pickcol yes">✓<small>bundled Trivy</small></td><td>via add-ons</td><td class="no">✕</td><td class="no">✕</td></tr>
             <tr><th scope="row">Cost view (OpenCost/Kubecost)</th><td class="pickcol yes">✓</td><td>via add-ons</td><td class="no">✕</td><td class="no">✕</td></tr>
             <tr><th scope="row">Built-in AI assistant</th><td class="pickcol yes">✓<small>any OpenAI-compatible model</small></td><td class="yes">✓<small>Liz, Rancher Prime</small></td><td class="yes">✓<small>Lens Prism</small></td><td class="no">✕</td></tr>
-            <tr><th scope="row">MCP server for your own agents</th><td class="pickcol yes">✓<small>42 read + 12 write tools</small></td><td class="yes">✓<small>Rancher Prime</small></td><td class="yes">✓<small>since March 2026</small></td><td class="no">✕</td></tr>
+            <tr><th scope="row">MCP server for your own agents</th><td class="pickcol yes">✓<small>43 read + 11 write tools</small></td><td class="yes">✓<small>Rancher Prime</small></td><td class="yes">✓<small>since March 2026</small></td><td class="no">✕</td></tr>
             <tr><th scope="row">GitOps views</th><td class="pickcol yes">✓<small>Argo CD, Flux, Flagger</small></td><td>Fleet</td><td>Flux</td><td class="no">✕</td></tr>
             <tr><th scope="row">Try with no cluster (demo mode)</th><td class="pickcol yes">✓</td><td class="no">✕</td><td class="no">✕</td><td class="no">✕</td></tr>
             <tr><th scope="row">One-click cloud onboarding (no CLI)</th><td class="pickcol yes">✓<small>EKS, AKS, GKE</small></td><td class="yes">✓</td><td>AWS &amp; Azure</td><td class="no">✕</td></tr>
@@ -970,15 +959,12 @@ export GOOGLE_CLIENT_SECRET='GOCSPX-...'</code></pre>
     <!-- ============ Security ============ -->
     <article id="security">
       <h2>Security</h2>
-      <div class="tagline">Every request to the local API needs an access token.</div>
-      <p>The API and the <code>/ws/exec</code> shell carry your kubeconfig's full read/write access, so nothing reaches them without a token:</p>
+      <div class="tagline">The local API is locked to your machine.</div>
+      <p>The API and the <code>/ws/exec</code> shell carry your kubeconfig's full read/write access with no per-request auth, so the backend is locked down to the local machine:</p>
       <ul>
-        <li><strong>Access token on everything</strong>: every <code>/api</code>, <code>/mcp</code> and <code>/ws/exec</code> request needs one. The desktop app creates a new token each launch and gives it only to its own window, so other local programs, other users on the machine and web pages can't use the API. Browser and Docker runs print it in the startup link.</li>
-        <li><strong>Restricted MCP token</strong>: agents get their own token that can't open shells, run local commands, change k8sight's settings or read the assistant's key, and can only change the cluster when write access is on.</li>
-        <li><strong>Host allow-list</strong>: only <code>localhost</code> / <code>127.0.0.1</code> (plus <code>ALLOWED_HOSTS</code>) are accepted, which blocks DNS-rebinding attacks from web pages.</li>
         <li><strong>Loopback by default</strong>: it binds <code>127.0.0.1</code>, so other hosts on your network can't reach it. Set <code>HOST=0.0.0.0</code> to expose it deliberately (the Docker image does this so its published port works).</li>
-        <li><strong>Same-origin only</strong>: a browser page on another origin can't drive the API or the exec WebSocket (a strict origin check, not permissive CORS).</li>
-        <li><strong>When exposing it</strong> (Docker, or <code>HOST=0.0.0.0</code>), publish to loopback and/or put it behind an authenticating proxy, e.g. <code>-p 127.0.0.1:8080:3001</code>. Add the proxy's hostname to <code>ALLOWED_HOSTS</code> and its origin to <code>ALLOWED_ORIGINS</code>.</li>
+        <li><strong>Same-origin only</strong>: a browser page on another origin can't drive the API or the exec WebSocket (a strict origin check, not permissive CORS). Non-browser MCP clients are unaffected.</li>
+        <li><strong>When exposing it</strong> (Docker, or <code>HOST=0.0.0.0</code>), publish to loopback and/or put it behind an authenticating proxy, e.g. <code>-p 127.0.0.1:8080:3001</code>. Add proxy origins via <code>ALLOWED_ORIGINS</code>.</li>
       </ul>
       <div class="callout">
         <span class="cico"><svg aria-hidden="true" focusable="false" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg></span>
@@ -996,9 +982,6 @@ export GOOGLE_CLIENT_SECRET='GOCSPX-...'</code></pre>
         <li><code>ALLOWED_ORIGINS</code>: extra browser origins allowed to call <code>/api</code> and <code>/mcp</code>, comma-separated (for a reverse proxy).</li>
         <li><code>LLM_BASE_URL</code> / <code>LLM_API_KEY</code> / <code>LLM_MODEL</code>: connect the built-in assistant to an OpenAI-compatible endpoint (also settable in Preferences → AI).</li>
         <li><code>MCP_ALLOW_WRITE</code>: enable MCP write/destructive tools (default <code>0</code>, read-only).</li>
-        <li><code>ALLOWED_HOSTS</code>: extra <code>Host</code> names accepted besides <code>localhost</code>/<code>127.0.0.1</code>, comma-separated (for a reverse proxy).</li>
-        <li><code>K8SIGHT_MCP_TOKEN</code>: MCP token for the stdio bridge (otherwise read from the app's settings).</li>
-        <li><code>K8SIGHT_PORT</code>: backend port (default <code>3001</code>). <code>K8SIGHT_API_TOKEN</code>: fixed UI token instead of a random one per start (development only).</li>
         <li><code>MCP_API_BASE</code>: API base the stdio MCP bridge targets (default <code>http://127.0.0.1:3001</code>).</li>
       </ul>
       <p>The backend listens on port <strong>3001</strong>; map it to any host port with Docker (<code>-p &lt;host&gt;:3001</code>).</p>
@@ -1024,7 +1007,7 @@ export GOOGLE_CLIENT_SECRET='GOCSPX-...'</code></pre>
       <div class="tagline">What's new in each version. Installers for every release are on the <a href="https://github.com/praveenraghav01/k8sight/releases" target="_blank" rel="noopener">Releases</a> page.</div>
 
       <h3>v1.7.0 <span class="rel-date">Oct 11, 2026</span>: Flux CD, Flagger &amp; a production guard</h3>
-      <p>GitOps comes to k8sight: Flux CD and Flagger, a production-cluster guard, and a much larger MCP toolset for AI agents.</p>
+      <p>GitOps comes to k8sight — Flux CD and Flagger, a production-cluster guard, and a much larger MCP toolset for AI agents.</p>
       <ul>
         <li><strong>Flux CD, built in</strong>: an auto-detected Flux section with a health dashboard, per-kind lists (Kustomizations, Helm releases, Git/OCI/Helm repositories, buckets, charts, alerts, providers and receivers) and a detail drawer with reconciliation status, source, managed resources and events. Reconcile, suspend/resume, delete and Ask AI from the drawer.</li>
         <li><strong>Flagger progressive delivery</strong>: a canary list with phase, strategy (Canary / A&middot;B / Blue-Green / mirroring), target and progress, plus a rollout-timeline drawer (analysis &rarr; approval &rarr; promote &rarr; finalise &rarr; done, with a rolled-back state), metrics, webhooks and alerts. Restart, suspend/resume, skip analysis or delete.</li>

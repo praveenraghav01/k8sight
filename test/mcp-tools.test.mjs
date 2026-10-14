@@ -9,7 +9,6 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { createMcpServer } from '../mcp.js';
 import { handle } from '../demo.js';
-import { unwrapUntrusted } from '../lib/scrub.mjs';
 
 let httpServer;
 let baseURL;
@@ -41,9 +40,7 @@ const connect = async (allowWrite) => {
 
 const call = async (client, name, args = {}) => {
   const r = await client.callTool({ name, arguments: args });
-  const wrapped = r.content?.[0]?.text || '';
-  assert.ok(wrapped.includes('<untrusted-cluster-data>'), `${name} output is marked as untrusted`);
-  const text = unwrapUntrusted(wrapped);
+  const text = r.content?.[0]?.text || '';
   assert.ok(!r.isError, `${name} failed: ${text}`);
   return JSON.parse(text.startsWith('{') || text.startsWith('[') ? text : JSON.stringify(text));
 };

@@ -13,13 +13,12 @@ import fs from 'fs';
 import path from 'path';
 import { execFileSync } from 'child_process';
 import { fileURLToPath } from 'url';
-import { PINNED, verifyAsset } from '../lib/verify-download.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const BIN = path.join(ROOT, 'bin');
 // Pinned so every build ships the same Helm (reproducible, no surprise major
 // upgrades). Bump deliberately after testing chart search/install against it.
-const PINNED_VERSION = PINNED.helm.version; // asset hashes: lib/pinned-tools.json
+const PINNED_VERSION = '4.3.0';
 
 // helm release archives (https://github.com/helm/helm/releases). Each archive
 // nests the binary under `<os>-<arch>/helm[.exe]`; we flatten it to bin/helm.
@@ -60,13 +59,7 @@ async function fetchOne(key, version, dir) {
   console.log(`↓ ${key}: ${url}`);
   const r = await fetch(url, { redirect: 'follow' });
   if (!r.ok) throw new Error(`download failed for ${key} (${r.status})`);
-  const data = Buffer.from(await r.arrayBuffer());
-  const { verifiedBy } = await verifyAsset({
-    tool: 'helm', version, asset, data,
-    fetchPublished: async () => (await fetch(`${url}.sha256sum`)).text(),
-  });
-  if (verifiedBy !== 'pinned') console.warn(`! helm ${version} is not the pinned version; verified against its published checksum only`);
-  fs.writeFileSync(archive, data);
+  fs.writeFileSync(archive, Buffer.from(await r.arrayBuffer()));
   // The binary lives at `<slug>/helm[.exe]` inside the archive; --strip-components
   // flattens it straight into `dir`. bsdtar/libarchive handles both .tar.gz and .zip.
   const member = `${t.slug}/${t.out}`;
@@ -75,7 +68,7 @@ async function fetchOne(key, version, dir) {
     : ['-xzf', archive, '-C', dir, '--strip-components=1', member]);
   fs.chmodSync(outPath, 0o755);
   fs.unlinkSync(archive);
-  console.log(`✓ ${key} → ${path.relative(ROOT, outPath)} (sha256 verified)`);
+  console.log(`✓ ${key} → ${path.relative(ROOT, outPath)}`);
 }
 
 async function main() {

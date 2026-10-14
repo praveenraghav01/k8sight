@@ -13,7 +13,6 @@ import crypto from 'crypto';
 import yaml from 'js-yaml';
 import { fileURLToPath } from 'url';
 import { tokenHelperPath } from './lib/resource-path.mjs';
-import { writePrivateFile } from './lib/secure-fs.mjs';
 import { GOOGLE_TOKEN_URI, assertGoogleTokenUri } from './lib/google-token-uri.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -62,7 +61,8 @@ const b64url = (buf) => Buffer.from(buf).toString('base64url');
 
 // ---- stored credentials ---------------------------------------------------
 function saveCreds(obj) {
-  writePrivateFile(CREDS_FILE, JSON.stringify(obj, null, 2));
+  fs.mkdirSync(CONFIG_DIR, { recursive: true });
+  fs.writeFileSync(CREDS_FILE, JSON.stringify(obj, null, 2), { mode: 0o600 });
   return CREDS_FILE;
 }
 // Credentials this module stored itself, ignoring the ADC fallback.
@@ -269,8 +269,8 @@ export function writeCluster({ name, location, project, endpoint, ca, alias }) {
     },
   });
   upsert(doc.contexts, ctxName, { name: ctxName, context: { cluster: ctxName, user: ctxName } });
-  // Kubeconfigs hold cluster credentials: always owner-only (0600).
-  writePrivateFile(p, yaml.dump(doc));
+  fs.mkdirSync(path.dirname(p), { recursive: true });
+  fs.writeFileSync(p, yaml.dump(doc), 'utf8');
   // gcloud names its entries exactly as we do, so an import can replace the
   // auth of a context the user already relies on. An entry we wrote ourselves
   // is not worth reporting; anybody else's is.

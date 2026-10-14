@@ -16,7 +16,6 @@ const os = require('os');
 const fs = require('fs');
 const http = require('http');
 const { spawn, execFileSync } = require('child_process');
-const crypto = require('crypto');
 
 // electron-updater is optional at runtime (only wired for packaged Win/Linux).
 let autoUpdater = null;
@@ -28,12 +27,6 @@ const RELEASES_URL = 'https://github.com/praveenraghav01/k8sight/releases/latest
 
 let serverProcess = null;
 let mainWindow = null;
-
-// Per-launch API token. The backend requires it on every API/WebSocket call;
-// only this window receives it (over IPC, below), so other local processes,
-// other OS users and web pages can't drive the backend. K8SIGHT_API_TOKEN lets
-// a developer share one token with a separately started `npm run dev` server.
-const API_TOKEN = process.env.K8SIGHT_API_TOKEN || crypto.randomBytes(32).toString('hex');
 
 // --- 1. PATH repair -------------------------------------------------------
 // Ask the user's login shell for its PATH, then union with the usual GUI-app
@@ -98,7 +91,6 @@ function startServer(fixedPath) {
         ...process.env,
         PATH: fixedPath,
         NODE_ENV: 'production',
-        K8SIGHT_API_TOKEN: API_TOKEN,
       },
       stdio: ['ignore', 'pipe', 'pipe'],
     });
@@ -151,18 +143,6 @@ function pingServer() {
       req.destroy();
       resolve(false);
     });
-  });
-}
-
-// True only if the server on the port is *ours*: it accepts this launch's token.
-function serverAcceptsToken() {
-  return new Promise((resolve) => {
-    const req = http.get(`${SERVER_URL}/api/version`, { headers: { 'X-K8sight-Token': API_TOKEN } }, (res) => {
-      res.resume();
-      resolve(res.statusCode === 200);
-    });
-    req.on('error', () => resolve(false));
-    req.setTimeout(1500, () => { req.destroy(); resolve(false); });
   });
 }
 
@@ -232,17 +212,11 @@ function createWindow() {
 async function boot() {
   createWindow();
 
-  // Something already serving on the port is only reused if it accepts this
-  // launch's token (e.g. `npm run dev` started with the same K8SIGHT_API_TOKEN).
-  // Never load an unknown process into the window: it would receive the token.
+  // If a backend is already serving on the port (e.g. `npm run dev`, or a
+  // second launch), reuse it instead of spawning a duplicate that would fail
+  // to bind the port and exit.
   if (await pingServer()) {
-    if (await serverAcceptsToken()) {
-      if (mainWindow) mainWindow.loadURL(SERVER_URL);
-      return;
-    }
-    dialog.showErrorBox('k8sight',
-      `Port ${BACKEND_PORT} is already in use by another process. Quit it and relaunch k8sight.`);
-    app.quit();
+    if (mainWindow) mainWindow.loadURL(SERVER_URL);
     return;
   }
 
@@ -251,7 +225,7 @@ async function boot() {
   const ready = await waitForServer();
   if (!mainWindow) return; // window closed while we waited
 
-  if (ready && await serverAcceptsToken()) {
+  if (ready) {
     mainWindow.loadURL(SERVER_URL);
   } else {
     dialog.showErrorBox(
@@ -328,14 +302,6 @@ function canAutoUpdate() {
 
 // IPC bridge for the Preferences UI (see electron/preload.cjs). Lets the renderer
 // read and change the auto-update preference the menu checkbox also drives.
-// The renderer asks for the API token synchronously at startup (preload).
-// Only answer our own window, and only for pages served by our backend.
-ipcMain.on('api:token', (event) => {
-  const url = event.senderFrame?.url || '';
-  const ours = mainWindow && event.sender === mainWindow.webContents && url.startsWith(`${SERVER_URL}/`);
-  event.returnValue = ours ? API_TOKEN : null;
-});
-
 ipcMain.handle('updater:get', () => ({ autoCheck: autoCheckEnabled(), supported: canAutoUpdate() }));
 ipcMain.handle('updater:set', (_e, on) => {
   setAutoCheck(on);

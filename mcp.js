@@ -14,38 +14,9 @@
 // ============================================================
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
-import fs from 'fs';
-import os from 'os';
-import path from 'path';
-import { sanitizeText, scrubSensitive, wrapUntrusted } from './lib/scrub.mjs';
 
-// The backend requires a token on every request. In-process (server.js) the
-// MCP token is passed in; the stdio bridge reads it from the app's settings
-// file (or K8SIGHT_MCP_TOKEN). Calls made with it are MCP-scoped on the
-// server: no shells or local exec, writes only when enabled, and Secret
-// values redacted unless the user opted in.
-const storedSettings = () => {
-  try { return JSON.parse(fs.readFileSync(path.join(os.homedir(), '.config', 'k8s-manager', 'settings.json'), 'utf8')); } catch { return {}; }
-};
-const storedMcpToken = () => (typeof storedSettings().mcpToken === 'string' ? storedSettings().mcpToken : null);
-
-// Pod logs are capped so one call can't flood an agent's context.
-const MAX_LOG_LINES = 2000;
-const MAX_LOG_CHARS = 100_000;
-const capLogs = (text) => {
-  if (typeof text !== 'string') return text;
-  let lines = text.split('\n');
-  let note = '';
-  if (lines.length > MAX_LOG_LINES) { note = `[showing the last ${MAX_LOG_LINES} of ${lines.length} lines]\n`; lines = lines.slice(-MAX_LOG_LINES); }
-  let out = lines.join('\n');
-  if (out.length > MAX_LOG_CHARS) { note = `[showing the last ${MAX_LOG_CHARS} characters]\n`; out = out.slice(-MAX_LOG_CHARS); }
-  return note + out;
-};
-
-export function createMcpServer({ baseURL, version, allowWrite, allowSecrets, apiToken } = {}) {
-  if (typeof allowSecrets !== 'boolean') allowSecrets = storedSettings().mcpAllowSecrets === true;
-  const base = baseURL || process.env.MCP_API_BASE || `http://127.0.0.1:${process.env.K8SIGHT_PORT || 3001}`;
-  const token = apiToken || process.env.K8SIGHT_MCP_TOKEN || storedMcpToken();
+export function createMcpServer({ baseURL, version, allowWrite } = {}) {
+  const base = baseURL || process.env.MCP_API_BASE || `http://127.0.0.1:${process.env.PORT || 3001}`;
   // Prefer an explicit flag (the app's persisted UI setting); fall back to the
   // MCP_ALLOW_WRITE env var when not supplied (e.g. `npm run mcp` standalone).
   if (typeof allowWrite !== 'boolean') {
@@ -64,7 +35,7 @@ export function createMcpServer({ baseURL, version, allowWrite, allowSecrets, ap
     }
     const r = await fetch(url, {
       method,
-      headers: { ...(body ? { 'Content-Type': 'application/json' } : {}), ...(token ? { 'X-K8sight-Token': token } : {}) },
+      headers: body ? { 'Content-Type': 'application/json' } : {},
       body: body ? JSON.stringify(body) : undefined,
       signal: AbortSignal.timeout(30000),
     });
@@ -84,30 +55,9 @@ export function createMcpServer({ baseURL, version, allowWrite, allowSecrets, ap
     version: version || process.env.APP_VERSION || '1.2.0',
   });
 
-  // Record every tool (for Preferences) and annotate it so MCP clients can tell
-  // read-only tools from ones that change things and prompt accordingly.
-  const toolNames = { read: [], write: [] };
-  let registeringWrites = false;
-  const DESTRUCTIVE = new Set(['apply_yaml', 'delete_resource']);
-  const NOT_READ_ONLY = new Set(['start_security_scan']);
-  const registerTool = server.registerTool.bind(server);
-  server.registerTool = (name, config, cb) => {
-    (registeringWrites ? toolNames.write : toolNames.read).push(name);
-    const readOnly = !registeringWrites && !NOT_READ_ONLY.has(name);
-    const annotations = { readOnlyHint: readOnly, ...(readOnly ? {} : { destructiveHint: DESTRUCTIVE.has(name) }), ...(config.annotations || {}) };
-    return registerTool(name, { ...config, annotations }, cb);
-  };
-  server.k8sightTools = toolNames;
-
-  // Every result is cluster data, which other people can write (logs, events,
-  // annotations...). Strip control and invisible characters, mask credentials
-  // and personal data unless raw access is allowed, and label it as untrusted
-  // so the agent treats it as data, not instructions.
-  const ok = (data) => {
-    const raw = typeof data === 'string' ? data : JSON.stringify(data, null, 2);
-    const clean = allowSecrets ? sanitizeText(raw) : scrubSensitive(sanitizeText(raw));
-    return { content: [{ type: 'text', text: wrapUntrusted(clean) }] };
-  };
+  const ok = (data) => ({
+    content: [{ type: 'text', text: typeof data === 'string' ? data : JSON.stringify(data, null, 2) }],
+  });
   const fail = (msg) => ({ content: [{ type: 'text', text: `Error: ${msg}` }], isError: true });
   const wrap = (fn) => async (args) => {
     try { return await fn(args || {}); }
@@ -122,6 +72,15 @@ export function createMcpServer({ baseURL, version, allowWrite, allowSecrets, ap
   }, wrap(async () => {
     const { data } = await api.get('/api/config/status');
     return ok({ current: data.currentContext, contexts: data.contexts });
+  }));
+
+  server.registerTool('switch_context', {
+    title: 'Switch cluster context',
+    description: 'Switch the active cluster/context. Affects all later tool calls (and the running UI).',
+    inputSchema: { context: z.string().describe('context name from list_contexts') },
+  }, wrap(async ({ context }) => {
+    const { data } = await api.post('/api/config/context', { contextName: context });
+    return ok({ switched: true, currentContext: data.currentContext });
   }));
 
   server.registerTool('list_namespaces', {
@@ -206,7 +165,7 @@ export function createMcpServer({ baseURL, version, allowWrite, allowSecrets, ap
     },
   }, wrap(async ({ namespace, pod, container, tail }) => {
     const { data } = await api.get(`/api/logs/${encodeURIComponent(namespace)}/${encodeURIComponent(pod)}`, { params: { container, tail } });
-    return ok(capLogs(data.logs ?? data));
+    return ok(data.logs ?? data);
   }));
 
   server.registerTool('get_events', {
@@ -656,16 +615,6 @@ export function createMcpServer({ baseURL, version, allowWrite, allowSecrets, ap
 
   // ---------------------------------------------------------- write tools (gated)
   if (allowWrite) {
-    registeringWrites = true;
-    server.registerTool('switch_context', {
-      title: 'Switch cluster context',
-      description: 'Switch the active cluster/context. Affects all later tool calls (and the running UI). WRITE operation: only available when write access is enabled.',
-      inputSchema: { context: z.string().describe('context name from list_contexts') },
-    }, wrap(async ({ context }) => {
-      const { data } = await api.post('/api/config/context', { contextName: context });
-      return ok({ switched: true, currentContext: data.currentContext });
-    }));
-
     server.registerTool('apply_yaml', {
       title: 'Apply YAML (write)',
       description: 'Create or update a resource from YAML (kubectl apply). WRITE operation — mutates the cluster.',
@@ -774,14 +723,4 @@ export function createMcpServer({ baseURL, version, allowWrite, allowSecrets, ap
   }
 
   return server;
-}
-
-// Tool names (read vs write) as actually registered, for Preferences.
-let cachedNames = null;
-export function mcpToolNames() {
-  if (!cachedNames) {
-    const s = createMcpServer({ allowWrite: true, apiToken: 'introspect' });
-    cachedNames = { readTools: [...s.k8sightTools.read], writeTools: [...s.k8sightTools.write] };
-  }
-  return cachedNames;
 }

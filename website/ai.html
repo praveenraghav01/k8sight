@@ -235,9 +235,9 @@
     <div class="sec-head reveal">
       <span class="kicker">MCP server</span>
       <h2>Give any agent the same view of your cluster</h2>
-      <p>k8sight is also an MCP server, so Claude Code, Cursor, Copilot and any other MCP client can use what the app can see: 42 read tools and 12 write tools, on whichever cluster you have selected.</p>
+      <p>k8sight is also an MCP server, so Claude Code, Cursor, Copilot and any other MCP client can use what the app can see: 43 read tools and 11 write tools, on whichever cluster you have selected.</p>
     </div>
-    <div class="reveal" style="max-width:720px; margin:0 auto 28px; padding:14px 18px; border:1px solid var(--border-2); border-radius:12px; background:var(--panel-2); font-family:var(--mono); font-size:13.5px; color:var(--text); overflow-x:auto; white-space:nowrap;"><span style="color:var(--text-mute);">$</span> claude mcp add --transport http k8sight http://localhost:3001/mcp --header "Authorization: Bearer &lt;token&gt;"</div>
+    <div class="reveal" style="max-width:720px; margin:0 auto 28px; padding:14px 18px; border:1px solid var(--border-2); border-radius:12px; background:var(--panel-2); font-family:var(--mono); font-size:13.5px; color:var(--text); overflow-x:auto; white-space:nowrap;"><span style="color:var(--text-mute);">$</span> claude mcp add --transport http k8sight http://localhost:3001/mcp</div>
     <div class="grid">
       <div class="card i-cyan reveal">
         <div class="ico"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke-width="2"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg></div>
@@ -270,7 +270,7 @@
         <p>Canaries with phase, strategy, traffic weight and failed checks, plus their metrics, webhooks and events. Restart, suspend and skip analysis.</p>
       </div>
     </div>
-    <p class="reveal" style="margin:22px auto 0; max-width:760px; text-align:center; color:var(--text-mute); font-size:14px;">Agents connect with their own access token from <b style="color:var(--text-dim);">Preferences &rarr; MCP Server</b>, which can&rsquo;t open shells or run local commands. Read tools are always on; write tools (apply, delete, scale, restart, sync, reconcile, switch cluster) stay off until you turn them on, and Secret values are redacted unless you allow them. Agents use your kubeconfig, so they never get more access than you have.</p>
+    <p class="reveal" style="margin:22px auto 0; max-width:760px; text-align:center; color:var(--text-mute); font-size:14px;">Read tools are always on. Write tools (apply, delete, scale, restart, sync, reconcile, canary restart) stay off until you turn them on in <b style="color:var(--text-dim);">Preferences &rarr; MCP Server</b>. Agents use your kubeconfig, so they get exactly the access you have.</p>
   </div>
 </section>
 
@@ -289,7 +289,7 @@
         </thead>
         <tbody>
           <tr><th scope="row">Built-in AI assistant</th><td class="pickcol yes">✓<small>bring your own model</small></td><td class="yes">✓<small>Lens Prism</small></td><td class="yes">✓<small>Liz, Rancher Prime</small></td><td class="no">✕</td></tr>
-          <tr><th scope="row">MCP server for your own agents</th><td class="pickcol yes">✓<small>42 read + 12 write tools</small></td><td class="yes">✓<small>since March 2026</small></td><td class="yes">✓<small>Rancher Prime</small></td><td class="no">✕</td></tr>
+          <tr><th scope="row">MCP server for your own agents</th><td class="pickcol yes">✓<small>43 read + 11 write tools</small></td><td class="yes">✓<small>since March 2026</small></td><td class="yes">✓<small>Rancher Prime</small></td><td class="no">✕</td></tr>
           <tr><th scope="row">AI over CVEs, costs, Argo CD, Flux &amp; Flagger</th><td class="pickcol yes">✓</td><td>-</td><td>-</td><td class="no">✕</td></tr>
           <tr><th scope="row">Docks your coding agents (Claude Code, Copilot, Codex&hellip;)</th><td class="pickcol yes">✓</td><td>-</td><td>-</td><td class="no">✕</td></tr>
           <tr><th scope="row">No account or sign-in</th><td class="pickcol yes">✓</td><td class="no">✕<small>Lens ID required</small></td><td class="no">✕<small>Rancher server</small></td><td class="yes">✓</td></tr>

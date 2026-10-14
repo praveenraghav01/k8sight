@@ -21,7 +21,7 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
 import { randomUUID } from 'crypto';
 import { AsyncLocalStorage } from 'async_hooks';
-import { createMcpServer, mcpToolNames } from './mcp.js';
+import { createMcpServer } from './mcp.js';
 import * as awsEks from './aws-eks.js';
 import * as gke from './gke.js';
 import * as trivyScan from './trivy-scan.js';
@@ -31,9 +31,6 @@ import { createMetricResponseCache } from './lib/metric-response-cache.mjs';
 import { searchCharts, chartVersions } from './lib/artifacthub.mjs';
 import { detectForeignTrivy } from './lib/trivy-detect.mjs';
 import { tokenHelperPath } from './lib/resource-path.mjs';
-import { newToken, presentedToken, scopeFor, hostAllowed, authorize } from './lib/local-auth.mjs';
-import { redactApiResponse } from './lib/redact.mjs';
-import { writePrivateFile, hardenAppFiles } from './lib/secure-fs.mjs';
 
 // node-pty powers the pod terminal (a real PTY bridged to `kubectl exec`). Load
 // it defensively so a missing/unbuildable native module never crashes the whole
@@ -51,12 +48,10 @@ try {
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 const requestContext = new AsyncLocalStorage();
-// Backend port (3001). In dev, Vite (3000) proxies /api and /ws here; in the
+// Fixed backend port. In dev, Vite (3000) proxies /api and /ws here; in the
 // Docker image this same server also serves the built UI. Map it at runtime
-// with `docker run -p <host>:3001`. K8SIGHT_PORT overrides it (tests); the
-// generic PORT variable is deliberately ignored so an unrelated value in the
-// user's shell can't move the backend away from where the app expects it.
-const PORT = Number(process.env.K8SIGHT_PORT) || 3001;
+// with `docker run -p <host>:3001`.
+const PORT = 3001;
 const CLIENT_DIST = path.join(__dirname, 'client', 'dist');
 // CLI-free AKS token helper — app-imported AAD clusters exec this instead of
 // kubelogin, so neither `az` nor `kubelogin` is needed at runtime. Bundled and
@@ -190,35 +185,10 @@ app.use((req, res, next) => {
   return res.status(403).json({ error: 'Cross-origin request rejected' });
 });
 
-// ------------------------------------------------------------------
-// Access control. Loopback is not a security boundary (any local process,
-// another OS user, or a DNS-rebinding web page can reach it), so:
-//   1. Host allow-list on every request (DNS rebinding).
-//   2. A token on every /api and /mcp request, and on /ws/exec (see
-//      lib/local-auth.mjs for the UI vs MCP scopes and what MCP may call).
-//   3. MCP-scope responses have Secret values redacted unless the user opted
-//      in to raw secret access.
-// ------------------------------------------------------------------
-const EXTRA_HOSTS = (process.env.ALLOWED_HOSTS || '').split(',').map((s) => s.trim()).filter(Boolean);
-// UI token: per launch. The desktop app passes one in (and hands it to the
-// renderer over IPC); otherwise it's generated here and printed in the startup
-// URL for browser/Docker use.
-const UI_TOKEN_FROM_ENV = !!process.env.K8SIGHT_API_TOKEN;
-const UI_TOKEN = process.env.K8SIGHT_API_TOKEN || newToken();
-const tokens = () => ({ uiToken: UI_TOKEN, mcpToken: getMcpToken() });
-
-app.use((req, res, next) => {
-  if (!hostAllowed(req.headers.host, EXTRA_HOSTS)) {
-    return res.status(421).json({ error: 'Unrecognised Host header. Add it to ALLOWED_HOSTS if this is a deliberate proxy.' });
-  }
-  return next();
-});
-
-// Rate-limit the API/MCP surface *before* the auth check, so the authorization
-// handler itself is throttled (e.g. a runaway client or same-origin script
-// hammering the API, or token-guessing against the auth check). The server binds
-// to loopback and enforces same-origin, so this is defense-in-depth rather than a
-// perimeter control — hence a generous fixed-window cap.
+// Rate-limit the API/MCP surface. The server binds to loopback and enforces
+// same-origin, so this is defense-in-depth (a runaway client or same-origin
+// script hammering the API) rather than a perimeter control — hence a generous
+// fixed-window cap.
 const apiLimiter = rateLimit({
   windowMs: 60_000,
   limit: Number(process.env.RATE_LIMIT_MAX) || 1000, // requests/min/IP
@@ -228,24 +198,6 @@ const apiLimiter = rateLimit({
 });
 app.use('/api', apiLimiter);
 app.use('/mcp', apiLimiter);
-
-app.use((req, res, next) => {
-  if (!req.path.startsWith('/api') && !req.path.startsWith('/mcp')) return next();
-  const scope = scopeFor(presentedToken(req.headers, req.originalUrl), tokens());
-  const verdict = authorize({ scope, method: req.method, path: req.path, mcpAllowWrite });
-  if (!verdict.ok) {
-    // Distinguish "bad/missing k8sight token" from other 401s (e.g. "not
-    // signed in to Azure") so the UI only shows its access-link screen for this.
-    if (verdict.status === 401) res.set('X-K8sight-Auth', 'token-required');
-    return res.status(verdict.status).json({ error: verdict.error });
-  }
-  req.authScope = scope;
-  if (scope === 'mcp' && !mcpAllowSecrets && req.method === 'GET') {
-    const json = res.json.bind(res);
-    res.json = (body) => json(redactApiResponse(req.path, body));
-  }
-  return next();
-});
 
 app.use(express.json());
 
@@ -387,7 +339,8 @@ function readSettings() {
 function writeSettings(patch) {
   const next = { ...readSettings(), ...patch };
   try {
-    writePrivateFile(SETTINGS_FILE, JSON.stringify(next, null, 2));
+    fs.mkdirSync(SETTINGS_DIR, { recursive: true });
+    fs.writeFileSync(SETTINGS_FILE, JSON.stringify(next, null, 2), { mode: 0o600 });
   } catch (e) { /* best-effort */ }
   return next;
 }
@@ -399,27 +352,26 @@ let mcpAllowWrite = (() => {
   return ['1', 'true', 'yes'].includes(String(process.env.MCP_ALLOW_WRITE || '').toLowerCase());
 })();
 
-// Raw Kubernetes Secret values are redacted for MCP clients unless the user
-// explicitly opts in (Preferences → MCP Server).
-let mcpAllowSecrets = readSettings().mcpAllowSecrets === true;
-// MCP token: persisted (0600) so agent configs survive restarts; rotatable.
-function getMcpToken() {
-  const s = readSettings();
-  if (typeof s.mcpToken === 'string' && s.mcpToken.length >= 32) return s.mcpToken;
-  return writeSettings({ mcpToken: newToken() }).mcpToken;
-}
-
 // MCP connection info for the Preferences → MCP section. The HTTP endpoint is
 // this same server at /mcp; write tools are gated by `mcpAllowWrite`.
 app.get('/api/mcp/info', (req, res) => {
-  const { readTools, writeTools } = mcpToolNames();
-  res.json({ allowWrite: mcpAllowWrite, allowSecrets: mcpAllowSecrets, token: getMcpToken(), port: PORT, readTools, writeTools });
-});
-
-// Generate a new MCP token; agents configured with the old one stop working.
-app.post('/api/mcp/token/rotate', (req, res) => {
-  writeSettings({ mcpToken: newToken() });
-  res.json({ token: getMcpToken() });
+  res.json({
+    allowWrite: mcpAllowWrite,
+    readTools: [
+      'list_contexts', 'switch_context', 'list_namespaces', 'list_resources',
+      'get_resource', 'get_resource_yaml', 'get_pod_logs', 'get_events', 'get_topology',
+      'get_cluster_summary', 'list_nodes', 'get_node_pods', 'get_node_metrics',
+      'get_pod_metrics', 'list_pod_metrics', 'list_storage', 'get_rbac',
+      'list_helm_releases', 'get_helm_values', 'get_helm_manifest',
+      'list_crds', 'list_custom_resources', 'get_custom_resource',
+      'get_argocd_status', 'list_argocd_apps', 'get_argocd_app',
+      'list_argocd_projects', 'list_argocd_appsets', 'list_argocd_repositories', 'list_argocd_clusters',
+    ],
+    writeTools: [
+      'apply_yaml', 'delete_resource', 'scale_workload', 'rollout_restart',
+      'sync_argocd_app', 'refresh_argocd_app',
+    ],
+  });
 });
 
 // Toggle MCP write tools from the UI (persisted). Takes effect for new MCP
@@ -430,13 +382,13 @@ app.post('/api/mcp/config', (req, res) => {
   if (!isLocalRequest) {
     return res.status(403).json({ error: 'This endpoint is only accessible from localhost' });
   }
-  const { allowWrite, allowSecrets } = req.body || {};
-  if (typeof allowWrite !== 'boolean' && typeof allowSecrets !== 'boolean') {
-    return res.status(400).json({ error: 'allowWrite or allowSecrets (boolean) is required' });
+  const { allowWrite } = req.body || {};
+  if (typeof allowWrite !== 'boolean') {
+    return res.status(400).json({ error: 'allowWrite (boolean) is required' });
   }
-  if (typeof allowWrite === 'boolean') { mcpAllowWrite = allowWrite; writeSettings({ mcpAllowWrite: allowWrite }); }
-  if (typeof allowSecrets === 'boolean') { mcpAllowSecrets = allowSecrets; writeSettings({ mcpAllowSecrets: allowSecrets }); }
-  res.json({ allowWrite: mcpAllowWrite, allowSecrets: mcpAllowSecrets });
+  mcpAllowWrite = allowWrite;
+  writeSettings({ mcpAllowWrite: allowWrite });
+  res.json({ allowWrite: mcpAllowWrite });
 });
 
 // ---- Google GKE (CLI-free) ------------------------------------------------
@@ -804,7 +756,8 @@ app.post('/api/azure/import', async (req, res) => {
         const raw = await azure.getClusterKubeconfig(c.subscriptionId, c.resourceGroup, c.name, admin);
         const kc = admin ? raw : nativizeAksExec(raw);
         const merged = mergeKubeconfigYaml(p, kc);
-        writePrivateFile(p, yaml.dump(merged)); // persist incrementally; owner-only
+        fs.mkdirSync(path.dirname(p), { recursive: true }); // persist incrementally
+        fs.writeFileSync(p, yaml.dump(merged), { mode: 0o600 });
       }
       imported.push(c.name);
     } catch (e) {
@@ -1050,10 +1003,7 @@ app.post('/api/ai-agents/launch-external', (req, res) => {
   try {
     const { agentId, command: customCommand, prompt } = req.body || {};
     const info = AI_AGENTS.find((a) => a.id === agentId);
-    // Built-in agents, or the user's own "Custom" command from Preferences.
-    // Only the app's UI can reach this (UI token; MCP clients are refused), so
-    // a custom command always comes from the user, not another local process.
-    const command = info ? info.command : (req.authScope === 'ui' ? String(customCommand || '').replace(/[^a-zA-Z0-9_./\s-]/g, '').trim() : '');
+    const command = info ? info.command : String(customCommand || '').replace(/[^a-zA-Z0-9_./\s-]/g, '').trim();
     if (!command) return res.status(400).json({ error: 'Unknown AI agent' });
 
     // Temp kubeconfig with the app's in-memory current context.
@@ -5401,7 +5351,7 @@ app.post('/mcp', async (req, res) => {
         onsessioninitialized: (id) => { mcpTransports[id] = transport; },
       });
       transport.onclose = () => { if (transport.sessionId) delete mcpTransports[transport.sessionId]; };
-      const mcp = createMcpServer({ version: getAppVersion(), allowWrite: mcpAllowWrite, allowSecrets: mcpAllowSecrets, apiToken: getMcpToken(), baseURL: `http://127.0.0.1:${PORT}` });
+      const mcp = createMcpServer({ version: getAppVersion(), allowWrite: mcpAllowWrite });
       await mcp.connect(transport);
     } else {
       return res.status(400).json({ jsonrpc: '2.0', error: { code: -32000, message: 'Bad Request: no valid session id (send an initialize request first)' }, id: null });
@@ -5452,11 +5402,7 @@ const server = http.createServer(app);
 const wss = new WebSocketServer({
   server,
   path: '/ws/exec',
-  // Same checks as the HTTP API: allowed Origin and Host, plus the UI token
-  // (MCP clients never get interactive shells).
-  verifyClient: (info) => isAllowedOrigin(info.origin, info.req.headers.host)
-    && hostAllowed(info.req.headers.host, EXTRA_HOSTS)
-    && scopeFor(presentedToken(info.req.headers, info.req.url), tokens()) === 'ui',
+  verifyClient: (info) => isAllowedOrigin(info.origin, info.req.headers.host),
 });
 
 wss.on('connection', async (browserWs, req) => {
@@ -5498,8 +5444,6 @@ wss.on('connection', async (browserWs, req) => {
     // ---- AI agent terminal: a login shell with the app's current cluster
     // context pinned via a temp kubeconfig, then launch the chosen agent CLI. ----
     const info = AI_AGENTS.find((a) => a.id === agentId);
-    // Built-in agents, or the user's "Custom" command from Preferences. The
-    // WebSocket only accepts the UI token, so this comes from the app's own UI.
     const command = info ? info.command : (url.searchParams.get('command') || '').replace(/[^a-zA-Z0-9_./\s-]/g, '').trim();
     if (!command) { send('\r\n\x1b[31mUnknown AI agent.\x1b[0m\r\n'); browserWs.close(); return; }
 
@@ -5627,12 +5571,7 @@ wss.on('error', handleServerError);
 // other hosts on the LAN. Set HOST=0.0.0.0 to expose it (the Docker image does
 // this so its published port works); prefer `-p 127.0.0.1:8080:3001` there.
 const HOST = process.env.HOST || '127.0.0.1';
-// Tighten permissions on credential files written by older versions.
-try { const fixed = hardenAppFiles(); if (fixed.length) console.log(`Restricted permissions on ${fixed.length} k8sight file(s) to owner-only.`); } catch { /* best-effort */ }
 server.listen(PORT, HOST, () => {
   const shown = HOST === '0.0.0.0' ? 'localhost' : HOST;
   console.log(`Server running on http://${shown}:${PORT}${HOST === '0.0.0.0' ? ' (bound 0.0.0.0)' : ''}`);
-  // Browser / Docker use: the UI needs the per-launch token. The desktop app
-  // supplies its own token and hands it to the window directly, so skip this.
-  if (!UI_TOKEN_FROM_ENV) console.log(`Open k8sight: http://${shown}:${PORT}/?token=${UI_TOKEN}`);
 });

@@ -31,48 +31,28 @@ WORKDIR /app
 # TARGETARCH is provided by BuildKit (amd64 / arm64); default to amd64
 ARG TARGETARCH=amd64
 
-# Pinned tool versions and the SHA-256 of their linux/amd64 and linux/arm64
-# downloads. Every download is checked against these committed hashes, so a
-# tampered or replaced upstream release fails the build. To upgrade, change the
-# version and its hashes together (each project publishes the hashes with the
-# release).
-ARG KUBECTL_VERSION=v1.37.1
-ARG KUBECTL_SHA256_AMD64=65691ff77eb6fa44c908b77a1082c9f092c3b9733b5cefabec0d1104890e21a8
-ARG KUBECTL_SHA256_ARM64=ff749f4b78d9c4f1ec87307df9b50119ed819e2094aa9810cb9acffc3286c8c7
-ARG KUBELOGIN_VERSION=v1.36.4
-ARG KUBELOGIN_SHA256_AMD64=9e8baeb4905d35a301304af2548324997add512fe94ab20e65993d167212bf85
-ARG KUBELOGIN_SHA256_ARM64=669c2d3bcc6766351ad5a7b03971792b4e7a55117b335a12d9858d43a525d9dc
-ARG TRIVY_VERSION=0.75.0
-ARG TRIVY_SHA256_AMD64=c6e65abddb348e25f10549df887045629cf28cc72453cd1c63acb717316b3f3f
-ARG TRIVY_SHA256_ARM64=a1ee9f6ffb7d112b64ff726a2a0717c21175c1114361391f4a132956751a13b3
-
-# Patch OS packages, then install kubectl (the app shells out to it), the
-# kubelogin OIDC exec plugin (as `kubectl-oidc_login`, so kubeconfigs using
-# `kubectl oidc-login` work) and trivy (Security Center's built-in image scan).
-# NOTE: helm is intentionally NOT installed: Helm releases are read directly
+# Patch OS packages, then install kubectl (the app shells out to it) and the
+# kubelogin OIDC exec plugin.
+# NOTE: helm is intentionally NOT installed — Helm releases are read directly
 # via the Kubernetes API (see server.js), which also avoids the large cluster
 # of Go-module CVEs that ship inside the helm binary.
-RUN set -eu \
-  && apk upgrade --no-cache \
+# kubelogin is installed as `kubectl-oidc_login` so kubeconfigs that
+# authenticate via `kubectl oidc-login` work inside the container (statically
+# linked Go binary, so it runs fine on Alpine/musl).
+RUN apk upgrade --no-cache \
   && apk add --no-cache bash curl ca-certificates libstdc++ \
   && apk add --no-cache --virtual .build-deps unzip \
-  && case "$TARGETARCH" in \
-       amd64) KUBECTL_SHA="$KUBECTL_SHA256_AMD64"; KUBELOGIN_SHA="$KUBELOGIN_SHA256_AMD64"; TRIVY_SHA="$TRIVY_SHA256_AMD64"; TRIVY_ARCH=64bit ;; \
-       arm64) KUBECTL_SHA="$KUBECTL_SHA256_ARM64"; KUBELOGIN_SHA="$KUBELOGIN_SHA256_ARM64"; TRIVY_SHA="$TRIVY_SHA256_ARM64"; TRIVY_ARCH=ARM64 ;; \
-       *) echo "unsupported TARGETARCH: $TARGETARCH" >&2; exit 1 ;; \
-     esac \
-  && cd /tmp \
-  && curl -fsSL -o kubectl "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/${TARGETARCH}/kubectl" \
-  && echo "${KUBECTL_SHA}  kubectl" | sha256sum -c - \
-  && install -m 0755 kubectl /usr/local/bin/kubectl \
-  && curl -fsSL -o kubelogin.zip "https://github.com/int128/kubelogin/releases/download/${KUBELOGIN_VERSION}/kubelogin_linux_${TARGETARCH}.zip" \
-  && echo "${KUBELOGIN_SHA}  kubelogin.zip" | sha256sum -c - \
-  && unzip -o kubelogin.zip -d kubelogin \
-  && install -m 0755 kubelogin/kubelogin /usr/local/bin/kubectl-oidc_login \
-  && curl -fsSL -o trivy.tar.gz "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-${TRIVY_ARCH}.tar.gz" \
-  && echo "${TRIVY_SHA}  trivy.tar.gz" | sha256sum -c - \
-  && tar -xzf trivy.tar.gz -C /usr/local/bin trivy \
-  && rm -rf /tmp/kubectl /tmp/kubelogin /tmp/kubelogin.zip /tmp/trivy.tar.gz \
+  && KUBECTL_VERSION="$(curl -fsSL https://dl.k8s.io/release/stable.txt)" \
+  && curl -fsSL "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/${TARGETARCH}/kubectl" -o /usr/local/bin/kubectl \
+  && chmod +x /usr/local/bin/kubectl \
+  && curl -fsSL "https://github.com/int128/kubelogin/releases/latest/download/kubelogin_linux_${TARGETARCH}.zip" -o /tmp/kubelogin.zip \
+  && unzip -o /tmp/kubelogin.zip -d /tmp/kubelogin \
+  && mv /tmp/kubelogin/kubelogin /usr/local/bin/kubectl-oidc_login \
+  && chmod +x /usr/local/bin/kubectl-oidc_login \
+  && rm -rf /tmp/kubelogin /tmp/kubelogin.zip \
+  # trivy powers the Security Center's built-in image scan (no in-cluster
+  # operator required); the official installer picks the right arch.
+  && curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin \
   && apk del .build-deps \
   # npm/npx/corepack aren't used at runtime (the app runs `node server.js`);
   # removing them drops the CVEs in npm's bundled dependencies.
@@ -82,11 +62,15 @@ RUN set -eu \
 # Backend deps + source, and the built frontend
 COPY --from=server-deps /app/node_modules ./node_modules
 COPY package*.json ./
-# All backend modules (server, assistant, MCP, cloud integrations, demo mode,
-# kubeconfig token helpers) and the shared lib/ helpers. Copy by pattern so a
-# new module can't be silently left out of the image again.
-COPY *.js ./
-COPY lib/ ./lib/
+COPY server.js ./
+COPY assistant.js ./
+COPY mcp.js ./
+COPY mcp-stdio.js ./
+COPY aws-eks.js ./
+COPY eks-token.js ./
+COPY azure-aks.js ./
+COPY azure-token.js ./
+COPY trivy-scan.js ./
 COPY --from=client-build /app/client/dist ./client/dist
 
 # The server binds 127.0.0.1 by default (so a local install isn't exposed to the
@@ -105,9 +89,9 @@ EXPOSE 3001
 # package "overview". The release workflow's docker/metadata-action overrides
 # source/revision/created automatically; set IMAGE_SOURCE for manual builds.
 # ------------------------------------------------------------------
-ARG APP_VERSION="dev"
-LABEL org.opencontainers.image.title="k8sight" \
-      org.opencontainers.image.description="k8sight: browse and operate Kubernetes clusters from your kubeconfig (workloads, logs, shells, topology, Helm, Argo CD, Flux, Flagger, security and costs). Serves the UI and API on port 3001; open the access link printed at startup." \
+ARG APP_VERSION="1.3.0"
+LABEL org.opencontainers.image.title="Kubernetes Manager UI" \
+      org.opencontainers.image.description="Web UI to browse and operate Kubernetes clusters — workloads, nodes, events, logs, in-browser exec/terminal, service port-forwarding, Helm releases, RBAC and CRDs. Reads your kubeconfig and serves the UI + REST API on port 3001." \
       org.opencontainers.image.version="${APP_VERSION}" \
       org.opencontainers.image.licenses="MIT"
 
