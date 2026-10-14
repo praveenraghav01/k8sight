@@ -424,7 +424,8 @@ function McpSection() {
   const testConnection = async () => {
     setTest({ state: 'testing' });
     try {
-      const res = await fetch(endpoint, {
+      // Same-origin path (the token is attached automatically); in dev, Vite proxies /mcp.
+      const res = await fetch('/mcp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream' },
         body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'k8sight-prefs', version: '1.0' } } }),
@@ -433,7 +434,7 @@ function McpSection() {
       if (res.ok && sid) {
         setTest({ state: 'ok' });
         // Politely end the probe session.
-        fetch(endpoint, { method: 'DELETE', headers: { 'mcp-session-id': sid } }).catch(() => {});
+        fetch('/mcp', { method: 'DELETE', headers: { 'mcp-session-id': sid } }).catch(() => {});
       } else {
         setTest({ state: 'fail', msg: `HTTP ${res.status}` });
       }
@@ -442,21 +443,36 @@ function McpSection() {
     }
   };
 
-  const setWrite = async (allowWrite) => {
-    setInfo((p) => ({ ...(p || {}), allowWrite })); // optimistic
+  const setConfig = async (patch) => {
+    setInfo((p) => ({ ...(p || {}), ...patch })); // optimistic
     try {
-      const { data } = await axios.post('/api/mcp/config', { allowWrite });
-      setInfo((p) => ({ ...(p || {}), allowWrite: data.allowWrite }));
+      const { data } = await axios.post('/api/mcp/config', patch);
+      setInfo((p) => ({ ...(p || {}), ...data }));
     } catch (e) {
       // revert on failure
       axios.get('/api/mcp/info').then((r) => setInfo(r.data)).catch(() => {});
     }
   };
+  const setWrite = (allowWrite) => setConfig({ allowWrite });
+  const setSecrets = (allowSecrets) => setConfig({ allowSecrets });
 
-  const claudeCmd = `claude mcp add --transport http k8sight ${endpoint}`;
+  const [rotating, setRotating] = useState(false);
+  const rotateToken = async () => {
+    setRotating(true);
+    try {
+      const { data } = await axios.post('/api/mcp/token/rotate');
+      setInfo((p) => ({ ...(p || {}), token: data.token }));
+    } finally { setRotating(false); }
+  };
+
+  const token = info?.token || '<token>';
+  const claudeCmd = `claude mcp add --transport http k8sight ${endpoint} --header "Authorization: Bearer ${token}"`;
   const clientJson = `{
   "mcpServers": {
-    "k8sight": { "url": "${endpoint}" }
+    "k8sight": {
+      "url": "${endpoint}",
+      "headers": { "Authorization": "Bearer ${token}" }
+    }
   }
 }`;
 
@@ -470,6 +486,14 @@ function McpSection() {
       </p>
 
       <CopyField label="HTTP endpoint" hint="Streamable HTTP transport (recommended)." value={endpoint} />
+
+      <Field label="Access token" hint="Agents must send this as a Bearer token. It only allows MCP tools: no shells, no local commands, and no changes unless write access is on. Rotate it to disconnect every configured agent.">
+        <div className="prefs-inline">
+          <code className="prefs-code" style={{ flex: 1, overflowX: 'auto', whiteSpace: 'pre' }}>{info?.token ? `${info.token.slice(0, 6)}${'•'.repeat(20)}` : '…'}</code>
+          {info?.token && <CopyBtn text={info.token} />}
+          <button className="prefs-btn" onClick={rotateToken} disabled={rotating}>{rotating ? 'Rotating…' : 'Rotate'}</button>
+        </div>
+      </Field>
 
       <CopyField label="Add to Claude Code" hint="Run this in your terminal." value={claudeCmd} />
 
@@ -497,6 +521,23 @@ function McpSection() {
               {info.allowWrite
                 ? 'Write tools are on. Reconnect your agent to pick them up.'
                 : 'Only read tools are exposed.'}
+            </div>
+          </div>
+        )}
+      </Field>
+
+      <Field label="Secret values" hint="Kubernetes Secret values and secret-looking Helm values are redacted for agents by default. Agents send what they read to their AI provider.">
+        {info == null ? <span className="prefs-muted">…</span> : (
+          <div className="prefs-stack">
+            <div className="prefs-seg">
+              <button className={`prefs-seg-btn ${!info.allowSecrets ? 'active' : ''}`} onClick={() => setSecrets(false)}>Redacted</button>
+              <button className={`prefs-seg-btn ${info.allowSecrets ? 'active' : ''}`} onClick={() => setSecrets(true)}>Raw values</button>
+            </div>
+            <div className={`prefs-status ${info.allowSecrets ? 'warn' : 'ok'}`}>
+              <span className="prefs-status-dot" />
+              {info.allowSecrets
+                ? 'Agents can read raw Secret values. Only enable this for agents and providers you trust with credentials.'
+                : 'Secret values are replaced with <redacted> for agents.'}
             </div>
           </div>
         )}

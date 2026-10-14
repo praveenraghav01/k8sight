@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { wsUrl } from '../lib/auth';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
@@ -72,12 +73,11 @@ export default function TerminalViewer({ resource, namespace }) {
     if (!term) return;
     setStatus('connecting');
 
-    const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
     const params = isNode
       ? new URLSearchParams({ node: resource.name })
       : new URLSearchParams({ namespace: ns, pod: resource.name });
     if (!isNode && container) params.set('container', container);
-    const ws = new WebSocket(`${proto}://${window.location.host}/ws/exec?${params.toString()}`);
+    const ws = new WebSocket(wsUrl('/ws/exec', params));
     wsRef.current = ws;
 
     ws.onopen = () => {

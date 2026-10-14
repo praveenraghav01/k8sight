@@ -8,6 +8,9 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('k8sight', {
   isElectron: true,
+  // Per-launch API token from the main process (null for any page that isn't
+  // served by this app's own backend).
+  apiToken: ipcRenderer.sendSync('api:token'),
   // { autoCheck: boolean, supported: boolean }
   getAutoUpdate: () => ipcRenderer.invoke('updater:get'),
   setAutoUpdate: (on) => ipcRenderer.invoke('updater:set', !!on),
