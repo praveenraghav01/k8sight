@@ -217,6 +217,9 @@ All tools act on the **currently selected context**. Run the bridge standalone w
 - **Host allow-list**: only `localhost` / `127.0.0.1` (plus `ALLOWED_HOSTS`) are accepted, which blocks DNS-rebinding attacks from web pages.
 - **Loopback by default**: binds `127.0.0.1`; set `HOST=0.0.0.0` only to expose it deliberately (the Docker image does this so its published port works).
 - **Same-origin only**: a page on another origin can't drive the API or the exec WebSocket.
+- **AI data handling**: the built-in assistant only talks to `https://` endpoints (plain `http://` only for a model on localhost). Before anything is sent to the model or to MCP agents, k8sight strips escape codes and invisible characters, masks credentials and personal data (private keys, tokens, cloud keys, passwords in URLs and settings, emails, card numbers, secret-looking env values), and marks cluster text as untrusted data so it can't pass as instructions. Masking is pattern-based, so treat logs as potentially sensitive anyway.
+- **Credential files are owner-only**: kubeconfigs, `~/.aws/credentials` and k8sight's own config are written `0600` (folders `0700`), and older files are tightened on startup.
+- **Verified downloads**: Trivy and Helm (and kubectl, kubelogin and Trivy in the Docker image) are pinned versions checked against SHA-256 hashes committed in this repository. Release builds fail without macOS signing, and every release includes `SHA256SUMS.txt`.
 
 ## Architecture
 

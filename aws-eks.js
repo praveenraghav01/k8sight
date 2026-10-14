@@ -15,6 +15,7 @@ import { SSOClient, ListAccountsCommand, ListAccountRolesCommand, GetRoleCredent
 import { loadSharedConfigFiles } from '@smithy/shared-ini-file-loader';
 
 import { tokenHelperPath } from './lib/resource-path.mjs';
+import { writePrivateFile, ensurePrivateDir } from './lib/secure-fs.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // Bundled, dependency-free helper (see scripts/bundle-token-helpers.mjs); resolved
@@ -229,8 +230,8 @@ export async function writeCluster({ credentials, region, name, alias, profile }
     },
   });
   upsert(doc.contexts, ctxName, { name: ctxName, context: { cluster: ctxName, user: ctxName } });
-  fs.mkdirSync(path.dirname(p), { recursive: true });
-  fs.writeFileSync(p, yaml.dump(doc), 'utf8');
+  // Kubeconfigs hold cluster credentials: always owner-only (0600).
+  writePrivateFile(p, yaml.dump(doc));
   return ctxName;
 }
 
@@ -238,7 +239,7 @@ export async function writeCluster({ credentials, region, name, alias, profile }
 // at runtime (for access-key / assume-role sign-ins).
 export function saveProfile(name, { accessKeyId, secretAccessKey, sessionToken, roleArn, sourceProfile, sessionName, region }) {
   const dir = awsDir();
-  fs.mkdirSync(dir, { recursive: true });
+  ensurePrivateDir(dir);
   const credFile = path.join(dir, 'credentials');
   const cfgFile = path.join(dir, 'config');
   const setBlock = (file, header, lines) => {
@@ -246,7 +247,7 @@ export function saveProfile(name, { accessKeyId, secretAccessKey, sessionToken, 
     const re = new RegExp(`\\[${header.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\$&')}\\][^\\[]*`, 'm');
     const block = `[${header}]\n${lines.filter(Boolean).join('\n')}\n`;
     text = re.test(text) ? text.replace(re, block) : (text.trim() ? `${text.trim()}\n\n${block}` : block);
-    fs.writeFileSync(file, text, 'utf8');
+    writePrivateFile(file, text); // access keys / session tokens: owner-only
   };
   if (accessKeyId) {
     setBlock(credFile, name, [`aws_access_key_id = ${accessKeyId}`, `aws_secret_access_key = ${secretAccessKey}`, sessionToken ? `aws_session_token = ${sessionToken}` : '']);

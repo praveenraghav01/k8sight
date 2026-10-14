@@ -16,7 +16,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { createHash } from 'crypto';
+import { PINNED, verifyAsset } from './lib/verify-download.mjs';
 
 const execFileAsync = promisify(execFile);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -25,7 +25,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // nor a manual install.
 const CACHE_DIR = path.join(os.homedir(), '.config', 'k8s-manager', 'bin');
 const CACHED_TRIVY = path.join(CACHE_DIR, process.platform === 'win32' ? 'trivy.exe' : 'trivy');
-const TRIVY_FALLBACK_VERSION = '0.58.1';
+
 
 // Persist each cluster's last scan so results survive an app restart. One JSON
 // file per context under the app config dir (same place as other app state).
@@ -90,33 +90,14 @@ export async function trivyAvailable() {
   return { available: !!v, version: v || undefined, installable: trivyInstallable() };
 }
 
-async function latestVersion() {
-  try {
-    const r = await fetch('https://api.github.com/repos/aquasecurity/trivy/releases/latest', { headers: { 'user-agent': 'k8sight' }, signal: AbortSignal.timeout(8000) });
-    const j = await r.json();
-    return (j.tag_name || '').replace(/^v/, '') || TRIVY_FALLBACK_VERSION;
-  } catch { return TRIVY_FALLBACK_VERSION; }
-}
-
-// Verify a downloaded release asset against the checksums file trivy publishes
-// alongside it, so a compromised repo/CDN or a MITM can't smuggle in a binary.
-async function verifyChecksum(version, asset, data) {
-  const r = await fetch(`https://github.com/aquasecurity/trivy/releases/download/v${version}/trivy_${version}_checksums.txt`, { redirect: 'follow', signal: AbortSignal.timeout(30000) });
-  if (!r.ok) throw new Error(`Downloading trivy checksums failed (${r.status}).`);
-  const line = (await r.text()).split('\n').find((l) => l.trim().endsWith(asset));
-  const expected = (line || '').trim().split(/\s+/)[0];
-  if (!expected) throw new Error(`No checksum found for ${asset}.`);
-  const actual = createHash('sha256').update(data).digest('hex');
-  if (actual !== expected) throw new Error('trivy download failed checksum verification.');
-}
-
 // Return a usable trivy path — downloading + caching the binary if none exists.
 export async function ensureTrivy(onPhase) {
   if ((await trivyAvailable()).available) return trivyBin();
   if (fs.existsSync(CACHED_TRIVY)) { _bin = CACHED_TRIVY; return CACHED_TRIVY; }
   if (!trivyInstallable()) throw new Error('trivy is not available. Install it and add it to PATH.');
   onPhase?.('preparing');
-  const version = await latestVersion();
+  // Pinned version, verified against the SHA-256 committed in lib/pinned-tools.json.
+  const version = PINNED.trivy.version;
   const asset = assetName(version);
   if (!asset) throw new Error(`No trivy build for ${process.platform}/${process.arch}.`);
   fs.mkdirSync(CACHE_DIR, { recursive: true });
@@ -124,7 +105,7 @@ export async function ensureTrivy(onPhase) {
   const r = await fetch(`https://github.com/aquasecurity/trivy/releases/download/v${version}/${asset}`, { redirect: 'follow', signal: AbortSignal.timeout(180000) });
   if (!r.ok) throw new Error(`Downloading trivy failed (${r.status}).`);
   const data = Buffer.from(await r.arrayBuffer());
-  await verifyChecksum(version, asset, data);
+  await verifyAsset({ tool: 'trivy', version, asset, data });
   fs.writeFileSync(tgz, data);
   await execFileAsync('tar', ['-xzf', tgz, '-C', CACHE_DIR, 'trivy'], { timeout: 60000 });
   fs.chmodSync(CACHED_TRIVY, 0o755);
