@@ -126,7 +126,9 @@ test('the exec WebSocket requires the UI token (MCP token refused)', async () =>
   assert.equal(await tryWs(UI), 'open');
 });
 
-test('the MCP token is persisted with owner-only permissions', () => {
+// Owner-only permissions (and the HOME-based settings path) are POSIX concepts;
+// on Windows os.homedir() uses USERPROFILE, so the file isn't under the test HOME.
+test('the MCP token is persisted with owner-only permissions', { skip: process.platform === 'win32' }, () => {
   const file = path.join(home, '.config', 'k8s-manager', 'settings.json');
   assert.equal(JSON.parse(fs.readFileSync(file, 'utf8')).mcpToken, mcpToken);
   if (process.platform !== 'win32') assert.equal(fs.statSync(file).mode & 0o777, 0o600);
