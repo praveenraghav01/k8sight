@@ -69,10 +69,12 @@ async function fetchOne(key, version, dir) {
   fs.writeFileSync(archive, data);
   // The binary lives at `<slug>/helm[.exe]` inside the archive; --strip-components
   // flattens it straight into `dir`. bsdtar/libarchive handles both .tar.gz and .zip.
+  // Run from `dir` with the archive's basename so no drive-lettered path reaches
+  // tar — on Windows `tar -xf D:\...` is parsed as a remote host ("Cannot connect to D:").
   const member = `${t.slug}/${t.out}`;
   execFileSync('tar', t.ext === 'zip'
-    ? ['-xf', archive, '-C', dir, '--strip-components=1', member]
-    : ['-xzf', archive, '-C', dir, '--strip-components=1', member]);
+    ? ['-xf', asset, '--strip-components=1', member]
+    : ['-xzf', asset, '--strip-components=1', member], { cwd: dir });
   fs.chmodSync(outPath, 0o755);
   fs.unlinkSync(archive);
   console.log(`✓ ${key} → ${path.relative(ROOT, outPath)} (sha256 verified)`);

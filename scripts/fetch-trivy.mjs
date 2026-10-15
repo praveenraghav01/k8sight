@@ -53,7 +53,9 @@ async function fetchOne(key, version, dir) {
   if (verifiedBy !== 'pinned') console.warn(`! trivy ${version} is not the pinned version; verified against its published checksum only`);
   fs.writeFileSync(archive, data);
   // bsdtar/libarchive (present on macOS/Linux/Win10+) extracts both .tar.gz and .zip.
-  execFileSync('tar', t.ext === 'zip' ? ['-xf', archive, '-C', dir, t.out] : ['-xzf', archive, '-C', dir, 'trivy']);
+  // Run from `dir` with the archive's basename so no drive-lettered path reaches
+  // tar — on Windows `tar -xf D:\...` is parsed as a remote host ("Cannot connect to D:").
+  execFileSync('tar', t.ext === 'zip' ? ['-xf', asset, t.out] : ['-xzf', asset, 'trivy'], { cwd: dir });
   fs.chmodSync(outPath, 0o755);
   fs.unlinkSync(archive);
   console.log(`✓ ${key} → ${path.relative(ROOT, outPath)} (sha256 verified)`);
