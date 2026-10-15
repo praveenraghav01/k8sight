@@ -17,6 +17,12 @@ import { PINNED, verifyAsset } from '../lib/verify-download.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const BIN = path.join(ROOT, 'bin');
+// On Windows, `tar` on the PATH (e.g. Git Bash's) is often GNU tar, which can't
+// read .zip. The OS ships bsdtar/libarchive at System32\tar.exe, which reads zip
+// and supports --strip-components, exactly like macOS/Linux tar. Use it there.
+const TAR = process.platform === 'win32'
+  ? path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'tar.exe')
+  : 'tar';
 // Pinned so every build ships the same Helm (reproducible, no surprise major
 // upgrades). Bump deliberately after testing chart search/install against it.
 const PINNED_VERSION = PINNED.helm.version; // asset hashes: lib/pinned-tools.json
@@ -72,7 +78,7 @@ async function fetchOne(key, version, dir) {
   // Run from `dir` with the archive's basename so no drive-lettered path reaches
   // tar — on Windows `tar -xf D:\...` is parsed as a remote host ("Cannot connect to D:").
   const member = `${t.slug}/${t.out}`;
-  execFileSync('tar', t.ext === 'zip'
+  execFileSync(TAR, t.ext === 'zip'
     ? ['-xf', asset, '--strip-components=1', member]
     : ['-xzf', asset, '--strip-components=1', member], { cwd: dir });
   fs.chmodSync(outPath, 0o755);

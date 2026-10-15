@@ -20,6 +20,13 @@ import { PINNED, verifyAsset } from '../lib/verify-download.mjs';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const BIN = path.join(ROOT, 'bin');
 
+// On Windows, `tar` on the PATH (e.g. Git Bash's) is often GNU tar, which can't
+// read .zip. The OS ships bsdtar/libarchive at System32\tar.exe, which reads zip
+// and supports --strip-components, exactly like macOS/Linux tar. Use it there.
+const TAR = process.platform === 'win32'
+  ? path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'tar.exe')
+  : 'tar';
+
 // GitHub release asset naming (see github.com/aquasecurity/trivy/releases).
 const TARGETS = {
   'darwin-arm64': { asset: 'macOS-ARM64', ext: 'tar.gz', out: 'trivy' },
@@ -55,7 +62,7 @@ async function fetchOne(key, version, dir) {
   // bsdtar/libarchive (present on macOS/Linux/Win10+) extracts both .tar.gz and .zip.
   // Run from `dir` with the archive's basename so no drive-lettered path reaches
   // tar — on Windows `tar -xf D:\...` is parsed as a remote host ("Cannot connect to D:").
-  execFileSync('tar', t.ext === 'zip' ? ['-xf', asset, t.out] : ['-xzf', asset, 'trivy'], { cwd: dir });
+  execFileSync(TAR, t.ext === 'zip' ? ['-xf', asset, t.out] : ['-xzf', asset, 'trivy'], { cwd: dir });
   fs.chmodSync(outPath, 0o755);
   fs.unlinkSync(archive);
   console.log(`✓ ${key} → ${path.relative(ROOT, outPath)} (sha256 verified)`);
