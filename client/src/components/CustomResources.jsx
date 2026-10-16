@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import Icon from './Icons';
 import Loader from './Loader';
+import ResizableBottomPanel from './ResizableBottomPanel';
 
 const formatAge = (createdAt) => {
   if (!createdAt) return '-';
@@ -130,7 +131,7 @@ export default function CustomResources() {
       </div>
 
       {selectedCrd && (
-        <div className="bottom-panel">
+        <ResizableBottomPanel label="Resize custom resource instances panel">
           <div className="bottom-panel-tabs">
             <button className="bottom-tab active">
               <Icon name="logs" size={15} /> {selectedCrd.kind} Instances
@@ -184,7 +185,7 @@ export default function CustomResources() {
               )}
             </div>
           </div>
-        </div>
+        </ResizableBottomPanel>
       )}
     </div>
   );

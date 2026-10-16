@@ -5,6 +5,7 @@ import MetricsChart from './MetricsChart';
 import MetricHistoryControls from './MetricHistoryControls';
 import ContextMenu from './ContextMenu';
 import Loader from './Loader';
+import ResizableBottomPanel from './ResizableBottomPanel';
 import TerminalViewer from './TerminalViewer';
 import { useToast } from './Toast';
 import useMetricHistory from '../hooks/useMetricHistory';
@@ -52,6 +53,32 @@ const memoryBytes = (value) => {
   return Number.parseFloat(match[1]) * (multipliers[match[2]] || 1);
 };
 
+const usagePercent = (used, capacity) => {
+  if (!Number.isFinite(used) || !Number.isFinite(capacity) || capacity <= 0) return null;
+  return Math.max(0, Math.min(100, (used / capacity) * 100));
+};
+
+const formatUsage = (value, resource) => {
+  if (!Number.isFinite(value)) return 'unavailable';
+  if (resource === 'CPU') return `${(value / 1000).toFixed(2)} cores`;
+  const unit = 1024 ** 3;
+  return `${(value / unit).toFixed(1)} Gi`;
+};
+
+function NodeUsageBar({ value, capacity, resource, color }) {
+  const percent = usagePercent(value, capacity);
+  const title = percent == null
+    ? `${resource}: usage unavailable`
+    : `${resource}: ${formatUsage(value, resource)} / ${formatUsage(capacity, resource)} (${percent.toFixed(0)}%)`;
+  return (
+    <div className="node-usage-meter" title={title} role="img" aria-label={title}>
+      <div className="node-usage-track">
+        {percent != null && <span style={{ width: `${percent > 0 ? Math.max(percent, 2) : 0}%`, background: color }} />}
+      </div>
+    </div>
+  );
+}
+
 export default function Nodes({ active = true, focusNode, onFocusHandled, onNavigate, refreshSignal = 0 }) {
   const toast = useToast();
   const [nodes, setNodes] = useState([]);
@@ -59,6 +86,8 @@ export default function Nodes({ active = true, focusNode, onFocusHandled, onNavi
   const [error, setError] = useState(null);
   const [selectedNode, setSelectedNode] = useState(null);
   const [activeTab, setActiveTab] = useState('details');
+  const [panelPosition, setPanelPosition] = useState('bottom');
+  const [rightPanelWidth, setRightPanelWidth] = useState(480);
   const [nodePods, setNodePods] = useState([]);
   const [podsLoading, setPodsLoading] = useState(false);
   const [podsError, setPodsError] = useState(null);
@@ -70,10 +99,32 @@ export default function Nodes({ active = true, focusNode, onFocusHandled, onNavi
   const [sort, setSort] = useState(null);
   const [nodeBusy, setNodeBusy] = useState(false);
   const [nodeAction, setNodeAction] = useState(null);
+  const [nodeMetrics, setNodeMetrics] = useState({});
+  const viewerRef = useRef(null);
+  const detailsPanelRef = useRef(null);
+  const panelResizeRef = useRef(null);
 
   useEffect(() => {
     fetchNodes();
   }, []);
+
+  useEffect(() => {
+    if (!active) return undefined;
+    let live = true;
+    let timer;
+    const poll = async () => {
+      try {
+        const response = await axios.get('/api/metrics/nodes');
+        if (live) setNodeMetrics(response.data?.metrics || {});
+      } catch {
+        // Node rows remain visible when usage metrics are unavailable.
+      } finally {
+        if (live) timer = setTimeout(poll, 15000);
+      }
+    };
+    poll();
+    return () => { live = false; clearTimeout(timer); };
+  }, [active, refreshSignal]);
 
   useEffect(() => {
     if (active) return;
@@ -106,6 +157,16 @@ export default function Nodes({ active = true, focusNode, onFocusHandled, onNavi
   // a refresh swaps in a new node object for the same node, and re-running this
   // would wipe the collected history.
   const selectedNodeName = selectedNode?.name;
+  useEffect(() => {
+    if (!selectedNodeName) return undefined;
+    const closeOnOutsidePointer = (event) => {
+      if (detailsPanelRef.current?.contains(event.target) || event.target?.closest?.('.nodes-panel-resize, .bottom-panel-resize-handle')) return;
+      setSelectedNode(null);
+    };
+    document.addEventListener('pointerdown', closeOnOutsidePointer);
+    return () => document.removeEventListener('pointerdown', closeOnOutsidePointer);
+  }, [selectedNodeName]);
+
   const metricHistory = useMetricHistory({
     kind: 'node',
     name: selectedNodeName,
@@ -212,6 +273,34 @@ export default function Nodes({ active = true, focusNode, onFocusHandled, onNavi
     setActiveTab('details');
   };
 
+  const startPanelResize = (event) => {
+    event.preventDefault();
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    panelResizeRef.current = { pointerId: event.pointerId, startX: event.clientX, startWidth: rightPanelWidth };
+  };
+
+  const movePanelResize = (event) => {
+    const resize = panelResizeRef.current;
+    if (!resize || resize.pointerId !== event.pointerId) return;
+    const viewerWidth = viewerRef.current?.getBoundingClientRect().width || window.innerWidth;
+    const maxWidth = Math.max(280, Math.min(900, viewerWidth - 320));
+    const width = resize.startWidth + resize.startX - event.clientX;
+    setRightPanelWidth(Math.max(280, Math.min(maxWidth, width)));
+  };
+
+  const stopPanelResize = (event) => {
+    if (panelResizeRef.current?.pointerId === event.pointerId) panelResizeRef.current = null;
+  };
+
+  const resizePanelWithKeyboard = (event) => {
+    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+    event.preventDefault();
+    const viewerWidth = viewerRef.current?.getBoundingClientRect().width || window.innerWidth;
+    const maxWidth = Math.max(280, Math.min(900, viewerWidth - 320));
+    const delta = event.key === 'ArrowLeft' ? 24 : -24;
+    setRightPanelWidth((width) => Math.max(280, Math.min(maxWidth, width + delta)));
+  };
+
   const getStatusColor = (status) => {
     if (status === 'Ready' || status === 'Running') return '#5eb575';
     if (status === 'Pending') return '#f5a623';
@@ -222,12 +311,23 @@ export default function Nodes({ active = true, focusNode, onFocusHandled, onNavi
     switch (column) {
       case 'Name': return node.name || '';
       case 'Status': return node.status || '';
-      case 'Scheduling': return node.unschedulable ? 1 : 0;
       case 'Roles': return node.roles || '';
       case 'Version': return node.version || '';
+      case 'Taints': return node.taints ?? node.taintList?.length ?? 0;
+      case 'Server Type': return node.serverType || '';
       case 'Internal IP': return node.internalIp || '';
-      case 'CPU': return cpuCores(node.cpuCapacity);
-      case 'Memory': return memoryBytes(node.memoryCapacity);
+      case 'CPU': {
+        const metric = nodeMetrics[node.name];
+        return usagePercent(metric?.cpuMilli, metric?.cpuCapacityMilli ?? cpuCores(node.cpuCapacity) * 1000) ?? -1;
+      }
+      case 'Memory': {
+        const metric = nodeMetrics[node.name];
+        return usagePercent(metric?.memBytes, metric?.memCapacityBytes ?? memoryBytes(node.memoryCapacity)) ?? -1;
+      }
+      case 'Disk': {
+        const metric = nodeMetrics[node.name];
+        return usagePercent(metric?.diskUsedBytes, metric?.diskCapacityBytes) ?? -1;
+      }
       // Match the Pods table: ascending age order shows the newest first.
       case 'Age': return node.createdAt ? -new Date(node.createdAt).getTime() : Infinity;
       default: return '';
@@ -248,7 +348,9 @@ export default function Nodes({ active = true, focusNode, onFocusHandled, onNavi
       if (typeof va === 'number' && typeof vb === 'number') return (va - vb) * direction;
       return String(va).localeCompare(String(vb), undefined, { numeric: true, sensitivity: 'base' }) * direction;
     });
-  }, [nodes, sort]);
+  }, [nodes, sort, nodeMetrics]);
+  const selectedNodeLabels = Object.entries(selectedNode?.labels || {}).sort(([a], [b]) => a.localeCompare(b));
+  const selectedNodeTaints = selectedNode?.taintList || [];
 
   const nodeMenuItems = (node) => [
     { icon: 'details', label: 'Details', onClick: () => { setSelectedNode(node); setActiveTab('details'); } },
@@ -267,7 +369,11 @@ export default function Nodes({ active = true, focusNode, onFocusHandled, onNavi
   ];
 
   return (
-    <div className="resource-viewer">
+    <div
+      ref={viewerRef}
+      className={`resource-viewer nodes-viewer ${selectedNode && panelPosition === 'right' ? 'nodes-panel-right' : ''}`}
+      style={{ '--nodes-panel-width': `${rightPanelWidth}px` }}
+    >
       <div className="resource-header">
         <div>
           <h3>
@@ -290,7 +396,7 @@ export default function Nodes({ active = true, focusNode, onFocusHandled, onNavi
           <table className="resource-table">
             <thead>
               <tr>
-                {['Name', 'Status', 'Scheduling', 'Roles', 'Version', 'Internal IP', 'CPU', 'Memory', 'Age'].map((column) => {
+                {['Name', 'Status', 'CPU', 'Memory', 'Disk', 'Taints', 'Roles', 'Version', 'Server Type', 'Internal IP', 'Age'].map((column) => {
                   const isSorted = sort?.col === column;
                   return (
                     <th
@@ -337,15 +443,34 @@ export default function Nodes({ active = true, focusNode, onFocusHandled, onNavi
                     </div>
                   </td>
                   <td>
-                    <span style={{ color: node.unschedulable ? '#d29922' : '#5eb575', fontSize: '12px', fontWeight: 500 }}>
-                      {node.unschedulable ? 'Cordoned' : 'Schedulable'}
-                    </span>
+                    <NodeUsageBar
+                      resource="CPU"
+                      value={nodeMetrics[node.name]?.cpuMilli}
+                      capacity={nodeMetrics[node.name]?.cpuCapacityMilli ?? cpuCores(node.cpuCapacity) * 1000}
+                      color="#58a6ff"
+                    />
                   </td>
+                  <td>
+                    <NodeUsageBar
+                      resource="Memory"
+                      value={nodeMetrics[node.name]?.memBytes}
+                      capacity={nodeMetrics[node.name]?.memCapacityBytes ?? memoryBytes(node.memoryCapacity)}
+                      color="#d946ef"
+                    />
+                  </td>
+                  <td>
+                    <NodeUsageBar
+                      resource="Disk"
+                      value={nodeMetrics[node.name]?.diskUsedBytes}
+                      capacity={nodeMetrics[node.name]?.diskCapacityBytes}
+                      color="#f2c94c"
+                    />
+                  </td>
+                  <td>{node.taints ?? node.taintList?.length ?? 0}</td>
                   <td>{node.roles}</td>
                   <td>{node.version}</td>
+                  <td>{node.serverType || '-'}</td>
                   <td>{node.internalIp}</td>
-                  <td>{node.cpuCapacity}</td>
-                  <td>{formatMemory(node.memoryCapacity)}</td>
                   <td>{formatAge(node.createdAt)}</td>
                   <td
                     className="actions"
@@ -361,7 +486,28 @@ export default function Nodes({ active = true, focusNode, onFocusHandled, onNavi
       </div>
 
       {selectedNode && (
-        <div className="bottom-panel">
+        <>
+        {panelPosition === 'right' && (
+          <div
+            className="nodes-panel-resize"
+            role="separator"
+            aria-label="Resize node details panel"
+            aria-orientation="vertical"
+            aria-valuenow={rightPanelWidth}
+            tabIndex={0}
+            onPointerDown={startPanelResize}
+            onPointerMove={movePanelResize}
+            onPointerUp={stopPanelResize}
+            onPointerCancel={stopPanelResize}
+            onKeyDown={resizePanelWithKeyboard}
+          />
+        )}
+        <ResizableBottomPanel
+          ref={detailsPanelRef}
+          className="nodes-detail-panel"
+          position={panelPosition}
+          label="Resize node details panel"
+        >
           <div className="bottom-panel-tabs">
             <button
               className={`bottom-tab ${activeTab === 'details' ? 'active' : ''}`}
@@ -381,7 +527,16 @@ export default function Nodes({ active = true, focusNode, onFocusHandled, onNavi
             >
               <Icon name="terminal" size={15} /> Terminal
             </button>
-            <button className="bottom-panel-toggle" onClick={() => setSelectedNode(null)} title="Close">
+            <button
+              className="nodes-panel-layout-toggle"
+              onClick={() => setPanelPosition((position) => position === 'right' ? 'bottom' : 'right')}
+              title={panelPosition === 'right' ? 'Move details panel to bottom' : 'Move details panel to right'}
+              aria-label={panelPosition === 'right' ? 'Move details panel to bottom' : 'Move details panel to right'}
+            >
+              <Icon name={panelPosition === 'right' ? 'arrowLeft' : 'arrowRight'} size={15} />
+              {panelPosition === 'right' ? 'Bottom' : 'Right'}
+            </button>
+            <button className="bottom-panel-toggle nodes-detail-close" onClick={() => setSelectedNode(null)} title="Close">
               <Icon name="close" size={16} />
             </button>
           </div>
@@ -389,6 +544,42 @@ export default function Nodes({ active = true, focusNode, onFocusHandled, onNavi
             {activeTab === 'details' && (
               <div className="details-tab-content">
                 <div className="cluster-info-container" style={{ padding: '16px' }}>
+                  <div className="cluster-info-card" style={{ gridColumn: '1 / -1' }}>
+                    <h3>
+                      Taints
+                      <span className="cluster-info-count">{selectedNodeTaints.length}</span>
+                    </h3>
+                    {selectedNodeTaints.length > 0 ? (
+                      <div className="node-meta-list">
+                        {selectedNodeTaints.map((taint, index) => (
+                          <div className="node-meta-row" key={`${taint.key || ''}-${taint.value || ''}-${taint.effect || ''}-${index}`}>
+                            <code className="node-meta-key">{taint.key || '-'}{taint.value ? `=${taint.value}` : ''}</code>
+                            <code className="node-meta-value">{taint.effect || '-'}</code>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="info-item info-empty"><label>No taints</label></div>
+                    )}
+                  </div>
+                  <div className="cluster-info-card node-labels-card" style={{ gridColumn: '1 / -1' }}>
+                    <h3>
+                      Labels
+                      <span className="cluster-info-count">{selectedNodeLabels.length}</span>
+                    </h3>
+                    {selectedNodeLabels.length > 0 ? (
+                      <div className="node-meta-list">
+                        {selectedNodeLabels.map(([key, value]) => (
+                          <div className="node-meta-row" key={key}>
+                            <code className="node-meta-key">{key}</code>
+                            <code className="node-meta-value">{value == null || value === '' ? '(empty)' : String(value)}</code>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="info-item info-empty"><label>No labels reported</label></div>
+                    )}
+                  </div>
                   <div className="cluster-info-card" style={{ gridColumn: '1 / -1' }}>
                     <h3>
                       <Icon name="activity" size={15} /> Requests, Limits & Usage
@@ -465,6 +656,7 @@ export default function Nodes({ active = true, focusNode, onFocusHandled, onNavi
                   </div>
                   <div className="cluster-info-card">
                     <h3><Icon name="box" size={15} /> System</h3>
+                    <div className="info-item"><label>Server Type:</label><span className="context-value">{selectedNode.serverType || '-'}</span></div>
                     <div className="info-item"><label>Kubelet Version:</label><span className="context-value">{selectedNode.version}</span></div>
                     <div className="info-item"><label>OS Image:</label><span className="context-value">{selectedNode.os}</span></div>
                     <div className="info-item"><label>Kernel Version:</label><span className="context-value">{selectedNode.kernelVersion}</span></div>
@@ -576,7 +768,8 @@ export default function Nodes({ active = true, focusNode, onFocusHandled, onNavi
               </div>
             )}
           </div>
-        </div>
+        </ResizableBottomPanel>
+        </>
       )}
 
       {menu && (
