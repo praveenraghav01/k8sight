@@ -10,7 +10,7 @@ A native desktop app (macOS · Windows · Linux), plus a Docker image, for brows
 
 [![Build & Release](https://github.com/praveenraghav01/k8sight/actions/workflows/release.yml/badge.svg)](https://github.com/praveenraghav01/k8sight/actions/workflows/release.yml)
 [![Latest release](https://img.shields.io/github/v/release/praveenraghav01/k8sight?sort=semver)](https://github.com/praveenraghav01/k8sight/releases/latest)
-[![Downloads](https://img.shields.io/github/downloads/praveenraghav01/k8sight/total)](https://github.com/praveenraghav01/k8sight/releases)
+[![Downloads](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fpraveenraghav01%2Fk8sight%2Fbadges%2Fdownloads.json)](https://github.com/praveenraghav01/k8sight/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 ![Platforms](https://img.shields.io/badge/platforms-macOS%20%7C%20Windows%20%7C%20Linux-informational)
 

@@ -6,7 +6,9 @@ name: CI
 # so we test on both Linux and macOS to guard that regression on its home OS.
 on:
   push:
-    branches: ['**']
+    # The badges branch only holds the README download badge (see
+    # download-badge.yml); there is nothing to test on it.
+    branches: ['**', '!badges']
   pull_request:
   workflow_dispatch:
 

@@ -1,0 +1,64 @@
+name: Download badge
+
+# GitHub's download counter (and the shields.io "github/downloads" badge) adds up
+# every release asset, including latest*.yml, which each installed copy fetches
+# on every launch to check for updates, and the .zip/.blockmap files the
+# updater downloads. That inflates the number several times over.
+#
+# This job counts only the installers people download (.dmg, .exe, .AppImage,
+# .deb) across all releases and publishes a shields.io endpoint file to the
+# orphan `badges` branch, which the README badge reads.
+on:
+  schedule:
+    - cron: '17 */6 * * *'
+  release:
+    types: [published]
+  workflow_dispatch:
+
+concurrency:
+  group: download-badge
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Count installer downloads
+        id: count
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # --paginate prints one sum per page of releases; awk adds them up.
+          total=$(gh api "repos/${GITHUB_REPOSITORY}/releases?per_page=100" --paginate \
+            --jq '[.[].assets[] | select(.name | test("\\.(dmg|exe|AppImage|deb)$")) | .download_count] | add // 0' \
+            | awk '{ s += $1 } END { print s + 0 }')
+          # 1234 -> 1.2k, like the shields.io github/downloads badge.
+          message=$(awk -v n="$total" 'BEGIN { if (n >= 1000) printf "%.1fk", n / 1000; else print n }')
+          echo "Installer downloads: $total ($message)"
+          echo "message=$message" >> "$GITHUB_OUTPUT"
+
+      - name: Publish badge to the badges branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MESSAGE: ${{ steps.count.outputs.message }}
+        run: |
+          set -euo pipefail
+          json=$(printf '{"schemaVersion":1,"label":"downloads","message":"%s","color":"brightgreen"}\n' "$MESSAGE")
+          current=$(gh api "repos/${GITHUB_REPOSITORY}/contents/downloads.json?ref=badges" --jq '.content' 2>/dev/null | base64 -d || true)
+          if [ "$current" = "$json" ]; then
+            echo "Badge already up to date."
+            exit 0
+          fi
+          mkdir badge && cd badge
+          git init -q -b badges
+          printf '%s' "$json" > downloads.json
+          git add downloads.json
+          git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
+            commit -q -m "Update download badge: $MESSAGE"
+          # Force-push a single commit so the branch never accumulates history.
+          git push -q --force "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" badges
