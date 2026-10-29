@@ -121,7 +121,7 @@
 
   /* ---------- Global nav (Apple thin translucent bar) ---------- */
   header {
-    position: sticky; top: 0; z-index: 9000; height: 48px;
+    position: sticky; top: var(--promo-h, 0px); z-index: 9000; height: 48px;
     backdrop-filter: saturate(180%) blur(20px);
     -webkit-backdrop-filter: saturate(180%) blur(20px);
     background: rgba(255,255,255,.72);
@@ -168,7 +168,7 @@
 
   /* ---------- Docs layout: sticky sidebar + content ---------- */
   .docs-layout { max-width: 1024px; margin: 0 auto; padding: 32px 22px 96px; display: grid; grid-template-columns: 210px 1fr; gap: 52px; align-items: start; }
-  .docs-side { position: sticky; top: 72px; max-height: calc(100vh - 88px); overflow-y: auto; padding-right: 6px; }
+  .docs-side { position: sticky; top: calc(72px + var(--promo-h, 0px)); max-height: calc(100vh - 88px - var(--promo-h, 0px)); overflow-y: auto; padding-right: 6px; }
   .docs-side::-webkit-scrollbar { width: 6px; }
   .docs-side::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
   .docs-side .side-title { font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--text-mute); margin: 0 0 12px 12px; }
@@ -182,11 +182,11 @@
   .docs-side .side-ext { margin-top: 22px; padding-top: 14px; border-top: 1px solid var(--border); }
 
   .docs-content { min-width: 0; max-width: 720px; }
-  .docs-content article { scroll-margin-top: 64px; }
+  .docs-content article { scroll-margin-top: calc(64px + var(--promo-h, 0px)); }
   .docs-content article + article { margin-top: 8px; padding-top: 44px; border-top: 1px solid var(--border); }
-  .docs-content h2 { font-size: clamp(26px, 3.5vw, 32px); font-weight: 700; letter-spacing: -0.015em; margin: 0 0 6px; color: var(--text); scroll-margin-top: 64px; }
+  .docs-content h2 { font-size: clamp(26px, 3.5vw, 32px); font-weight: 700; letter-spacing: -0.015em; margin: 0 0 6px; color: var(--text); scroll-margin-top: calc(64px + var(--promo-h, 0px)); }
   .docs-content .tagline { color: var(--text-mute); font-size: 15px; margin-bottom: 20px; }
-  .docs-content h3 { font-size: 20px; font-weight: 600; letter-spacing: -0.01em; margin: 34px 0 12px; color: var(--text); scroll-margin-top: 64px; }
+  .docs-content h3 { font-size: 20px; font-weight: 600; letter-spacing: -0.01em; margin: 34px 0 12px; color: var(--text); scroll-margin-top: calc(64px + var(--promo-h, 0px)); }
   .rel-date { font-size: 13px; font-weight: 400; color: var(--text-mute); margin-left: 8px; }
   .docs-content p { color: var(--text-dim); font-size: 16px; line-height: 1.62; margin-bottom: 14px; }
   .docs-content strong { color: var(--text); font-weight: 600; }
@@ -313,18 +313,23 @@
     .docs-side { background: var(--panel); border-color: var(--line); }
   }
 
-  /* Academy promo bar (same rules as assets/site.css, which this page does not load): top strip. Fixed brand-blue gradient so white text keeps
-     contrast in both light and dark themes. */
-  .promo-bar { position: relative; display: flex; align-items: center; justify-content: center; gap: 10px; padding: 9px 46px 9px 18px; background: linear-gradient(90deg, #0057d8, #2b8bff); color: #fff; font-size: 13.5px; line-height: 1.35; text-align: center; }
+  /* Academy promo bar: top strip. Fixed brand-blue gradient, dark enough at both
+     ends that the white text stays readable (WCAG AA) in either theme. */
+  .promo-bar { position: sticky; top: 0; z-index: 9001; display: flex; align-items: center; justify-content: center; padding: 8px 48px 8px 18px; background: linear-gradient(90deg, #004fc4, #1867da); color: #fff; font-size: 14px; line-height: 1.35; text-align: center; }
   .promo-bar[hidden] { display: none; }
-  .promo-inner { display: inline-flex; align-items: center; gap: 10px; color: #fff; text-decoration: none; flex-wrap: wrap; justify-content: center; }
-  .promo-badge { background: rgba(255,255,255,.2); border: 1px solid rgba(255,255,255,.4); padding: 1px 8px; border-radius: 999px; font-size: 10.5px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; }
+  .promo-inner { display: inline-flex; align-items: center; gap: 12px; color: #fff; text-decoration: none; flex-wrap: wrap; justify-content: center; }
+  .promo-inner:hover { text-decoration: none; }
+  .promo-badge { background: rgba(255,255,255,.2); border: 1px solid rgba(255,255,255,.4); padding: 1px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; }
   .promo-text b { font-weight: 600; }
-  .promo-arrow { transition: transform .15s ease; font-weight: 600; }
-  .promo-inner:hover .promo-arrow { transform: translateX(3px); }
-  .promo-close { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); background: none; border: none; color: rgba(255,255,255,.85); font-size: 20px; line-height: 1; cursor: pointer; padding: 0 6px; border-radius: 6px; }
+  .promo-short { display: none; }
+  .promo-cta { display: inline-flex; align-items: center; gap: 6px; padding: 4px 14px; border-radius: 999px; background: #fff; color: #003f9e; font-weight: 600; font-size: 13px; white-space: nowrap; box-shadow: 0 1px 2px rgba(0,0,0,.18); transition: transform .15s ease; }
+  .promo-inner:hover .promo-cta { transform: translateX(2px); }
+  .promo-close { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); background: none; border: none; color: rgba(255,255,255,.9); font-size: 20px; line-height: 1; cursor: pointer; padding: 0 6px; border-radius: 6px; }
   .promo-close:hover { background: rgba(255,255,255,.2); color: #fff; }
-  @media (max-width: 640px) { .promo-bar { font-size: 12.5px; padding: 8px 40px 8px 12px; } .promo-badge { display: none; } }
+  @media (max-width: 720px) { .promo-bar { font-size: 13px; padding: 8px 40px 8px 12px; } .promo-badge, .promo-long { display: none; } .promo-short { display: inline; } .promo-inner { gap: 10px; } }
+  /* The Academy link in the nav reads as a destination, not another docs link. */
+  .nav-links a.nav-academy { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 55%, transparent); }
+  .nav-links a.nav-academy:hover { background: color-mix(in srgb, var(--accent) 10%, transparent); color: var(--accent); }
 </style>
 <script>
   // Set theme before first paint to avoid a flash.
@@ -372,22 +377,30 @@
 <body>
 <!-- ACADEMY PROMO -->
 <div class="promo-bar" id="promoBar">
-  <a class="promo-inner" href="https://learn.k8sight.in" target="_blank" rel="noopener">
+  <a class="promo-inner" href="https://learn.k8sight.in/?utm_source=k8sight.in&amp;utm_medium=banner&amp;utm_campaign=academy" target="_blank" rel="noopener">
     <span class="promo-badge">New</span>
-    <span class="promo-text"><b>k8sight Academy</b> · hands-on Kubernetes courses. Start learning free.</span>
-    <span class="promo-arrow" aria-hidden="true">→</span>
+    <span class="promo-text"><span class="promo-long"><b>k8sight Academy</b> · Practise Kubernetes on a real cluster, right in your browser. 66 labs, free to start.</span><span class="promo-short"><b>k8sight Academy</b> · Kubernetes labs on a real cluster</span></span>
+    <span class="promo-cta">Start free <span aria-hidden="true">→</span></span>
   </a>
-  <button class="promo-close" id="promoClose" type="button" aria-label="Dismiss">×</button>
+  <button class="promo-close" id="promoClose" type="button" aria-label="Hide for two weeks">×</button>
 </div>
 <script>
+  // Dismissing hides the bar for 14 days, then it comes back. The old setting
+  // ('off', from before the bar was reworded) is ignored so everyone sees the new copy once.
   (function () {
     var bar = document.getElementById('promoBar');
     if (!bar) return;
-    try { if (localStorage.getItem('k8s-promo-academy') === 'off') bar.hidden = true; } catch (e) {}
+    var KEY = 'k8s-promo-academy-until', DAYS = 14;
+    try { if (Number(localStorage.getItem(KEY)) > Date.now()) bar.hidden = true; } catch (e) {}
+    // The bar is pinned above the sticky header, so publish its height (0 once
+    // dismissed) for the header, anchor offsets and the docs sidebar to sit under.
+    function sync() { document.documentElement.style.setProperty('--promo-h', (bar.hidden ? 0 : bar.offsetHeight) + 'px'); }
+    sync();
+    if (window.ResizeObserver) new ResizeObserver(sync).observe(bar);
     var btn = document.getElementById('promoClose');
     if (btn) btn.addEventListener('click', function (e) {
-      e.preventDefault(); e.stopPropagation(); bar.hidden = true;
-      try { localStorage.setItem('k8s-promo-academy', 'off'); } catch (e) {}
+      e.preventDefault(); e.stopPropagation(); bar.hidden = true; sync();
+      try { localStorage.setItem(KEY, String(Date.now() + DAYS * 864e5)); } catch (e) {}
     });
   })();
 </script>
@@ -409,7 +422,7 @@
           <a href="security.html">Security</a>
           <a href="costs.html">Costs</a>
           <a href="docs.html" class="current">Docs</a>
-          <a class="nav-pill nav-ghost" href="https://learn.k8sight.in" target="_blank" rel="noopener">Learn</a>
+          <a class="nav-pill nav-ghost nav-academy" href="https://learn.k8sight.in/?utm_source=k8sight.in&amp;utm_medium=nav&amp;utm_campaign=academy" target="_blank" rel="noopener">Academy</a>
           <a class="nav-pill nav-cta" href="index.html#download">Download</a>
         </div>
         <button class="theme-btn" id="themeBtn" aria-label="Toggle light and dark theme">
@@ -1191,6 +1204,7 @@ export GOOGLE_CLIENT_SECRET='GOCSPX-...'</code></pre>
       <a href="docs.html">Docs</a>
       <a href="privacy.html">Privacy</a>
       <a href="terms.html">Terms</a>
+      <a href="https://learn.k8sight.in/?utm_source=k8sight.in&amp;utm_medium=footer&amp;utm_campaign=academy" target="_blank" rel="noopener">Academy</a>
       <a href="https://github.com/praveenraghav01/k8sight" target="_blank" rel="noopener">GitHub</a>
       <a href="https://www.youtube.com/@k8sight" target="_blank" rel="noopener">YouTube</a>
     </div>

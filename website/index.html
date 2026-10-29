@@ -180,22 +180,30 @@
 <body>
 <!-- ACADEMY PROMO -->
 <div class="promo-bar" id="promoBar">
-  <a class="promo-inner" href="https://learn.k8sight.in" target="_blank" rel="noopener">
+  <a class="promo-inner" href="https://learn.k8sight.in/?utm_source=k8sight.in&amp;utm_medium=banner&amp;utm_campaign=academy" target="_blank" rel="noopener">
     <span class="promo-badge">New</span>
-    <span class="promo-text"><b>k8sight Academy</b> · hands-on Kubernetes courses. Start learning free.</span>
-    <span class="promo-arrow" aria-hidden="true">→</span>
+    <span class="promo-text"><span class="promo-long"><b>k8sight Academy</b> · Practise Kubernetes on a real cluster, right in your browser. 66 labs, free to start.</span><span class="promo-short"><b>k8sight Academy</b> · Kubernetes labs on a real cluster</span></span>
+    <span class="promo-cta">Start free <span aria-hidden="true">→</span></span>
   </a>
-  <button class="promo-close" id="promoClose" type="button" aria-label="Dismiss">×</button>
+  <button class="promo-close" id="promoClose" type="button" aria-label="Hide for two weeks">×</button>
 </div>
 <script>
+  // Dismissing hides the bar for 14 days, then it comes back. The old setting
+  // ('off', from before the bar was reworded) is ignored so everyone sees the new copy once.
   (function () {
     var bar = document.getElementById('promoBar');
     if (!bar) return;
-    try { if (localStorage.getItem('k8s-promo-academy') === 'off') bar.hidden = true; } catch (e) {}
+    var KEY = 'k8s-promo-academy-until', DAYS = 14;
+    try { if (Number(localStorage.getItem(KEY)) > Date.now()) bar.hidden = true; } catch (e) {}
+    // The bar is pinned above the sticky header, so publish its height (0 once
+    // dismissed) for the header, anchor offsets and the docs sidebar to sit under.
+    function sync() { document.documentElement.style.setProperty('--promo-h', (bar.hidden ? 0 : bar.offsetHeight) + 'px'); }
+    sync();
+    if (window.ResizeObserver) new ResizeObserver(sync).observe(bar);
     var btn = document.getElementById('promoClose');
     if (btn) btn.addEventListener('click', function (e) {
-      e.preventDefault(); e.stopPropagation(); bar.hidden = true;
-      try { localStorage.setItem('k8s-promo-academy', 'off'); } catch (e) {}
+      e.preventDefault(); e.stopPropagation(); bar.hidden = true; sync();
+      try { localStorage.setItem(KEY, String(Date.now() + DAYS * 864e5)); } catch (e) {}
     });
   })();
 </script>
@@ -219,7 +227,7 @@
           <a href="security.html">Security</a>
           <a href="costs.html">Costs</a>
           <a href="docs.html">Docs</a>
-          <a class="nav-pill nav-ghost" href="https://learn.k8sight.in" target="_blank" rel="noopener">Learn</a>
+          <a class="nav-pill nav-ghost nav-academy" href="https://learn.k8sight.in/?utm_source=k8sight.in&amp;utm_medium=nav&amp;utm_campaign=academy" target="_blank" rel="noopener">Academy</a>
           <a class="nav-pill nav-cta" href="#download">Download</a>
         </div>
         <button class="theme-btn" id="themeBtn" aria-label="Toggle light and dark theme">
@@ -359,6 +367,45 @@
           <span class="more">Learn more <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span>
         </div>
       </a>
+    </div>
+  </div>
+</section>
+
+<!-- ACADEMY -->
+<section class="sec" id="academy">
+  <div class="wrap">
+    <div class="academy">
+      <div class="academy-copy reveal">
+        <span class="kicker">k8sight Academy</span>
+        <h2>Learn Kubernetes on a real cluster</h2>
+        <p>Hands-on courses from your first Pod to production. Every lab runs real <code>kubectl</code> in your own namespace, right in the browser. No simulator, nothing to install.</p>
+        <ul class="academy-stats">
+          <li><b>5</b><span>courses</span></li>
+          <li><b>245</b><span>lessons</span></li>
+          <li><b>66</b><span>labs</span></li>
+          <li><b>35</b><span>incident drills</span></li>
+        </ul>
+        <ul class="checklist">
+          <li><span class="ck"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke-width="3"><path d="M20 6L9 17l-5-5"/></svg></span> <span><b>Break it, then fix it.</b> Debug real outages such as CrashLoopBackOff, a bad rollout or a leaked key, and write the postmortem.</span></li>
+          <li><span class="ck"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke-width="3"><path d="M20 6L9 17l-5-5"/></svg></span> <span><b>Checked against the cluster.</b> Labs pass when the cluster is right, not when you pick a quiz answer.</span></li>
+          <li><span class="ck"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke-width="3"><path d="M20 6L9 17l-5-5"/></svg></span> <span><b>Interview ready.</b> 381 worked questions and mock interviews with a graded report.</span></li>
+        </ul>
+        <div class="cta-row">
+          <a class="btn btn-primary" href="https://learn.k8sight.in/?utm_source=k8sight.in&amp;utm_medium=home-section&amp;utm_campaign=academy" target="_blank" rel="noopener">Start learning free</a>
+          <span class="academy-note">Kubernetes, Linux, CI/CD, Terraform and system design</span>
+        </div>
+      </div>
+      <div class="academy-term reveal" aria-hidden="true">
+        <div class="term-bar"><i></i><i></i><i></i><span>student@k8s-lab</span></div>
+        <pre class="term-body"><span class="p">$</span> kubectl create deployment web --image=nginx --replicas=2
+deployment.apps/web created
+<span class="p">$</span> kubectl get pods
+NAME                   READY   STATUS    AGE
+web-7c5d8f9b6d-4xkzq   1/1     <span class="ok">Running</span>   12s
+web-7c5d8f9b6d-p2m8h   1/1     <span class="ok">Running</span>   12s
+<span class="p">$</span> <span class="cur"></span></pre>
+        <div class="term-check"><span class="tick">✓</span> Validated: 2 replicas running</div>
+      </div>
     </div>
   </div>
 </section>
@@ -560,6 +607,7 @@
       <a href="docs.html">Docs</a>
       <a href="privacy.html">Privacy</a>
       <a href="terms.html">Terms</a>
+      <a href="https://learn.k8sight.in/?utm_source=k8sight.in&amp;utm_medium=footer&amp;utm_campaign=academy" target="_blank" rel="noopener">Academy</a>
       <a href="https://github.com/praveenraghav01/k8sight" target="_blank" rel="noopener">GitHub</a>
       <a href="https://www.youtube.com/@k8sight" target="_blank" rel="noopener">YouTube</a>
     </div>
