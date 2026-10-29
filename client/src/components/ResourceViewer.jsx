@@ -6,6 +6,7 @@ import TerminalViewer from './TerminalViewer';
 import Events from './Events';
 import NamespaceMultiSelect from './NamespaceMultiSelect';
 import ResourceDrawer from './ResourceDrawer';
+import ResizableBottomPanel from './ResizableBottomPanel';
 import ContextMenu from './ContextMenu';
 import Loader from './Loader';
 import Icon from './Icons';
@@ -94,13 +95,20 @@ export default function ResourceViewer({
     : selectedNamespaces[0];
   const [tabs, setTabs] = useState([]);
   const [activeTabId, setActiveTabId] = useState(null);
+  const [tabPanelPosition, setTabPanelPosition] = useState('bottom');
+  const [rightTabPanelWidth, setRightTabPanelWidth] = useState(480);
   const [logSearch, setLogSearch] = useState('');
   const [podMetrics, setPodMetrics] = useState({});
   const [menu, setMenu] = useState(null); // { x, y, resource }
   const [sort, setSort] = useState(null); // { col, dir: 'asc' | 'desc' }
   const [selectedRows, setSelectedRows] = useState(new Set());
   const headerCheckRef = useRef(null);
+  const viewerRef = useRef(null);
+  const tabPanelRef = useRef(null);
+  const panelResizeRef = useRef(null);
   const previousResourceTypeRef = useRef(resourceType);
+  const hasPodTabs = resourceType === 'pod' && tabs.length > 0;
+  const showPodTabPanelRight = hasPodTabs && tabPanelPosition === 'right';
 
   useEffect(() => {
     if (!active) {
@@ -108,6 +116,22 @@ export default function ResourceViewer({
       setMenu(null);
     }
   }, [active]);
+
+  useEffect(() => {
+    if (!hasPodTabs) return undefined;
+    const closePanelOnOutsidePointer = (event) => {
+      if (tabPanelRef.current?.contains(event.target) || event.target?.closest?.('.resource-tabs-panel-resize, .bottom-panel-resize-handle')) return;
+      setTabs([]);
+      setActiveTabId(null);
+      onSelectResource(null);
+    };
+    document.addEventListener('pointerdown', closePanelOnOutsidePointer);
+    return () => document.removeEventListener('pointerdown', closePanelOnOutsidePointer);
+  }, [hasPodTabs, onSelectResource]);
+
+  useEffect(() => {
+    if (resourceType === 'pod' && tabs.length > 0) setTabPanelPosition('right');
+  }, [resourceType, tabs.length]);
 
   const rowKey = (r) => `${r.namespace}/${r.name}`;
   const isRowSelected = (r) => selectedRows.has(rowKey(r));
@@ -151,6 +175,38 @@ export default function ResourceViewer({
     const id = `${type}:${res.namespace}/${res.name}${container ? ':' + container : ''}`;
     setTabs(prev => (prev.some(t => t.id === id) ? prev : [...prev, { id, type, resource: res, resourceType, container }]));
     setActiveTabId(id);
+    if (resourceType === 'pod') {
+      setTabPanelPosition('right');
+      onSelectResource(null);
+    }
+  };
+
+  const startTabPanelResize = (event) => {
+    event.preventDefault();
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    panelResizeRef.current = { pointerId: event.pointerId, axis: 'x', startX: event.clientX, startWidth: rightTabPanelWidth };
+  };
+
+  const moveTabPanelResize = (event) => {
+    const resize = panelResizeRef.current;
+    if (!resize || resize.axis !== 'x' || resize.pointerId !== event.pointerId) return;
+    const viewerWidth = viewerRef.current?.getBoundingClientRect().width || window.innerWidth;
+    const maxWidth = Math.max(280, Math.min(900, viewerWidth - 320));
+    const width = resize.startWidth + resize.startX - event.clientX;
+    setRightTabPanelWidth(Math.max(280, Math.min(maxWidth, width)));
+  };
+
+  const stopTabPanelResize = (event) => {
+    if (panelResizeRef.current?.pointerId === event.pointerId) panelResizeRef.current = null;
+  };
+
+  const resizeTabPanelWithKeyboard = (event) => {
+    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+    event.preventDefault();
+    const viewerWidth = viewerRef.current?.getBoundingClientRect().width || window.innerWidth;
+    const maxWidth = Math.max(280, Math.min(900, viewerWidth - 320));
+    const delta = event.key === 'ArrowLeft' ? 24 : -24;
+    setRightTabPanelWidth((width) => Math.max(280, Math.min(maxWidth, width + delta)));
   };
 
   const closeTab = (id) => {
@@ -490,7 +546,11 @@ export default function ResourceViewer({
   const isTabbed = TAB_KEYS.includes(resourceType);
 
   return (
-    <div className="resource-viewer">
+    <div
+      ref={viewerRef}
+      className={`resource-viewer ${showPodTabPanelRight ? 'pod-tabs-panel-right' : ''}`}
+      style={{ '--resource-tab-panel-width': `${rightTabPanelWidth}px` }}
+    >
       {isTabbed && (
         <div className="resource-tabs">
           {TAB_KEYS.map(key => (
@@ -627,8 +687,29 @@ export default function ResourceViewer({
         ))}
       </div>
 
+      {showPodTabPanelRight && (
+        <div
+          className="nodes-panel-resize resource-tabs-panel-resize"
+          role="separator"
+          aria-label="Resize pod logs panel"
+          aria-orientation="vertical"
+          aria-valuenow={rightTabPanelWidth}
+          tabIndex={0}
+          onPointerDown={startTabPanelResize}
+          onPointerMove={moveTabPanelResize}
+          onPointerUp={stopTabPanelResize}
+          onPointerCancel={stopTabPanelResize}
+          onKeyDown={resizeTabPanelWithKeyboard}
+        />
+      )}
+
       {tabs.length > 0 && (
-        <div className="bottom-panel">
+        <ResizableBottomPanel
+          ref={tabPanelRef}
+          className={`resource-tabs-panel ${showPodTabPanelRight ? 'resource-tabs-panel-right' : ''}`}
+          position={showPodTabPanelRight ? 'right' : 'bottom'}
+          label="Resize pod logs panel"
+        >
           <div className="bottom-panel-tabs">
             {tabs.map(t => (
               <div
@@ -649,9 +730,20 @@ export default function ResourceViewer({
                 </span>
               </div>
             ))}
+            {hasPodTabs && (
+              <button
+                className="resource-panel-layout-toggle"
+                onClick={() => setTabPanelPosition((position) => position === 'right' ? 'bottom' : 'right')}
+                title={tabPanelPosition === 'right' ? 'Move panel to bottom' : 'Move panel to right'}
+                aria-label={tabPanelPosition === 'right' ? 'Move panel to bottom' : 'Move panel to right'}
+              >
+                <Icon name={tabPanelPosition === 'right' ? 'arrowLeft' : 'arrowRight'} size={15} />
+                {tabPanelPosition === 'right' ? 'Bottom' : 'Right'}
+              </button>
+            )}
             <button
               className="bottom-panel-toggle"
-              onClick={() => { setTabs([]); setActiveTabId(null); }}
+              onClick={() => { setTabs([]); setActiveTabId(null); if (resourceType === 'pod') onSelectResource(null); }}
               title="Close all"
             >
               <Icon name="close" size={16} />
@@ -679,10 +771,10 @@ export default function ResourceViewer({
               </div>
             ))}
           </div>
-        </div>
+        </ResizableBottomPanel>
       )}
 
-      {selectedResource && (
+      {selectedResource && !hasPodTabs && (
         <ResourceDrawer
           resource={selectedResource}
           namespace={namespace}

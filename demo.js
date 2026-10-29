@@ -379,9 +379,10 @@ function makeCronJob(ns, name, schedule, opts = {}) {
 }
 
 function makeNode(name, opts = {}) {
-  const { ip, role = 'worker', cpu = '4', memKi = '16311512Ki', createdMin = 20160 } = opts;
+  const { ip, role = 'worker', cpu = '4', memKi = '16311512Ki', createdMin = 20160, serverType = 'demo-standard-4' } = opts;
   const labels = {
     'kubernetes.io/hostname': name, 'kubernetes.io/os': 'linux', 'kubernetes.io/arch': 'amd64',
+    'node.kubernetes.io/instance-type': serverType,
     'topology.kubernetes.io/region': 'demo-region', 'topology.kubernetes.io/zone': `demo-zone-${name.slice(-1)}`,
   };
   if (role === 'control-plane') labels['node-role.kubernetes.io/control-plane'] = '';
@@ -493,9 +494,9 @@ function podMetric(nsName, podName, cpuMilli, memBytes) {
   cluster.nodes.push(makeNode('demo-node-1', { ip: '10.0.0.11', role: 'control-plane' }));
   cluster.nodes.push(makeNode('demo-node-2', { ip: '10.0.0.12' }));
   cluster.nodes.push(makeNode('demo-node-3', { ip: '10.0.0.13' }));
-  cluster.nodeMetricBase['demo-node-1'] = { cpuMilli: 850, memBytes: 5.2 * 1024 ** 3 };
-  cluster.nodeMetricBase['demo-node-2'] = { cpuMilli: 1650, memBytes: 8.1 * 1024 ** 3 };
-  cluster.nodeMetricBase['demo-node-3'] = { cpuMilli: 1180, memBytes: 6.4 * 1024 ** 3 };
+  cluster.nodeMetricBase['demo-node-1'] = { cpuMilli: 850, memBytes: 5.2 * 1024 ** 3, diskUsedBytes: 22 * 1024 ** 3 };
+  cluster.nodeMetricBase['demo-node-2'] = { cpuMilli: 1650, memBytes: 8.1 * 1024 ** 3, diskUsedBytes: 48 * 1024 ** 3 };
+  cluster.nodeMetricBase['demo-node-3'] = { cpuMilli: 1180, memBytes: 6.4 * 1024 ** 3, diskUsedBytes: 64 * 1024 ** 3 };
 
   // ================= default =================
   {
@@ -1357,7 +1358,9 @@ function nodeMetricNow(name) {
     available: true,
     cpuMilli: round1(jitter(base.cpuMilli, 0.15)),
     memBytes: Math.round(jitter(base.memBytes, 0.05)),
+    diskUsedBytes: Math.round(jitter(base.diskUsedBytes || 0, 0.04)),
     cpuCapacityMilli: parseCpu(cap.cpu), memCapacityBytes: parseMem(cap.memory),
+    diskCapacityBytes: parseMem(cap['ephemeral-storage']),
     cpuAllocatableMilli: parseCpu(alloc.cpu), memAllocatableBytes: parseMem(alloc.memory),
   };
 }
@@ -1540,6 +1543,9 @@ export function handle(req, res) {
     }
     if (method === 'GET' && seg[1] === 'metrics' && seg[2] === 'history' && seg[3] === 'node') {
       return json(demoMetricHistory('node', '', decodeURIComponent(seg[4] || ''), q.period || '1h'));
+    }
+    if (method === 'GET' && p === '/api/metrics/nodes') {
+      return json({ metrics: Object.fromEntries(cluster.nodes.map((node) => [node.metadata.name, nodeMetricNow(node.metadata.name)]).filter(([, metrics]) => metrics)) });
     }
     if (method === 'GET' && seg[1] === 'metrics' && seg[2] === 'pod' && seg[3] && seg[4]) {
       const metrics = podMetricNow(decodeURIComponent(seg[3]), decodeURIComponent(seg[4]));
@@ -2116,6 +2122,9 @@ function formatNode(item) {
   return {
     name: item.metadata.name, status: isReady ? 'Ready' : 'NotReady',
     roles: roles.length ? roles.join(', ') : 'worker',
+    labels,
+    taintList: item.spec?.taints || [],
+    serverType: labels['node.kubernetes.io/instance-type'] || labels['beta.kubernetes.io/instance-type'] || '-',
     version: item.status?.nodeInfo?.kubeletVersion || '-', os: item.status?.nodeInfo?.osImage || '-',
     kernelVersion: item.status?.nodeInfo?.kernelVersion || '-', containerRuntime: item.status?.nodeInfo?.containerRuntimeVersion || '-',
     internalIp: addresses.find((a) => a.type === 'InternalIP')?.address || '-', externalIp: addresses.find((a) => a.type === 'ExternalIP')?.address || '-',

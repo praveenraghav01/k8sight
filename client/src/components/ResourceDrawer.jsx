@@ -139,8 +139,63 @@ export default function ResourceDrawer({ resource, namespace, resourceType, onCl
   const [metricsNow, setMetricsNow] = useState(null);
   const [metricsAvail, setMetricsAvail] = useState(true);
   const [revealSecrets, setRevealSecrets] = useState(false);
+  const [position, setPosition] = useState('right');
+  const [drawerWidth, setDrawerWidth] = useState(460);
+  const [drawerHeight, setDrawerHeight] = useState(42);
   const drawerRef = useRef(null);
+  const resizeRef = useRef(null);
   useClickOutside(drawerRef, onClose);
+
+  const startResize = (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    const drawerRect = drawerRef.current?.getBoundingClientRect();
+    const containerRect = drawerRef.current?.parentElement?.getBoundingClientRect();
+    if (!drawerRect || !containerRect) return;
+    resizeRef.current = {
+      pointerId: event.pointerId,
+      position,
+      startX: event.clientX,
+      startY: event.clientY,
+      startWidth: drawerRect.width,
+      startHeight: drawerRect.height,
+      containerWidth: containerRect.width,
+      containerHeight: containerRect.height
+    };
+  };
+
+  const moveResize = (event) => {
+    const resize = resizeRef.current;
+    if (!resize || resize.pointerId !== event.pointerId) return;
+    if (resize.position === 'right') {
+      const maxWidth = Math.max(280, Math.min(900, resize.containerWidth - 320));
+      setDrawerWidth(Math.max(280, Math.min(maxWidth, resize.startWidth + resize.startX - event.clientX)));
+    } else {
+      const minHeight = Math.max(180, resize.containerHeight * 0.2);
+      const maxHeight = resize.containerHeight * 0.8;
+      const height = resize.startHeight + resize.startY - event.clientY;
+      setDrawerHeight(Math.max(20, Math.min(80, (Math.max(minHeight, Math.min(maxHeight, height)) / resize.containerHeight) * 100)));
+    }
+  };
+
+  const stopResize = (event) => {
+    if (resizeRef.current?.pointerId === event.pointerId) resizeRef.current = null;
+  };
+
+  const resizeWithKeyboard = (event) => {
+    if (position === 'right' && (event.key === 'ArrowLeft' || event.key === 'ArrowRight')) {
+      event.preventDefault();
+      const containerWidth = drawerRef.current?.parentElement?.getBoundingClientRect().width || window.innerWidth;
+      const maxWidth = Math.max(280, Math.min(900, containerWidth - 320));
+      setDrawerWidth((width) => Math.max(280, Math.min(maxWidth, width + (event.key === 'ArrowLeft' ? 24 : -24))));
+    } else if (position === 'bottom' && (event.key === 'ArrowUp' || event.key === 'ArrowDown')) {
+      event.preventDefault();
+      const containerHeight = drawerRef.current?.parentElement?.getBoundingClientRect().height || window.innerHeight;
+      const delta = (event.key === 'ArrowUp' ? 24 : -24) / containerHeight * 100;
+      setDrawerHeight((height) => Math.max(20, Math.min(80, height + delta)));
+    }
+  };
 
   const isPodKind = resourceType === 'pod' || (resource?.kind || '').toLowerCase() === 'pod';
   const metricHistory = useMetricHistory({
@@ -255,7 +310,23 @@ export default function ResourceDrawer({ resource, namespace, resourceType, onCl
   (spec.imagePullSecrets || []).forEach(s => s.name && secretNames.push(s.name));
 
   return (
-    <div className="resource-drawer" ref={drawerRef}>
+    <div
+      className={`resource-drawer ${position === 'bottom' ? 'layout-bottom' : ''}`}
+      style={{ '--resource-drawer-width': `${drawerWidth}px`, '--resource-drawer-height': `${drawerHeight}%` }}
+      ref={drawerRef}
+    >
+      <div
+        className={`resource-drawer-resize-handle ${position === 'bottom' ? 'horizontal' : 'vertical'}`}
+        role="separator"
+        aria-label={`Resize resource details ${position === 'bottom' ? 'height' : 'width'}`}
+        aria-orientation={position === 'bottom' ? 'horizontal' : 'vertical'}
+        tabIndex={0}
+        onPointerDown={startResize}
+        onPointerMove={moveResize}
+        onPointerUp={stopResize}
+        onPointerCancel={stopResize}
+        onKeyDown={resizeWithKeyboard}
+      />
       <div className="drawer-header">
         <div className="drawer-title">
           <div className={`drawer-title-icon ${statusClass(resource.status) || 'blue'}`}>
@@ -267,6 +338,15 @@ export default function ResourceDrawer({ resource, namespace, resourceType, onCl
           </div>
         </div>
         <div className="drawer-actions">
+          <button
+            className="drawer-layout-toggle"
+            title={position === 'right' ? 'Move panel to bottom' : 'Move panel to right'}
+            aria-label={position === 'right' ? 'Move panel to bottom' : 'Move panel to right'}
+            onClick={() => setPosition((current) => current === 'right' ? 'bottom' : 'right')}
+          >
+            <Icon name={position === 'right' ? 'arrowLeft' : 'arrowRight'} size={15} />
+            {position === 'right' ? 'Bottom' : 'Right'}
+          </button>
           {isPod && (
             <>
               <button className="drawer-action-btn" title="Logs" onClick={() => onOpenTab('logs')}>

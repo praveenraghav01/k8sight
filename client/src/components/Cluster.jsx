@@ -173,11 +173,11 @@ export default function Cluster({ refreshSignal = 0, configStatus = {}, onSwitch
 
   const kpis = data ? [
     {
-      label: 'Nodes', value: `${data.nodes.ready}/${data.nodes.total}`, sub: 'ready', icon: 'nodes', tone: 'blue',
-      detailLines: [`${data.nodes.notReady} not ready`], dataSource: 'Kubernetes API'
+      label: 'Nodes', icon: 'nodes', tone: 'blue',
+      detailLines: [`${data.nodes.ready} ready`, `${data.nodes.notReady} not ready`], dataSource: 'Kubernetes API'
     },
     {
-      label: 'CPU Cores', value: cap.cpuCapacity, sub: `${cap.cpuAllocatable} allocatable`, icon: 'cpu', tone: 'green',
+      label: 'CPU Cores', sub: `${cap.cpuAllocatable} allocatable`, icon: 'cpu', tone: 'green',
       detailLines: [
         `Usage ${fmtCpuUsage(resources.cpuMilli)}`,
         `Request ${fmtCpuUsage(resources.cpuRequestsMilli)}`,
@@ -186,7 +186,7 @@ export default function Cluster({ refreshSignal = 0, configStatus = {}, onSwitch
       dataSource: resources.cpuSource
     },
     {
-      label: 'Memory', value: fmtBytes(cap.memCapacityBytes), sub: `${fmtBytes(cap.memAllocatableBytes)} alloc`, icon: 'memory', tone: 'purple',
+      label: 'Memory', sub: `${fmtBytes(cap.memAllocatableBytes)} allocatable`, icon: 'memory', tone: 'purple',
       detailLines: [
         `Usage ${fmtMemoryUsage(resources.memBytes)}`,
         `Request ${fmtMemoryUsage(resources.memRequestsBytes)}`,
@@ -195,7 +195,7 @@ export default function Cluster({ refreshSignal = 0, configStatus = {}, onSwitch
       dataSource: resources.memorySource
     },
     {
-      label: 'Pods', value: podTotal == null ? '…' : podTotal,
+      label: 'Pods',
       sub: podTotal == null ? (podsLoading ? 'loading' : 'unavailable') : `${phases.Running || 0} running`,
       icon: 'pod', tone: 'cyan',
       detailLines: [
@@ -206,13 +206,13 @@ export default function Cluster({ refreshSignal = 0, configStatus = {}, onSwitch
       dataSource: 'Kubernetes API'
     },
     {
-      label: 'Namespaces', value: data.namespaceCount, sub: 'total', icon: 'apps', tone: 'yellow',
-      detailLines: ['Scope: all namespaces'], dataSource: 'Kubernetes API'
+      label: 'Namespaces', icon: 'apps', tone: 'yellow',
+      detailLines: [`${data.namespaceCount} total`, 'Scope: all namespaces'], dataSource: 'Kubernetes API'
     }
   ] : [];
 
   return (
-    <div className="dashboard">
+    <div className="dashboard cluster-dashboard">
       <div className="dashboard-header">
         <h2>
           <Icon name="cluster" size={19} />
@@ -230,17 +230,17 @@ export default function Cluster({ refreshSignal = 0, configStatus = {}, onSwitch
         <div className="dashboard-body">
           <div className="kpi-row">
             {kpis.map(k => (
-              <div key={k.label} className="kpi-card" style={{ cursor: 'default' }}>
+              <div key={k.label} className={`kpi-card cluster-kpi-card ${k.tone}`}>
                 <div className={`kpi-icon ${k.tone}`}><Icon name={k.icon} size={22} /></div>
                 <div className="kpi-meta">
-                  <div className="kpi-value">{k.value}</div>
                   <div className="kpi-label">{k.label}</div>
-                  <div className="kpi-sub">{k.sub}</div>
+                  {k.sub && <div className="kpi-sub">{k.sub}</div>}
                   {(k.detailLines || []).map((line, index) => (
                     <div key={index} className="kpi-detail-line">{line}</div>
                   ))}
-                  <div className="kpi-detail-source">
-                    Source: {k.dataSource || (metricsLoading ? 'loading' : 'unavailable')}
+                  <div className={`kpi-detail-source ${!k.dataSource ? 'is-muted' : ''}`}>
+                    <span className="kpi-source-dot" />
+                    Source: {k.dataSource || (metricsLoading ? 'Metrics loading' : 'unavailable')}
                   </div>
                 </div>
               </div>

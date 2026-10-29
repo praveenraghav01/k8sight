@@ -5,6 +5,7 @@ import 'highlight.js/styles/atom-one-dark.css';
 import Icon from './Icons';
 import Loader from './Loader';
 import HelmChartSearch from './HelmChartSearch';
+import ResizableBottomPanel from './ResizableBottomPanel';
 
 const formatAge = (dateStr) => {
   if (!dateStr) return '-';
@@ -194,7 +195,7 @@ export default function Helm({ refreshSignal = 0 }) {
       </div>
 
       {selectedRelease && (
-        <div className="bottom-panel">
+        <ResizableBottomPanel label="Resize Helm release panel">
           <div className="bottom-panel-tabs">
             <button
               className={`bottom-tab ${activeTab === 'values' ? 'active' : ''}`}
@@ -238,7 +239,7 @@ export default function Helm({ refreshSignal = 0 }) {
               </div>
             </div>
           </div>
-        </div>
+        </ResizableBottomPanel>
       )}
     </div>
   );

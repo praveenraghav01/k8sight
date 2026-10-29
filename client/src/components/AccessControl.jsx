@@ -4,6 +4,7 @@ import Icon from './Icons';
 import Loader from './Loader';
 import ResourceDrawer from './ResourceDrawer';
 import YamlViewer from './YamlViewer';
+import ResizableBottomPanel from './ResizableBottomPanel';
 
 const formatAge = (createdAt) => {
   if (!createdAt) return '-';
@@ -134,7 +135,7 @@ export default function AccessControl({ onNavigate, refreshSignal = 0 }) {
       </div>
 
       {yamlTarget && (
-        <div className="bottom-panel">
+        <ResizableBottomPanel label="Resize YAML panel">
           <div className="bottom-panel-tabs">
             <button className="bottom-tab active"><Icon name="configuration" size={15} /> YAML</button>
             <button className="bottom-panel-toggle" onClick={() => setYamlTarget(null)} title="Close"><Icon name="close" size={16} /></button>
@@ -142,7 +143,7 @@ export default function AccessControl({ onNavigate, refreshSignal = 0 }) {
           <div className="bottom-panel-content">
             <YamlViewer resource={yamlTarget} namespace={yamlTarget.namespace} resourceType={yamlTarget.resourceType} />
           </div>
-        </div>
+        </ResizableBottomPanel>
       )}
 
       {selected && (

@@ -1981,6 +1981,9 @@ function formatNode(item) {
     name: item.metadata.name,
     status: isReady ? 'Ready' : 'NotReady',
     roles: roles.length > 0 ? roles.join(', ') : 'worker',
+    labels,
+    taintList: taints,
+    serverType: labels['node.kubernetes.io/instance-type'] || labels['beta.kubernetes.io/instance-type'] || '-',
     version: item.status?.nodeInfo?.kubeletVersion || '-',
     os: item.status?.nodeInfo?.osImage || '-',
     kernelVersion: item.status?.nodeInfo?.kernelVersion || '-',
@@ -4511,6 +4514,87 @@ app.get('/api/metrics/history/pod/:namespace/:pod', (req, res) => (
 app.get('/api/metrics/history/node/:name', (req, res) => (
   sendMetricHistory(req, res, 'node', null, req.params.name)
 ));
+
+// Current usage for every node, used by the Nodes table meters.
+app.get('/api/metrics/nodes', async (req, res) => {
+  try {
+    if (!kubeConfig) return res.status(400).json({ error: 'No kubeconfig loaded' });
+    const cacheKey = getCacheKey('metric-response-nodes', { context: currentContext || '' });
+    const cached = getCache(cacheKey);
+    if (cached) return res.json(cached);
+
+    const coreApi = kubeConfig.makeApiClient(k8s.CoreV1Api);
+    const filesystemSelector = 'mountpoint="/",fstype!~"rootfs|tmpfs|overlay|squashfs"';
+    const withResource = (query, resource) => `label_replace(${query}, "resource", "${resource}", "instance", ".+")`;
+    const expression = [
+      withResource('sum by (instance) (rate(node_cpu_usage_seconds_total[5m])) * 1000', 'cpuKubelet'),
+      withResource('max by (instance) (node_memory_working_set_bytes)', 'memoryKubelet'),
+      withResource('sum by (instance) (rate(node_cpu_seconds_total{mode!="idle",mode!="iowait"}[5m])) * 1000', 'cpuNodeExporter'),
+      withResource('max by (instance) (node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes)', 'memoryNodeExporter'),
+      withResource(`max by (instance) (node_filesystem_size_bytes{${filesystemSelector}} - node_filesystem_avail_bytes{${filesystemSelector}})`, 'diskUsed'),
+      withResource(`max by (instance) (node_filesystem_size_bytes{${filesystemSelector}})`, 'diskCapacity')
+    ].join(' or ');
+
+    const [nodeResponse, prometheusSamples, metricsApi] = await Promise.all([
+      coreApi.listNode(),
+      queryPrometheusInstant(expression).catch(() => null),
+      (async () => {
+        let timeout;
+        try {
+          return await Promise.race([
+            fetchMetricsObject('nodes').catch(() => null),
+            new Promise((resolve) => { timeout = setTimeout(() => resolve(null), 3500); })
+          ]);
+        } finally {
+          clearTimeout(timeout);
+        }
+      })()
+    ]);
+
+    const items = nodeResponse.items || [];
+    const apiByName = new Map((metricsApi?.items || []).map((item) => [item.metadata?.name, item]));
+    const prometheusByNode = new Map();
+    for (const sample of prometheusSamples || []) {
+      const instance = String(sample.metric?.instance || '');
+      const host = instance.replace(/:\d+$/, '');
+      const node = items.find((item) => {
+        const targets = [item.metadata?.name, ...(item.status?.addresses || []).map((address) => address.address)];
+        return targets.some((target) => target && (target === host || instance === target || instance.startsWith(`${target}:`)));
+      });
+      const resource = sample.metric?.resource;
+      const value = prometheusSampleValue(sample);
+      if (!node || !resource || value == null) continue;
+      const values = prometheusByNode.get(node.metadata.name) || {};
+      values[resource] = Math.max(values[resource] ?? -Infinity, value);
+      prometheusByNode.set(node.metadata.name, values);
+    }
+
+    const metrics = Object.fromEntries(items.map((node) => {
+      const name = node.metadata.name;
+      const apiUsage = apiByName.get(name)?.usage || {};
+      const prometheusUsage = prometheusByNode.get(name) || {};
+      const capacity = node.status?.capacity || {};
+      const cpuMilli = prometheusUsage.cpuKubelet ?? prometheusUsage.cpuNodeExporter
+        ?? (apiUsage.cpu == null ? null : parseCpuMilli(apiUsage.cpu));
+      const memBytes = prometheusUsage.memoryKubelet ?? prometheusUsage.memoryNodeExporter
+        ?? (apiUsage.memory == null ? null : parseMemBytes(apiUsage.memory));
+      return [name, {
+        cpuMilli,
+        memBytes,
+        diskUsedBytes: prometheusUsage.diskUsed ?? null,
+        cpuCapacityMilli: parseCpuMilli(capacity.cpu),
+        memCapacityBytes: parseResourceMemoryBytes(capacity.memory),
+        diskCapacityBytes: prometheusUsage.diskCapacity
+          ?? (capacity['ephemeral-storage'] == null ? null : parseResourceMemoryBytes(capacity['ephemeral-storage']))
+      }];
+    }));
+    const result = { metrics };
+    setCache(cacheKey, result, 5000);
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message, metrics: {} });
+  }
+});
 
 const getPrometheusClusterUsage = async () => {
   const expression = [
