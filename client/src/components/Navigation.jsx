@@ -9,6 +9,7 @@ export default function Navigation({
   onSwitchContext,
   resourceType,
   onResourceTypeChange,
+  onOpenBeside,
   navExpanded,
   onToggleNav,
   crSelection,
@@ -136,11 +137,19 @@ export default function Navigation({
     { key: 'metrictemplate', label: 'Metric Templates', icon: 'activity' },
     { key: 'alertprovider', label: 'Alert Providers', icon: 'bell' },
   ];
+  // Click shows the page in the tab you're working in; middle-click or
+  // ⌘/Ctrl-click opens it in a new tab in the group beside (split screen).
+  const opener = (primary, view, sub) => ({
+    onClick: (e) => { if ((e.metaKey || e.ctrlKey) && onOpenBeside) onOpenBeside(view, sub); else primary(); },
+    onMouseDown: (e) => { if (e.button === 1) e.preventDefault(); },
+    onAuxClick: (e) => { if (e.button === 1 && onOpenBeside) { e.preventDefault(); onOpenBeside(view, sub); } },
+  });
+
   const fluxItem = (type) => (
     <div
       key={type.key}
       className={`nav-item ${fluxView === type.key ? 'active' : ''}`}
-      onClick={() => onSelectFluxView(type.key)}
+      {...opener(() => onSelectFluxView(type.key), 'flux', { flux: type.key })}
       title={type.label}
     >
       <Icon name={type.icon} size={15} className="nav-lead-icon" />
@@ -163,7 +172,7 @@ export default function Navigation({
     <div
       key={type.key}
       className={`nav-item ${resourceType === type.key ? 'active' : ''}`}
-      onClick={() => onResourceTypeChange(type.key)}
+      {...opener(() => onResourceTypeChange(type.key), type.key)}
       title={type.label}
     >
       <Icon name={type.icon} size={15} className="nav-lead-icon" />
@@ -227,7 +236,7 @@ export default function Navigation({
           <div
             key={section.key}
             className={`nav-item simple ${resourceType === section.key ? 'active' : ''}`}
-            onClick={() => onResourceTypeChange(section.key)}
+            {...opener(() => onResourceTypeChange(section.key), section.key)}
           >
             <Icon name={section.icon} size={16} className="nav-lead-icon" />
             {section.label}
@@ -245,7 +254,7 @@ export default function Navigation({
           <div
             key={section.key}
             className={`nav-item simple ${resourceType === section.key ? 'active' : ''}`}
-            onClick={() => onResourceTypeChange(section.key)}
+            {...opener(() => onResourceTypeChange(section.key), section.key)}
           >
             <Icon name={section.icon} size={16} className="nav-lead-icon" />
             {section.label}
@@ -267,7 +276,7 @@ export default function Navigation({
                   <div
                     key={type.key}
                     className={`nav-item ${argoView === type.key ? 'active' : ''}`}
-                    onClick={() => onSelectArgoView(type.key)}
+                    {...opener(() => onSelectArgoView(type.key), 'argocd', { argocd: type.key })}
                     title={type.label}
                   >
                     <Icon name={type.icon} size={15} className="nav-lead-icon" />
@@ -288,7 +297,7 @@ export default function Navigation({
                         <div
                           key={type.key}
                           className={`nav-item ${argoView === type.key ? 'active' : ''}`}
-                          onClick={() => onSelectArgoView(type.key)}
+                          {...opener(() => onSelectArgoView(type.key), 'argocd', { argocd: type.key })}
                           title={type.label}
                         >
                           <Icon name={type.icon} size={15} className="nav-lead-icon" />
@@ -339,7 +348,7 @@ export default function Navigation({
                   <div
                     key={type.key}
                     className={`nav-item ${flaggerView === type.key ? 'active' : ''}`}
-                    onClick={() => onSelectFlaggerView(type.key)}
+                    {...opener(() => onSelectFlaggerView(type.key), 'flagger', { flagger: type.key })}
                     title={type.label}
                   >
                     <Icon name={type.icon} size={15} className="nav-lead-icon" />
@@ -365,7 +374,7 @@ export default function Navigation({
                 <div
                   key={type.key}
                   className={`nav-item ${resourceType === 'security' && securityView === type.key ? 'active' : ''}`}
-                  onClick={() => onSelectSecurityView(type.key)}
+                  {...opener(() => onSelectSecurityView(type.key), 'security', { security: type.key })}
                   title={type.label}
                 >
                   <Icon name={type.icon} size={15} className="nav-lead-icon" />
@@ -390,7 +399,7 @@ export default function Navigation({
                 <div
                   key={type.key}
                   className={`nav-item ${resourceType === 'costs' && costsView === type.key ? 'active' : ''}`}
-                  onClick={() => onSelectCostsView(type.key)}
+                  {...opener(() => onSelectCostsView(type.key), 'costs', { costs: type.key })}
                   title={type.label}
                 >
                   <Icon name={type.icon} size={15} className="nav-lead-icon" />

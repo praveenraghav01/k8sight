@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useReducer, useCallback } from 'react';
 import axios from 'axios';
 import './App.css';
 import Navigation from './components/Navigation';
@@ -30,13 +30,18 @@ import CommandPalette from './components/CommandPalette';
 import TopBar from './components/TopBar';
 import Preferences from './components/Preferences';
 import ClusterRail from './components/ClusterRail';
+import Workspace from './components/Workspace';
 import { useToast } from './components/Toast';
+import {
+  reduce as reduceWorkspace, initialWorkspace, focusedGroup, focusedTab, activeTab,
+  serialize, deserialize, MAX_GROUPS,
+} from './lib/workspace';
 
 // Views that load their own data and should NOT trigger the shared resource fetch.
 // (Overview is intentionally excluded — its dashboard is built from the shared fetch.)
 const STANDALONE_RESOURCE_TYPES = ['cluster', 'nodes', 'namespaces', 'helm', 'customResources', 'accessControl', 'topology', 'argocd', 'flux', 'flagger', 'security', 'costs'];
 
-// Maps a resourceType to the key it lives under in allResources.
+// Maps a resourceType to the key it lives under in a resource snapshot.
 // Naive `type + 's'` breaks for a few types.
 const PLURAL_KEY = { ingress: 'ingresses', networkPolicy: 'networkPolicies', storageClass: 'storageClasses' };
 const pluralKey = (rt) => PLURAL_KEY[rt] || `${rt}s`;
@@ -44,19 +49,25 @@ const pluralKey = (rt) => PLURAL_KEY[rt] || `${rt}s`;
 // Cluster-scoped types come from a single /api/storage call (not per-namespace)
 const CLUSTER_SCOPED = ['persistentVolume', 'storageClass'];
 
-const APP_VIEW_TYPES = ['overview', ...STANDALONE_RESOURCE_TYPES, 'resources', 'preferences'];
+// Each tab keeps one mounted page per page key it has visited; all the plain
+// resource lists share the 'resources' page (one ResourceViewer per tab).
 const pageKeyFor = (type) => type === 'overview' || type === 'preferences' || STANDALONE_RESOURCE_TYPES.includes(type)
   ? type
   : 'resources';
+const usesSharedResources = (type) => type === 'overview'
+  || (type !== 'preferences' && !STANDALONE_RESOURCE_TYPES.includes(type));
+const hasCachedFor = (type, data) => (type === 'overview'
+  ? data.overviewByNamespace != null || Array.isArray(data.pods)
+  : type === 'events' ? true : Array.isArray(data[pluralKey(type)]));
 
-function CachedViewSlot({ active, children }) {
-  const [mounted, setMounted] = useState(active);
-  useEffect(() => {
-    if (active) setMounted(true);
-  }, [active]);
-  if (!mounted && !active) return null;
-  return <div className="cached-view-slot" hidden={!active}>{children}</div>;
-}
+// Default sub-view per page, when the tab hasn't picked one.
+const SUB_DEFAULT = { argocd: 'dashboard', flux: 'dashboard', flagger: 'canary', security: 'overview', costs: 'overview' };
+const subOf = (tab, view) => tab?.sub?.[view] || SUB_DEFAULT[view];
+
+// The split-screen layout is remembered per cluster context.
+const layoutKey = (ctx) => `k8sight.workspace.${ctx || ''}`;
+const loadLayout = (ctx) => { try { return deserialize(JSON.parse(localStorage.getItem(layoutKey(ctx)))); } catch { return null; } };
+const saveLayout = (ctx, ws) => { try { localStorage.setItem(layoutKey(ctx), JSON.stringify(serialize(ws))); } catch { /* storage blocked */ } };
 
 function App() {
   const toast = useToast();
@@ -70,23 +81,16 @@ function App() {
   const [autoRecovering, setAutoRecovering] = useState(false);
   const autoRecoverRef = useRef(null); // context we've already auto-retried, so we try once
   const [forceConfigModal, setForceConfigModal] = useState(false);
-  const [selectedNamespaces, setSelectedNamespaces] = useState(['all']);
   const [namespaces, setNamespaces] = useState([]);
-  const [resourceType, setResourceType] = useState('overview');
   const [paletteOpen, setPaletteOpen] = useState(false);
-  const [history, setHistory] = useState({ stack: ['overview'], idx: 0 });
-  const navGuard = useRef(false);
   const [resourceSnapshots, setResourceSnapshots] = useState({});
-  const [selectedResource, setSelectedResource] = useState(null);
-  const [selectedResourceType, setSelectedResourceType] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [resourceAttemptKey, setResourceAttemptKey] = useState(null);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [focusResource, setFocusResource] = useState(null); // { type, namespace, name }
-  const [focusNode, setFocusNode] = useState(null);
-  const [crSelection, setCrSelection] = useState(null);
+  const snapshotsRef = useRef(resourceSnapshots);
+  snapshotsRef.current = resourceSnapshots;
+  // Per request (data key + type): in flight, and attempted at least once.
+  const [loadingReqs, setLoadingReqs] = useState({});
+  const [attemptedReqs, setAttemptedReqs] = useState({});
+  const fetchIdsRef = useRef({});
   const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'system');
-  const [refreshSignals, setRefreshSignals] = useState({});
   const [refreshing, setRefreshing] = useState(false);
   // Auto-refresh cadence (key into REFRESH_OPTIONS). Defaults to 'auto' (= 1 min).
   const [refreshInterval, setRefreshInterval] = useState(() => localStorage.getItem('refreshInterval') || 'auto');
@@ -95,8 +99,18 @@ function App() {
   const [flaggerInstalled, setFlaggerInstalled] = useState(false);
   const handleRefreshRef = useRef(() => {});
   const refreshInFlight = useRef(false);
-  const visitedViewsRef = useRef(new Set());
-  const previousViewIdentityRef = useRef(null);
+
+  // ---- split-screen workspace: groups of tabs, each tab one page ----
+  const [workspace, dispatch] = useReducer(reduceWorkspace, undefined, () => initialWorkspace());
+  const workspaceRef = useRef(workspace);
+  workspaceRef.current = workspace;
+  const [tabSignals, setTabSignals] = useState({}); // tabId -> refresh counter
+  const layoutCtxRef = useRef(null); // context whose layout is loaded
+  const pendingLayoutRef = useRef(null); // layout dispatched but not rendered yet
+  const preserveLayoutRef = useRef(false);
+  const fGroup = focusedGroup(workspace);
+  const fTab = focusedTab(workspace);
+  const fView = fTab?.view || null;
 
   useEffect(() => { localStorage.setItem('refreshInterval', refreshInterval); }, [refreshInterval]);
 
@@ -113,7 +127,6 @@ function App() {
       return () => mq.removeEventListener('change', apply);
     }
   }, [theme]);
-  const fetchIdRef = useRef(0);
   const [navExpanded, setNavExpanded] = useState({
     workloads: true,
     network: false,
@@ -129,16 +142,6 @@ function App() {
     security: false,
     costs: false
   });
-  // Which ArgoCD sub-view the sidebar is pointing at (dashboard/applications/…).
-  const [argoView, setArgoView] = useState('dashboard');
-  // Which Flux sub-view the sidebar is pointing at (dashboard/helmrelease/…).
-  const [fluxView, setFluxView] = useState('dashboard');
-  // Which Flagger list the sidebar is pointing at (canary/metrictemplate/alertprovider).
-  const [flaggerView, setFlaggerView] = useState('canary');
-  // Which Security Center sub-view the sidebar is pointing at.
-  const [securityView, setSecurityView] = useState('overview');
-  // Which Cost Center sub-view the sidebar is pointing at.
-  const [costsView, setCostsView] = useState('overview');
   const [showAzure, setShowAzure] = useState(false);
   // When the failing cluster uses kubelogin/azurecli, the fix is `az login` (the
   // browser OAuth flow doesn't refresh the CLI token that kubelogin reads), so
@@ -148,17 +151,47 @@ function App() {
   const [showAws, setShowAws] = useState(false);
   const [showGke, setShowGke] = useState(false);
   const [prefSection, setPrefSection] = useState('general');
-  const [prefReturn, setPrefReturn] = useState('overview');
   const [agentOpen, setAgentOpen] = useState(false);
+
+  // Preferences opens as a tab: reuse an open one, or add one to the focused group.
   const openPreferences = (section) => {
-    setResourceType((cur) => { if (cur !== 'preferences') setPrefReturn(cur); return 'preferences'; });
     setPrefSection(section);
+    const existing = workspaceRef.current.groups.flatMap((g) => g.tabs).find((t) => t.view === 'preferences');
+    if (existing) dispatch({ type: 'activateTab', tabId: existing.id });
+    else dispatch({ type: 'openTab', view: 'preferences' });
   };
 
   const authOk = authState.ok;
-  const activePageKey = pageKeyFor(resourceType);
-  const usesSharedResources = resourceType === 'overview'
-    || (resourceType !== 'preferences' && !STANDALONE_RESOURCE_TYPES.includes(resourceType));
+  const currentContext = configStatus.currentContext || '';
+
+  // Restore the remembered layout whenever the cluster changes (or on first
+  // load). A cluster with no saved layout starts on Overview, unless the switch
+  // asked to keep the current pages, which then reset their namespaces.
+  useEffect(() => {
+    if (!configStatus.loaded || !currentContext || layoutCtxRef.current === currentContext) return;
+    const saved = loadLayout(currentContext);
+    let next = saved;
+    if (!next && preserveLayoutRef.current && layoutCtxRef.current) {
+      next = deserialize(serialize({
+        ...workspaceRef.current,
+        groups: workspaceRef.current.groups.map((g) => ({ ...g, tabs: g.tabs.map((t) => ({ ...t, namespaces: ['all'], search: '' })) })),
+      }));
+    }
+    preserveLayoutRef.current = false;
+    layoutCtxRef.current = currentContext;
+    pendingLayoutRef.current = next || initialWorkspace();
+    dispatch({ type: 'reset', state: pendingLayoutRef.current });
+  }, [configStatus.loaded, currentContext]);
+
+  // Remember the layout. Skip the render where the previous cluster's layout
+  // is still on screen, so it never overwrites the one being restored.
+  useEffect(() => {
+    if (pendingLayoutRef.current) {
+      if (workspace !== pendingLayoutRef.current) return;
+      pendingLayoutRef.current = null;
+    }
+    if (layoutCtxRef.current && layoutCtxRef.current === currentContext) saveLayout(currentContext, workspace);
+  }, [workspace, currentContext]);
 
   useEffect(() => {
     fetchConfigStatus();
@@ -193,51 +226,30 @@ function App() {
     return () => { live = false; };
   }, [authOk, configStatus.currentContext]);
 
-  const selectedNamespaceScope = selectedNamespaces.includes('all') || selectedNamespaces.length === 0
+  // ---- shared resource data, keyed by cluster + namespace scope ----
+  const namespaceScope = (sel) => (sel.includes('all') || sel.length === 0
     ? namespaces.filter((name) => name !== 'all').slice().sort()
-    : selectedNamespaces.filter((name) => name !== 'all').slice().sort();
-  const resourceDataKey = JSON.stringify({
-    context: configStatus.currentContext || '',
-    scope: CLUSTER_SCOPED.includes(resourceType) ? 'cluster' : selectedNamespaceScope,
+    : sel.filter((name) => name !== 'all').slice().sort());
+  const dataKeyFor = (type, sel) => JSON.stringify({
+    context: currentContext,
+    scope: CLUSTER_SCOPED.includes(type) ? 'cluster' : namespaceScope(sel),
   });
-  const allResources = resourceSnapshots[resourceDataKey] || {};
-  const hasCachedCurrentResourceData = resourceType === 'overview'
-    ? allResources.overviewByNamespace != null || Array.isArray(allResources.pods)
-    : resourceType === 'events'
-      ? true
-      : Array.isArray(allResources[pluralKey(resourceType)]);
-  const resourceLoading = usesSharedResources && !hasCachedCurrentResourceData
-    && (loading || (authOk && resourceAttemptKey !== resourceDataKey));
-
-  const storeResourceSnapshot = (key, data) => {
-    setResourceSnapshots((previous) => {
-      const recent = Object.entries(previous).filter(([cachedKey]) => cachedKey !== key);
-      return Object.fromEntries([...recent.slice(-7), [key, data]]);
-    });
+  const reqKeyFor = (type, sel) => `${dataKeyFor(type, sel)}|${type}`;
+  const dataFor = (tab) => resourceSnapshots[dataKeyFor(tab.view, tab.namespaces)] || {};
+  const loadingFor = (tab) => {
+    if (!usesSharedResources(tab.view) || hasCachedFor(tab.view, dataFor(tab))) return false;
+    const req = reqKeyFor(tab.view, tab.namespaces);
+    return !!loadingReqs[req] || (authOk && !attemptedReqs[req]);
   };
 
-  useEffect(() => {
-    if (authOk && usesSharedResources) {
-      fetchResources({ silent: hasCachedCurrentResourceData });
-    }
-  }, [selectedNamespaces, resourceType, authOk, namespaces, resourceDataKey, usesSharedResources]);
-
-  // Keep each visited page mounted for the current cluster. Returning to one
-  // bumps only its refresh signal, so it can update quietly from its last view.
-  useEffect(() => {
-    const identity = JSON.stringify([configStatus.currentContext || '', activePageKey]);
-    const previous = previousViewIdentityRef.current;
-    if (previous === identity) return;
-    if (visitedViewsRef.current.has(identity)
-      && activePageKey !== 'overview'
-      && activePageKey !== 'resources'
-      && activePageKey !== 'preferences') {
-      setRefreshSignals((current) => ({ ...current, [activePageKey]: (current[activePageKey] || 0) + 1 }));
-    } else {
-      visitedViewsRef.current.add(identity);
-    }
-    previousViewIdentityRef.current = identity;
-  }, [activePageKey, configStatus.currentContext]);
+  // Merge part of a snapshot in, keeping the 8 most recent keys.
+  const mergeSnapshot = (key, partial) => {
+    setResourceSnapshots((previous) => {
+      const base = previous[key] || {};
+      const recent = Object.entries(previous).filter(([cachedKey]) => cachedKey !== key);
+      return Object.fromEntries([...recent.slice(-7), [key, { ...base, ...partial }]]);
+    });
+  };
 
   const fetchConfigStatus = async () => {
     try {
@@ -300,6 +312,7 @@ function App() {
   }, [authState, authOk, authRetrying, autoRecovering, forceConfigModal, serverUnreachable, configStatus.currentContext]);
 
   // Switch the active cluster/context (from the pinned rail or the selector).
+  // The layout effect above then restores that cluster's tabs.
   const switchContext = async (ctx, { preservePage = false } = {}) => {
     if (!ctx || ctx === configStatus.currentContext) return;
     try {
@@ -309,12 +322,8 @@ function App() {
         body: JSON.stringify({ contextName: ctx }),
       });
       if (!resp.ok) throw new Error('switch failed');
-      // Reset the view for the new cluster, then reload config + re-check auth.
+      preserveLayoutRef.current = preservePage;
       setConfigStatus((current) => ({ ...current, currentContext: ctx }));
-      if (!preservePage) setResourceType('overview');
-      setSelectedResource(null);
-      setSelectedResourceType(null);
-      setSelectedNamespaces(['all']);
       setNamespaces([]);
       await fetchConfigStatus();
       const ok = await checkAuth();
@@ -342,9 +351,11 @@ function App() {
     if (configStatus.currentContext !== 'demo-cluster') switchContext('demo-cluster');
   };
 
-  // Global refresh for the active page. App-managed views (Overview + resource
-  // lists) reload via the shared fetch; self-fetching views watch only their own
-  // signal, so hidden pages stay idle and keep their current data.
+  // The tabs on screen right now: the selected tab of every group.
+  const visibleTabs = workspace.groups.map(activeTab).filter(Boolean);
+
+  // Global refresh: reload the shared data behind every visible tab, and bump
+  // the refresh signal of each visible tab so self-fetching pages reload too.
   // `silent: true` (auto-refresh) also skips the spinning refresh icon, so a
   // background reload is invisible: the values just change.
   const handleRefresh = async ({ silent = false } = {}) => {
@@ -358,12 +369,24 @@ function App() {
       const namespaceListChanged = refreshedNamespaces
         && (refreshedNamespaces.length !== namespaces.length
           || refreshedNamespaces.some((name, index) => name !== namespaces[index]));
-      if (usesSharedResources && !namespaceListChanged) {
-        await fetchResources({ silent });
+      const tabs = workspaceRef.current.groups.map(activeTab).filter(Boolean);
+      if (!namespaceListChanged) {
+        const seen = new Set();
+        await Promise.all(tabs.filter((t) => usesSharedResources(t.view)).map((t) => {
+          const req = reqKeyFor(t.view, t.namespaces);
+          if (seen.has(req)) return null;
+          seen.add(req);
+          return fetchResourcesFor(t.view, t.namespaces, { silent });
+        }));
       }
-      if (activePageKey !== 'overview' && activePageKey !== 'preferences') {
-        setRefreshSignals((current) => ({ ...current, [activePageKey]: (current[activePageKey] || 0) + 1 }));
-      }
+      setTabSignals((current) => {
+        const next = { ...current };
+        for (const t of tabs) {
+          const pk = pageKeyFor(t.view);
+          if (pk !== 'overview' && pk !== 'preferences') next[t.id] = (next[t.id] || 0) + 1;
+        }
+        return next;
+      });
     } finally {
       refreshInFlight.current = false;
       // brief spin so the action is perceptible even when the fetch is instant
@@ -372,36 +395,37 @@ function App() {
   };
   handleRefreshRef.current = handleRefresh;
 
-  // ⌘K / Ctrl+K opens the command palette.
+  // ---- keyboard: ⌘K palette, ⌘\ split, ⇧⌘\ next group ----
   useEffect(() => {
     const onKey = (e) => {
-      if ((e.metaKey || e.ctrlKey) && (e.key === 'k' || e.key === 'K')) { e.preventDefault(); setPaletteOpen((o) => !o); }
+      const mod = e.metaKey || e.ctrlKey;
+      if (mod && (e.key === 'k' || e.key === 'K')) { e.preventDefault(); setPaletteOpen((o) => !o); return; }
+      // Not inside a pod shell: there Ctrl+\ is the terminal's quit signal.
+      if (mod && e.code === 'Backslash' && !e.target?.closest?.('.xterm')) {
+        e.preventDefault();
+        if (e.shiftKey) dispatch({ type: 'focusNext' });
+        else dispatch({ type: 'split' });
+      }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
-  // Back/forward view history for the top bar. Record each view change unless it
-  // was driven by a back/forward navigation (navGuard) or is the settings overlay.
-  useEffect(() => {
-    if (navGuard.current) { navGuard.current = false; return; }
-    if (resourceType === 'preferences') return;
-    setHistory((h) => {
-      if (h.stack[h.idx] === resourceType) return h;
-      const stack = h.stack.slice(0, h.idx + 1).concat(resourceType);
-      return { stack, idx: stack.length - 1 };
-    });
-  }, [resourceType]);
-  const goBack = () => setHistory((h) => {
-    if (h.idx <= 0) return h;
-    const idx = h.idx - 1; navGuard.current = true; setResourceType(h.stack[idx]);
-    return { ...h, idx };
-  });
-  const goForward = () => setHistory((h) => {
-    if (h.idx >= h.stack.length - 1) return h;
-    const idx = h.idx + 1; navGuard.current = true; setResourceType(h.stack[idx]);
-    return { ...h, idx };
-  });
+  // ⌘W / Ctrl+W (desktop app). The Window → Close menu item asks the page
+  // first: close the focused empty group, else the focused tab; when only one
+  // tab is left, let the window close as before.
+  const closeFocused = useCallback(() => {
+    const ws = workspaceRef.current;
+    const g = focusedGroup(ws);
+    if (!g) return false;
+    if (!g.tabs.length) {
+      if (ws.groups.length > 1) { dispatch({ type: 'closeGroup', groupId: g.id }); return true; }
+      return false;
+    }
+    if (g.tabs.length > 1 || ws.groups.length > 1) { dispatch({ type: 'closeTab', tabId: g.active }); return true; }
+    return false;
+  }, []);
+  useEffect(() => window.k8sight?.onCloseRequest?.(closeFocused), [closeFocused]);
 
   // Auto-refresh timer. Fires the same handleRefresh used by the button, so it
   // works on every page. Uses a ref so the interval isn't torn down on each
@@ -439,54 +463,60 @@ function App() {
     }
   };
 
+  // A namespace was deleted: drop it from every tab that was filtered to it.
   const handleNamespaceDeleted = (deletedNamespace) => {
-    setSelectedNamespaces((current) => {
-      if (current.includes('all')) return current;
-      const remaining = current.filter((namespace) => namespace !== deletedNamespace);
-      return remaining.length ? remaining : ['all'];
-    });
+    for (const g of workspaceRef.current.groups) {
+      for (const t of g.tabs) {
+        if (t.namespaces.includes('all') || !t.namespaces.includes(deletedNamespace)) continue;
+        const remaining = t.namespaces.filter((namespace) => namespace !== deletedNamespace);
+        dispatch({ type: 'patchTab', tabId: t.id, patch: { namespaces: remaining.length ? remaining : ['all'] } });
+      }
+    }
     fetchNamespaces({ silent: true });
   };
 
-  const resolveNamespaces = (availableNamespaces = namespaces) => {
-    if (selectedNamespaces.includes('all') || selectedNamespaces.length === 0) {
+  const resolveNamespaces = (sel, availableNamespaces = namespaces) => {
+    if (sel.includes('all') || sel.length === 0) {
       return availableNamespaces.filter(n => n !== 'all');
     }
-    return selectedNamespaces;
+    return sel;
   };
 
-  const fetchResources = async ({ silent = false } = {}) => {
-    const fetchId = ++fetchIdRef.current;
-    setResourceAttemptKey(resourceDataKey);
+  // Fetch one page's shared data (a resource list or the Overview dashboard)
+  // for one namespace selection. Several tabs can share a request.
+  const fetchResourcesFor = async (type, selected, { silent = false } = {}) => {
+    const dataKey = dataKeyFor(type, selected);
+    const req = `${dataKey}|${type}`;
+    const fetchId = (fetchIdsRef.current[req] = (fetchIdsRef.current[req] || 0) + 1);
+    const stale = () => fetchId !== fetchIdsRef.current[req];
+    const current = snapshotsRef.current[dataKey] || {};
+    const cached = hasCachedFor(type, current);
+    setAttemptedReqs((a) => (a[req] ? a : { ...a, [req]: true }));
     // A silent (background) fetch keeps whatever is already on screen — the list
     // is replaced once the data is in, so there's no "Loading pods…" flash.
-    if (!silent || !hasCachedCurrentResourceData) setLoading(true);
-    else setLoading(false);
+    setLoadingReqs((l) => ({ ...l, [req]: !silent || !cached }));
     try {
       // Cluster-scoped types (PersistentVolumes, StorageClasses) are a single call
-      if (CLUSTER_SCOPED.includes(resourceType)) {
+      if (CLUSTER_SCOPED.includes(type)) {
         const res = await axios.get('/api/storage');
-        if (fetchId !== fetchIdRef.current) return;
-        storeResourceSnapshot(resourceDataKey, res.data);
+        if (stale()) return;
+        mergeSnapshot(dataKey, res.data);
         return;
       }
-      if (resourceType === 'events') {
-        // Events have their own paginated view and do not use the resource cache.
-        setLoading(false);
-        return;
-      }
+      // Events have their own paginated view and do not use the resource cache.
+      if (type === 'events') return;
 
-      const namespacesToFetch = resolveNamespaces();
+      const namespacesToFetch = resolveNamespaces(selected);
       const CONCURRENCY = 12;
 
       const fetchNamespaceData = async (pathSuffix = '') => {
         const result = {};
         const failedNamespaces = new Set();
-        const fetchAllNamespaces = selectedNamespaces.includes('all') || selectedNamespaces.length === 0;
+        const fetchAllNamespaces = selected.includes('all') || selected.length === 0;
         if (fetchAllNamespaces) {
           try {
             const response = await axios.get(`/api/resources/all${pathSuffix}`);
-            if (fetchId !== fetchIdRef.current) return { result, failedNamespaces };
+            if (stale()) return { result, failedNamespaces };
             return { result: response.data || {}, failedNamespaces };
           } catch {
             // Some RBAC setups allow namespace-scoped lists but deny the
@@ -497,11 +527,11 @@ function App() {
         let cursor = 0;
         const worker = async () => {
           while (cursor < namespacesToFetch.length) {
-            if (fetchId !== fetchIdRef.current) return;
+            if (stale()) return;
             const ns = namespacesToFetch[cursor++];
             try {
               const response = await axios.get(`/api/resources/${encodeURIComponent(ns)}${pathSuffix}`);
-              if (fetchId !== fetchIdRef.current) return;
+              if (stale()) return;
               Object.keys(response.data).forEach((key) => {
                 const value = response.data[key];
                 if (Array.isArray(value)) {
@@ -525,106 +555,96 @@ function App() {
         return { result, failedNamespaces };
       };
 
-      if (resourceType === 'overview') {
+      if (type === 'overview') {
         const { result: overviewData, failedNamespaces } = await fetchNamespaceData('/overview');
-        if (fetchId !== fetchIdRef.current) return;
+        if (stale()) return;
         const overviewByNamespace = { ...(overviewData.overviewByNamespace || {}) };
         if (silent && failedNamespaces.size) {
-          const previous = allResources.overviewByNamespace || {};
+          const previous = current.overviewByNamespace || {};
           for (const ns of failedNamespaces) {
             if (previous[ns]) overviewByNamespace[ns] = previous[ns];
           }
         }
-        storeResourceSnapshot(resourceDataKey, { ...allResources, overviewByNamespace });
+        mergeSnapshot(dataKey, { overviewByNamespace });
         return;
       }
 
-      if (resourceType === 'pod') {
-        const { result: podData, failedNamespaces } = await fetchNamespaceData('/pods');
-        if (fetchId !== fetchIdRef.current) return;
-        let currentPods = podData.pods || [];
-        if (silent && failedNamespaces.size) {
-          currentPods = [
-            ...currentPods,
-            ...(allResources.pods || []).filter((row) => failedNamespaces.has(row.namespace))
-          ];
-        }
-        storeResourceSnapshot(resourceDataKey, { ...allResources, pods: currentPods });
-        return;
+      const resourceKey = pluralKey(type);
+      const { result: resourceData, failedNamespaces } = await fetchNamespaceData(type === 'pod' ? '/pods' : `/${resourceKey}`);
+      if (stale()) return;
+      let rows = resourceData[resourceKey] || [];
+      if (silent && failedNamespaces.size) {
+        rows = [
+          ...rows,
+          ...(current[resourceKey] || []).filter((row) => failedNamespaces.has(row.namespace))
+        ];
       }
-
-      if (resourceType !== 'overview') {
-        const resourceKey = pluralKey(resourceType);
-        const { result: resourceData, failedNamespaces } = await fetchNamespaceData(`/${resourceKey}`);
-        if (fetchId !== fetchIdRef.current) return;
-        let rows = resourceData[resourceKey] || [];
-        if (silent && failedNamespaces.size) {
-          rows = [
-            ...rows,
-            ...(allResources[resourceKey] || []).filter((row) => failedNamespaces.has(row.namespace))
-          ];
-        }
-        storeResourceSnapshot(resourceDataKey, { ...allResources, [resourceKey]: rows });
-        return;
-      }
-
+      mergeSnapshot(dataKey, { [resourceKey]: rows });
     } catch (err) {
-      if (fetchId === fetchIdRef.current && !silent) toast.error('Failed to fetch resources', { title: 'Resources' });
+      if (!stale() && !silent) toast.error('Failed to fetch resources', { title: 'Resources' });
     } finally {
-      if (fetchId === fetchIdRef.current) setLoading(false);
+      if (!stale()) setLoadingReqs((l) => ({ ...l, [req]: false }));
     }
   };
 
-  // Clear the selected resource (and drawer) only when the resource type changes.
+  // Fetch the data behind each tab as it comes on screen (quietly when a copy
+  // is already cached). Tabs showing the same data share one request.
+  const visibleReqs = visibleTabs
+    .filter((t) => usesSharedResources(t.view))
+    .map((t) => ({ type: t.view, namespaces: t.namespaces, req: reqKeyFor(t.view, t.namespaces) }));
+  const visibleReqSig = visibleReqs.map((r) => r.req).sort().join('\n');
+  const shownReqsRef = useRef(new Set());
   useEffect(() => {
-    setSelectedResource(null);
-    setSelectedResourceType(null);
-  }, [resourceType]);
-
-  // Resolve a pending focus target once its list has loaded (cross-link navigation).
-  useEffect(() => {
-    if (!focusResource) return;
-    // Use the app's pluralisation (naive +'s' breaks e.g. storageClass→storageClasses).
-    const list = allResources[pluralKey(focusResource.type)] || [];
-    // Normalise namespace so cluster-scoped targets (StorageClass, PV, …) match
-    // whether the row/target uses '' or undefined.
-    const match = list.find(r => r.name === focusResource.name && (r.namespace || '') === (focusResource.namespace || ''));
-    if (match) {
-      setSelectedResource(match);
-      setSelectedResourceType(focusResource.type);
-      setFocusResource(null);
+    if (!authOk || !namespaces.length) { shownReqsRef.current = new Set(); return; }
+    const now = new Set();
+    for (const r of visibleReqs) {
+      if (now.has(r.req)) continue;
+      now.add(r.req);
+      if (!shownReqsRef.current.has(r.req)) {
+        fetchResourcesFor(r.type, r.namespaces, { silent: hasCachedFor(r.type, snapshotsRef.current[dataKeyFor(r.type, r.namespaces)] || {}) });
+      }
     }
-  }, [allResources, focusResource]);
+    shownReqsRef.current = now;
+  }, [visibleReqSig, authOk, namespaces]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Cross-navigation used by tables, drawers and the topology/nodes views.
-  const nav = {
+  // Resolve a tab's pending cross-link target once its list has loaded.
+  useEffect(() => {
+    for (const g of workspace.groups) {
+      for (const tab of g.tabs) {
+        const target = tab.focusResource;
+        if (!target) continue;
+        const list = dataFor(tab)[pluralKey(target.type)] || [];
+        // Normalise namespace so cluster-scoped targets (StorageClass, PV, …) match
+        // whether the row/target uses '' or undefined.
+        const match = list.find(r => r.name === target.name && (r.namespace || '') === (target.namespace || ''));
+        if (match) dispatch({ type: 'patchTab', tabId: tab.id, patch: { selected: { type: target.type, resource: match }, focusResource: null } });
+      }
+    }
+  }, [resourceSnapshots, workspace]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Cross-navigation used by tables, drawers and the topology/nodes views —
+  // always inside the tab the link was clicked in.
+  const navFor = (tab) => ({
     toNamespace: (ns) => {
       if (!ns) return;
-      setSelectedNamespaces([ns]);
-      if (STANDALONE_RESOURCE_TYPES.includes(resourceType) || resourceType === 'overview') {
-        setResourceType('pod');
-      }
+      const view = STANDALONE_RESOURCE_TYPES.includes(tab.view) || tab.view === 'overview' ? 'pod' : tab.view;
+      dispatch({ type: 'navigate', tabId: tab.id, view, namespaces: [ns] });
     },
     toNode: (name) => {
       if (!name) return;
-      setFocusNode(name);
-      setResourceType('nodes');
+      dispatch({ type: 'navigate', tabId: tab.id, view: 'nodes', focusNode: name });
     },
     toResource: ({ type, namespace, name }) => {
       if (!type || !name) return;
-      setSelectedNamespaces([namespace || 'all']);
-      setResourceType(type);
-      setFocusResource({ type, namespace, name });
+      dispatch({ type: 'navigate', tabId: tab.id, view: type, namespaces: [namespace || 'all'], focusResource: { type, namespace, name } });
     },
     // Open the Pods view scoped to a workload. We rarely have the exact pod name
     // (e.g. Trivy attributes CVEs to the owning ReplicaSet), so filter the pod
     // list by the owner name — pods are named `<owner>-<hash>` and match.
     toPods: (namespace, nameFilter) => {
-      setSelectedNamespaces([namespace || 'all']);
-      setResourceType('pod');
-      setSearchQuery(nameFilter || '');
+      dispatch({ type: 'navigate', tabId: tab.id, view: 'pod', namespaces: [namespace || 'all'], search: nameFilter || '' });
     }
-  };
+  });
 
   const toggleNavSection = (section) => {
     setNavExpanded(prev => ({
@@ -633,49 +653,49 @@ function App() {
     }));
   };
 
-  const getFilteredResources = (type = resourceType) => {
-    const baseResources = allResources[pluralKey(type)] || [];
-
-    if (!searchQuery) return baseResources;
-    return baseResources.filter(r =>
-      r.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (r.namespace || '').toLowerCase().includes(searchQuery.toLowerCase())
-    );
-  };
-
-  const getTotalCount = (type = resourceType) => (allResources[pluralKey(type)] || []).length;
+  // ---- sidebar / palette → workspace ----
+  // A click shows the page in the focused tab; middle-click or ⌘/Ctrl-click
+  // opens it in a new tab in the group beside.
+  const showView = (view, sub) => dispatch({ type: 'navigate', view, sub });
+  const openBeside = (view, sub) => dispatch({ type: 'openTab', view, sub, beside: true });
 
   // ---- gate: what to render before the app is ready ----
   const showConfigModal = configChecked && !serverUnreachable && (!configStatus.loaded || forceConfigModal);
   const checkingAuth = configStatus.loaded && !forceConfigModal && (!authState.checked || autoRecovering);
   const showAuthError = configStatus.loaded && !forceConfigModal && authState.checked && !authState.ok && !autoRecovering;
 
-  const renderPage = (viewType) => {
-    const refreshSignal = refreshSignals[viewType] || 0;
+  // One page of one tab. `visible` is true when this page is on screen.
+  const renderTab = (tab, viewType, { visible, focused, signal }) => {
+    const refreshSignal = signal;
+    const go = (view, extra = {}) => dispatch({ type: 'navigate', tabId: tab.id, view, ...extra });
+    const setSub = (view) => (v) => go(view, { sub: { [view]: v } });
+    const subView = (view) => (tab.view === view ? subOf(tab, view) : null);
+    const nav = navFor(tab);
+    const allResources = dataFor(tab);
     if (viewType === 'overview') {
       return (
         <Overview
           allResources={allResources}
-          selectedNamespaces={selectedNamespaces}
+          selectedNamespaces={tab.namespaces}
           namespaces={namespaces}
-          onNamespaceSelect={setSelectedNamespaces}
-          loading={resourceLoading}
-          onResourceTypeChange={setResourceType}
+          onNamespaceSelect={(ns) => dispatch({ type: 'patchTab', tabId: tab.id, patch: { namespaces: ns } })}
+          loading={loadingFor(tab)}
+          onResourceTypeChange={(v) => go(v)}
         />
       );
     }
     if (viewType === 'cluster') return <Cluster configStatus={configStatus} onSwitchContext={switchContext} refreshSignal={refreshSignal} />;
-    if (viewType === 'nodes') return <Nodes active={resourceType === viewType} focusNode={focusNode} onFocusHandled={() => setFocusNode(null)} onNavigate={nav} refreshSignal={refreshSignal} />;
+    if (viewType === 'nodes') return <Nodes active={visible} focusNode={tab.focusNode} onFocusHandled={() => dispatch({ type: 'patchTab', tabId: tab.id, patch: { focusNode: null } })} onNavigate={nav} refreshSignal={refreshSignal} />;
     if (viewType === 'namespaces') return <Namespaces onNavigate={nav} onNamespaceDeleted={handleNamespaceDeleted} refreshSignal={refreshSignal} />;
     if (viewType === 'topology') return <Topology namespaces={namespaces} refreshSignal={refreshSignal} />;
     if (viewType === 'helm') return <Helm refreshSignal={refreshSignal} />;
-    if (viewType === 'customResources') return <CustomResourceDetail selection={crSelection} onSelect={setCrSelection} refreshSignal={refreshSignal} />;
+    if (viewType === 'customResources') return <CustomResourceDetail selection={tab.sub?.customResources || null} onSelect={(sel) => go('customResources', { sub: { customResources: sel } })} refreshSignal={refreshSignal} />;
     if (viewType === 'accessControl') return <AccessControl onNavigate={nav} refreshSignal={refreshSignal} />;
-    if (viewType === 'security') return <SecurityCenter namespaces={namespaces} onNavigate={nav} view={resourceType === viewType ? securityView : null} onViewChange={setSecurityView} refreshSignal={refreshSignal} />;
-    if (viewType === 'costs') return <CostsCenter key={`costs-${configStatus.currentContext}`} context={configStatus.currentContext} refreshSignal={refreshSignal} view={resourceType === viewType ? costsView : null} onViewChange={setCostsView} />;
-    if (viewType === 'argocd') return <ArgoCD onNavigate={nav} refreshSignal={refreshSignal} view={resourceType === viewType ? argoView : null} onViewChange={setArgoView} />;
-    if (viewType === 'flagger') return <Flagger onNavigate={nav} refreshSignal={refreshSignal} view={resourceType === viewType ? flaggerView : null} />;
-    if (viewType === 'flux') return <Flux onNavigate={nav} refreshSignal={refreshSignal} view={resourceType === viewType ? fluxView : null} onViewChange={(v) => { setFluxView(v); setResourceType('flux'); }} />;
+    if (viewType === 'security') return <SecurityCenter namespaces={namespaces} onNavigate={nav} view={subView('security')} onViewChange={setSub('security')} refreshSignal={refreshSignal} />;
+    if (viewType === 'costs') return <CostsCenter key={`costs-${configStatus.currentContext}`} context={configStatus.currentContext} refreshSignal={refreshSignal} view={subView('costs')} onViewChange={setSub('costs')} />;
+    if (viewType === 'argocd') return <ArgoCD onNavigate={nav} refreshSignal={refreshSignal} view={subView('argocd')} onViewChange={setSub('argocd')} />;
+    if (viewType === 'flagger') return <Flagger onNavigate={nav} refreshSignal={refreshSignal} view={subView('flagger')} />;
+    if (viewType === 'flux') return <Flux onNavigate={nav} refreshSignal={refreshSignal} view={subView('flux')} onViewChange={setSub('flux')} />;
     if (viewType === 'preferences') {
       return (
         <Preferences
@@ -688,30 +708,33 @@ function App() {
           onAddGke={() => setShowGke(true)}
           initialSection={prefSection}
           prodMark={prodMark}
-          onClose={() => setResourceType(prefReturn || 'overview')}
+          active={visible && focused}
+          onClose={() => dispatch({ type: 'closeTab', tabId: tab.id, keepOne: true })}
         />
       );
     }
     if (viewType === 'resources') {
+      const base = allResources[pluralKey(tab.view)] || [];
+      const q = (tab.search || '').toLowerCase();
+      const filtered = q
+        ? base.filter(r => r.name.toLowerCase().includes(q) || (r.namespace || '').toLowerCase().includes(q))
+        : base;
       return (
         <ResourceViewer
-          active={activePageKey === 'resources'}
-          resourceType={resourceType}
-          resources={getFilteredResources()}
-          selectedResource={selectedResourceType === resourceType ? selectedResource : null}
-          onSelectResource={(resource) => {
-            setSelectedResource(resource);
-            setSelectedResourceType(resource ? resourceType : null);
-          }}
-          selectedNamespaces={selectedNamespaces}
+          active={visible}
+          resourceType={tab.view}
+          resources={filtered}
+          selectedResource={tab.selected?.type === tab.view ? tab.selected.resource : null}
+          onSelectResource={(resource) => dispatch({ type: 'patchTab', tabId: tab.id, patch: { selected: resource ? { type: tab.view, resource } : null } })}
+          selectedNamespaces={tab.namespaces}
           namespaces={namespaces}
-          onNamespaceChange={setSelectedNamespaces}
-          loading={resourceLoading}
-          hasCachedData={hasCachedCurrentResourceData}
-          searchQuery={searchQuery}
-          onSearchChange={setSearchQuery}
-          totalCount={getTotalCount()}
-          onResourceTypeChange={setResourceType}
+          onNamespaceChange={(ns) => dispatch({ type: 'patchTab', tabId: tab.id, patch: { namespaces: ns } })}
+          loading={loadingFor(tab)}
+          hasCachedData={hasCachedFor(tab.view, allResources)}
+          searchQuery={tab.search || ''}
+          onSearchChange={(value) => dispatch({ type: 'patchTab', tabId: tab.id, patch: { search: value } })}
+          totalCount={base.length}
+          onResourceTypeChange={(v) => go(v)}
           onNavigate={nav}
           onRefresh={handleRefresh}
           refreshSignal={refreshSignal}
@@ -722,6 +745,18 @@ function App() {
   };
 
   const currentIsProd = authOk && prodMark.isProd(configStatus.currentContext);
+  const tabHistory = fTab?.history || { stack: [], idx: 0 };
+
+  // Commands the palette offers for the layout itself.
+  const viewCommands = [
+    { id: 'view:split', label: 'View: Split', icon: 'splitView', hint: '⌘\\', disabled: workspace.groups.length >= MAX_GROUPS, run: () => dispatch({ type: 'split' }) },
+    { id: 'view:focus-next', label: 'View: Focus next group', icon: 'arrowRight', hint: '⇧⌘\\', run: () => dispatch({ type: 'focusNext' }) },
+    { id: 'view:new-tab', label: 'View: New tab', icon: 'plus', run: () => dispatch({ type: 'openTab', view: 'overview' }) },
+    { id: 'view:close-tab', label: 'View: Close tab', icon: 'close', run: () => { if (fGroup?.active) dispatch({ type: 'closeTab', tabId: fGroup.active, keepOne: true }); } },
+    ...(fGroup && !fGroup.tabs.length && workspace.groups.length > 1
+      ? [{ id: 'view:close-group', label: 'View: Close group', icon: 'close', run: () => dispatch({ type: 'closeGroup', groupId: fGroup.id }) }]
+      : []),
+  ];
 
   return (
     <div className="app-shell">
@@ -734,11 +769,11 @@ function App() {
       )}
       {authOk && (
         <TopBar
-          onBack={goBack}
-          onForward={goForward}
-          canBack={history.idx > 0}
-          canForward={history.idx < history.stack.length - 1}
-          onNotifications={() => setResourceType('events')}
+          onBack={() => dispatch({ type: 'back' })}
+          onForward={() => dispatch({ type: 'forward' })}
+          canBack={tabHistory.idx > 0}
+          canForward={tabHistory.idx < tabHistory.stack.length - 1}
+          onNotifications={() => showView('events')}
           onConfigureAi={() => openPreferences('external-tools')}
           onRefresh={handleRefresh}
           refreshing={refreshing}
@@ -782,10 +817,10 @@ function App() {
       {authOk && (
         <Assistant
           context={{
-            view: resourceType,
-            namespaces: selectedNamespaces,
-            selected: selectedResource && selectedResourceType === resourceType
-              ? { type: resourceType, namespace: selectedResource.namespace, name: selectedResource.name }
+            view: fView,
+            namespaces: fTab?.namespaces || ['all'],
+            selected: fTab?.selected && fTab.selected.type === fView
+              ? { type: fView, namespace: fTab.selected.resource.namespace, name: fTab.selected.resource.name }
               : null,
           }}
         />
@@ -825,25 +860,26 @@ function App() {
             configStatus={configStatus}
             onConfigChange={fetchConfigStatus}
             onSwitchContext={switchContext}
-            resourceType={resourceType}
-            onResourceTypeChange={setResourceType}
+            resourceType={fView}
+            onResourceTypeChange={(v) => showView(v)}
+            onOpenBeside={openBeside}
             navExpanded={navExpanded}
             onToggleNav={toggleNavSection}
-            crSelection={crSelection}
-            onSelectCustomResource={(sel) => { setResourceType('customResources'); setCrSelection(sel); }}
+            crSelection={fView === 'customResources' ? fTab?.sub?.customResources || null : null}
+            onSelectCustomResource={(sel) => showView('customResources', { customResources: sel })}
             argocdInstalled={argocdInstalled}
-            argoView={resourceType === 'argocd' ? argoView : null}
-            onSelectArgoView={(v) => { setArgoView(v); setResourceType('argocd'); }}
+            argoView={fView === 'argocd' ? subOf(fTab, 'argocd') : null}
+            onSelectArgoView={(v) => showView('argocd', { argocd: v })}
             fluxInstalled={fluxInstalled}
-            fluxView={resourceType === 'flux' ? fluxView : null}
-            onSelectFluxView={(v) => { setFluxView(v); setResourceType('flux'); }}
+            fluxView={fView === 'flux' ? subOf(fTab, 'flux') : null}
+            onSelectFluxView={(v) => showView('flux', { flux: v })}
             flaggerInstalled={flaggerInstalled}
-            flaggerView={resourceType === 'flagger' ? flaggerView : null}
-            onSelectFlaggerView={(v) => { setFlaggerView(v); setResourceType('flagger'); }}
-            securityView={resourceType === 'security' ? securityView : null}
-            onSelectSecurityView={(v) => { setSecurityView(v); setResourceType('security'); }}
-            costsView={resourceType === 'costs' ? costsView : null}
-            onSelectCostsView={(v) => { setCostsView(v); setResourceType('costs'); }}
+            flaggerView={fView === 'flagger' ? subOf(fTab, 'flagger') : null}
+            onSelectFlaggerView={(v) => showView('flagger', { flagger: v })}
+            securityView={fView === 'security' ? subOf(fTab, 'security') : null}
+            onSelectSecurityView={(v) => showView('security', { security: v })}
+            costsView={fView === 'costs' ? subOf(fTab, 'costs') : null}
+            onSelectCostsView={(v) => showView('costs', { costs: v })}
             onAddAzure={() => openAzure()}
             onAddAws={() => setShowAws(true)}
             onAddGke={() => setShowGke(true)}
@@ -854,15 +890,16 @@ function App() {
           />
 
           <div className="content-col">
-          {APP_VIEW_TYPES.map((viewType) => (
-            <CachedViewSlot
-              key={JSON.stringify([configStatus.currentContext || '', viewType])}
-              active={activePageKey === viewType}
-            >
-              {renderPage(viewType)}
-            </CachedViewSlot>
-          ))}
-          <AgentPanel context={{ currentContext: configStatus.currentContext }} onOpenChange={setAgentOpen} />
+            <Workspace
+              state={workspace}
+              dispatch={dispatch}
+              renderTab={renderTab}
+              pageKeyFor={pageKeyFor}
+              tabSignals={tabSignals}
+              contextKey={currentContext}
+              onNewTab={(groupId) => dispatch({ type: 'openTab', groupId, view: 'overview' })}
+            />
+            <AgentPanel context={{ currentContext: configStatus.currentContext }} onOpenChange={setAgentOpen} />
           </div>
         </div>
       ) : !configChecked ? (
@@ -883,7 +920,7 @@ function App() {
         <CommandPalette
           open={paletteOpen}
           onClose={() => setPaletteOpen(false)}
-          onNavigate={(k) => setResourceType(k)}
+          onNavigate={(k) => showView(k)}
           contexts={configStatus.contexts || []}
           currentContext={configStatus.currentContext}
           onSwitchContext={switchContext}
@@ -891,6 +928,7 @@ function App() {
           onRefresh={handleRefresh}
           onSetTheme={setTheme}
           prodMark={prodMark}
+          extraCommands={viewCommands}
         />
       )}
     </div>

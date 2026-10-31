@@ -330,6 +330,12 @@ function canAutoUpdate() {
 // read and change the auto-update preference the menu checkbox also drives.
 // The renderer asks for the API token synchronously at startup (preload).
 // Only answer our own window, and only for pages served by our backend.
+// The page found nothing to close (one tab left, or no workspace yet): close
+// the window that asked, as Window → Close always did.
+ipcMain.on('window:close', (event) => {
+  BrowserWindow.fromWebContents(event.sender)?.close();
+});
+
 ipcMain.on('api:token', (event) => {
   const url = event.senderFrame?.url || '';
   const ours = mainWindow && event.sender === mainWindow.webContents && url.startsWith(`${SERVER_URL}/`);
@@ -463,7 +469,24 @@ function buildMenu() {
     },
     {
       label: 'Window',
-      submenu: [{ role: 'minimize' }, { role: 'zoom' }, { role: 'close' }],
+      submenu: [
+        { role: 'minimize' },
+        { role: 'zoom' },
+        // Instead of role 'close': let the page close a split-screen tab or
+        // group first (see preload onCloseRequest); it sends 'window:close'
+        // back when there's nothing left to close but the window.
+        {
+          label: 'Close',
+          accelerator: 'CmdOrCtrl+W',
+          click: (_item, win) => {
+            const target = win || BrowserWindow.getFocusedWindow();
+            if (!target) return;
+            // Windows without our preload (none today) can't answer: close directly.
+            if (!target.webContents.getLastWebPreferences?.()?.preload) { target.close(); return; }
+            target.webContents.send('app:close-request');
+          },
+        },
+      ],
     },
     {
       label: 'Help',

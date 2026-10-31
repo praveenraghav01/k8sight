@@ -21,17 +21,17 @@ const SECTIONS = [
   { key: 'about', label: 'About', icon: 'details' },
 ];
 
-export default function Preferences({ configStatus, theme, onSetTheme, onChangeConfig, onAddAzure, onAddAws, onAddGke, initialSection, prodMark, onClose }) {
+export default function Preferences({ configStatus, theme, onSetTheme, onChangeConfig, onAddAzure, onAddAws, onAddGke, initialSection, prodMark, onClose, active = true }) {
   const [section, setSection] = useState(initialSection || 'general');
   useEffect(() => { if (initialSection) setSection(initialSection); }, [initialSection]);
 
-  // Esc closes the page.
+  // Esc closes the page (only while its tab is the one being used).
   useEffect(() => {
-    if (!onClose) return;
+    if (!onClose || !active) return;
     const onKey = (e) => { if (e.key === 'Escape') onClose(); };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
+  }, [onClose, active]);
 
   return (
     <div className="prefs-page">

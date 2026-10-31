@@ -42,7 +42,7 @@ const NAV_GROUPS = [
   ] },
 ];
 
-export default function CommandPalette({ open, onClose, onNavigate, contexts = [], currentContext, onSwitchContext, onOpenPreferences, onRefresh, onSetTheme, prodMark }) {
+export default function CommandPalette({ open, onClose, onNavigate, contexts = [], currentContext, onSwitchContext, onOpenPreferences, onRefresh, onSetTheme, prodMark, extraCommands = [] }) {
   const [query, setQuery] = useState('');
   const [sel, setSel] = useState(0);
   const inputRef = useRef(null);
@@ -70,8 +70,10 @@ export default function CommandPalette({ open, onClose, onNavigate, contexts = [
         run: () => prodMark.toggle(currentContext),
       });
     }
+    // Split-screen layout commands (View: Split, …) supplied by the app.
+    for (const c of extraCommands) if (!c.disabled) cmds.push({ group: 'View', ...c });
     return cmds;
-  }, [contexts, currentContext, onNavigate, onSwitchContext, onOpenPreferences, onRefresh, onSetTheme, prodMark]);
+  }, [contexts, currentContext, onNavigate, onSwitchContext, onOpenPreferences, onRefresh, onSetTheme, prodMark, extraCommands]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
