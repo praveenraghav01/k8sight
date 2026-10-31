@@ -1,5 +1,6 @@
-import React from 'react';
+import React, { useState } from 'react';
 import Icon from './Icons';
+import ContextMenu from './ContextMenu';
 import CustomResourceTree from './CustomResourceTree';
 import ContextSelector from './ContextSelector';
 
@@ -10,6 +11,7 @@ export default function Navigation({
   resourceType,
   onResourceTypeChange,
   onOpenBeside,
+  onOpenInWindow,
   navExpanded,
   onToggleNav,
   crSelection,
@@ -138,8 +140,15 @@ export default function Navigation({
     { key: 'alertprovider', label: 'Alert Providers', icon: 'bell' },
   ];
   // Click shows the page in the tab you're working in; middle-click or
-  // ⌘/Ctrl-click opens it in a new tab in the group beside (split screen).
+  // ⌘/Ctrl-click opens it in a new tab in the group beside (split screen);
+  // right-click offers that and "Open in new window".
+  const [itemMenu, setItemMenu] = useState(null); // { x, y, view, sub }
   const opener = (primary, view, sub) => ({
+    onContextMenu: (e) => {
+      if (!onOpenBeside && !onOpenInWindow) return;
+      e.preventDefault();
+      setItemMenu({ x: e.clientX, y: e.clientY, view, sub });
+    },
     onClick: (e) => { if ((e.metaKey || e.ctrlKey) && onOpenBeside) onOpenBeside(view, sub); else primary(); },
     onMouseDown: (e) => { if (e.button === 1) e.preventDefault(); },
     onAuxClick: (e) => { if (e.button === 1 && onOpenBeside) { e.preventDefault(); onOpenBeside(view, sub); } },
@@ -412,6 +421,17 @@ export default function Navigation({
 
         <CustomResourceTree selection={crSelection} onSelect={onSelectCustomResource} />
       </div>
+      {itemMenu && (
+        <ContextMenu
+          x={itemMenu.x}
+          y={itemMenu.y}
+          onClose={() => setItemMenu(null)}
+          items={[
+            ...(onOpenBeside ? [{ label: 'Open in new tab beside', icon: 'splitView', onClick: () => onOpenBeside(itemMenu.view, itemMenu.sub) }] : []),
+            ...(onOpenInWindow ? [{ label: 'Open in new window', icon: 'newWindow', onClick: () => onOpenInWindow(itemMenu.view, itemMenu.sub) }] : []),
+          ]}
+        />
+      )}
     </nav>
   );
 }

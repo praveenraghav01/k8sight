@@ -31,11 +31,17 @@ import TopBar from './components/TopBar';
 import Preferences from './components/Preferences';
 import ClusterRail from './components/ClusterRail';
 import Workspace from './components/Workspace';
+import Icon from './components/Icons';
 import { useToast } from './components/Toast';
 import {
-  reduce as reduceWorkspace, initialWorkspace, focusedGroup, focusedTab, activeTab,
+  reduce as reduceWorkspace, initialWorkspace, newTab, focusedGroup, focusedTab, activeTab,
   serialize, deserialize, MAX_GROUPS,
 } from './lib/workspace';
+import { tabLabel } from './lib/views';
+import { parseTabWindow, openTabWindow, portableTab, saveWindowTab, forgetWindowTab, channel as tabWindowChannel } from './lib/tabWindows';
+
+// Set when this window is a tab window (one tab, opened from the main window).
+const TAB_WINDOW = parseTabWindow();
 
 // Views that load their own data and should NOT trigger the shared resource fetch.
 // (Overview is intentionally excluded — its dashboard is built from the shared fetch.)
@@ -101,7 +107,11 @@ function App() {
   const refreshInFlight = useRef(false);
 
   // ---- split-screen workspace: groups of tabs, each tab one page ----
-  const [workspace, dispatch] = useReducer(reduceWorkspace, undefined, () => initialWorkspace());
+  const [workspace, dispatch] = useReducer(reduceWorkspace, undefined, () => (TAB_WINDOW
+    ? initialWorkspace(newTab(TAB_WINDOW.tab.view, { sub: TAB_WINDOW.tab.sub, namespaces: TAB_WINDOW.tab.namespaces, search: TAB_WINDOW.tab.search }))
+    : initialWorkspace()));
+  const tabChannelRef = useRef(null);
+  const [mainWindowOpen, setMainWindowOpen] = useState(false); // tab window: can it demote?
   const workspaceRef = useRef(workspace);
   workspaceRef.current = workspace;
   const [tabSignals, setTabSignals] = useState({}); // tabId -> refresh counter
@@ -156,6 +166,7 @@ function App() {
   // Preferences opens as a tab: reuse an open one, or add one to the focused group.
   const openPreferences = (section) => {
     setPrefSection(section);
+    if (TAB_WINDOW) { dispatch({ type: 'navigate', view: 'preferences' }); return; }
     const existing = workspaceRef.current.groups.flatMap((g) => g.tabs).find((t) => t.view === 'preferences');
     if (existing) dispatch({ type: 'activateTab', tabId: existing.id });
     else dispatch({ type: 'openTab', view: 'preferences' });
@@ -168,6 +179,7 @@ function App() {
   // load). A cluster with no saved layout starts on Overview, unless the switch
   // asked to keep the current pages, which then reset their namespaces.
   useEffect(() => {
+    if (TAB_WINDOW) return; // a tab window shows its one tab, whatever the cluster
     if (!configStatus.loaded || !currentContext || layoutCtxRef.current === currentContext) return;
     const saved = loadLayout(currentContext);
     let next = saved;
@@ -186,6 +198,8 @@ function App() {
   // Remember the layout. Skip the render where the previous cluster's layout
   // is still on screen, so it never overwrites the one being restored.
   useEffect(() => {
+    // A tab window remembers just its tab, so a restart can reopen it.
+    if (TAB_WINDOW) { const t = focusedTab(workspace); if (t) saveWindowTab(TAB_WINDOW.wid, t); return; }
     if (pendingLayoutRef.current) {
       if (workspace !== pendingLayoutRef.current) return;
       pendingLayoutRef.current = null;
@@ -323,6 +337,7 @@ function App() {
       });
       if (!resp.ok) throw new Error('switch failed');
       preserveLayoutRef.current = preservePage;
+      tabChannelRef.current?.postMessage({ type: 'context', ctx });
       setConfigStatus((current) => ({ ...current, currentContext: ctx }));
       setNamespaces([]);
       await fetchConfigStatus();
@@ -395,11 +410,59 @@ function App() {
   };
   handleRefreshRef.current = handleRefresh;
 
+  // ---- tabs in windows ----
+  // The main window answers "are you there?" pings from tab windows and takes
+  // demoted tabs back; tab windows track whether the main window is open (the
+  // Demote button only shows then) and follow cluster switches made there.
+  useEffect(() => {
+    const ch = tabWindowChannel();
+    if (!ch) return undefined;
+    tabChannelRef.current = ch;
+    if (TAB_WINDOW) {
+      let lastPong = 0;
+      ch.onmessage = ({ data = {} }) => {
+        if (data.type === 'pong') { lastPong = Date.now(); setMainWindowOpen(true); }
+        if (data.type === 'context') { fetchConfigStatus(); fetchNamespaces({ silent: true }); }
+      };
+      const ping = () => {
+        ch.postMessage({ type: 'ping' });
+        setTimeout(() => setMainWindowOpen(Date.now() - lastPong < 3000), 800);
+      };
+      ping();
+      const id = setInterval(ping, 2000);
+      return () => { clearInterval(id); ch.close(); };
+    }
+    ch.onmessage = ({ data = {} }) => {
+      if (data.type === 'ping') ch.postMessage({ type: 'pong' });
+      if (data.type === 'demote' && data.tab?.view) {
+        dispatch({ type: 'openTab', view: data.tab.view, sub: data.tab.sub, namespaces: data.tab.namespaces, search: data.tab.search });
+        window.focus();
+      }
+    };
+    return () => ch.close();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Move a tab out of the main view into its own window.
+  const moveTabToWindow = (tab, at) => {
+    if (openTabWindow(tab, { ctx: currentContext, at })) dispatch({ type: 'closeTab', tabId: tab.id, keepOne: true });
+  };
+  // Open a page straight into a window (sidebar "Open in new window").
+  const openViewInWindow = (view, sub) => openTabWindow({ view, sub: sub || {}, namespaces: ['all'], search: '' }, { ctx: currentContext });
+  // Tab window: hand the tab back to the main window and close this one.
+  const demoteTab = () => {
+    const t = focusedTab(workspaceRef.current);
+    if (!t || !tabChannelRef.current) return;
+    tabChannelRef.current.postMessage({ type: 'demote', tab: portableTab(t) });
+    forgetWindowTab(TAB_WINDOW.wid);
+    window.close();
+  };
+
   // ---- keyboard: ⌘K palette, ⌘\ split, ⇧⌘\ next group ----
   useEffect(() => {
     const onKey = (e) => {
       const mod = e.metaKey || e.ctrlKey;
       if (mod && (e.key === 'k' || e.key === 'K')) { e.preventDefault(); setPaletteOpen((o) => !o); return; }
+      if (TAB_WINDOW) return; // one tab per window: nothing to split
       // Not inside a pod shell: there Ctrl+\ is the terminal's quit signal.
       if (mod && e.code === 'Backslash' && !e.target?.closest?.('.xterm')) {
         e.preventDefault();
@@ -709,7 +772,7 @@ function App() {
           initialSection={prefSection}
           prodMark={prodMark}
           active={visible && focused}
-          onClose={() => dispatch({ type: 'closeTab', tabId: tab.id, keepOne: true })}
+          onClose={() => dispatch(TAB_WINDOW ? { type: 'back' } : { type: 'closeTab', tabId: tab.id, keepOne: true })}
         />
       );
     }
@@ -746,6 +809,9 @@ function App() {
 
   const currentIsProd = authOk && prodMark.isProd(configStatus.currentContext);
   const tabHistory = fTab?.history || { stack: [], idx: 0 };
+  useEffect(() => {
+    if (TAB_WINDOW && fTab) document.title = `${tabLabel(fTab)} · ${currentContext || 'k8sight'}`;
+  }, [fTab?.view, fTab?.sub, currentContext]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Commands the palette offers for the layout itself.
   const viewCommands = [
@@ -777,6 +843,18 @@ function App() {
           onConfigureAi={() => openPreferences('external-tools')}
           onRefresh={handleRefresh}
           refreshing={refreshing}
+          compact={!!TAB_WINDOW}
+          title={TAB_WINDOW && fTab ? (
+            <div className="tabwin-title">
+              <span className="tabwin-title-label">{tabLabel(fTab)}</span>
+              {currentContext && <span className="tabwin-title-ctx">{currentContext}</span>}
+            </div>
+          ) : null}
+          actions={TAB_WINDOW && mainWindowOpen ? (
+            <button type="button" className="tabwin-demote" onClick={demoteTab} title="Put this tab back in the main window and close this window">
+              <Icon name="demoteTab" size={14} /> Demote as Tab
+            </button>
+          ) : null}
         />
       )}
       {serverUnreachable && configChecked && (
@@ -814,7 +892,7 @@ function App() {
         />
       )}
 
-      {authOk && (
+      {authOk && !TAB_WINDOW && (
         <Assistant
           context={{
             view: fView,
@@ -849,7 +927,21 @@ function App() {
       )}
 
 
-      {authOk ? (
+      {authOk && TAB_WINDOW ? (
+        <div className="layout-main">
+          <div className="content-col">
+            <Workspace
+              state={workspace}
+              dispatch={dispatch}
+              renderTab={renderTab}
+              pageKeyFor={pageKeyFor}
+              tabSignals={tabSignals}
+              contextKey={currentContext}
+              hideStrip
+            />
+          </div>
+        </div>
+      ) : authOk ? (
         <div className="layout-main">
           <ClusterRail
             contexts={configStatus.contexts || []}
@@ -863,6 +955,7 @@ function App() {
             resourceType={fView}
             onResourceTypeChange={(v) => showView(v)}
             onOpenBeside={openBeside}
+            onOpenInWindow={openViewInWindow}
             navExpanded={navExpanded}
             onToggleNav={toggleNavSection}
             crSelection={fView === 'customResources' ? fTab?.sub?.customResources || null : null}
@@ -898,6 +991,7 @@ function App() {
               tabSignals={tabSignals}
               contextKey={currentContext}
               onNewTab={(groupId) => dispatch({ type: 'openTab', groupId, view: 'overview' })}
+              onOpenInWindow={moveTabToWindow}
             />
             <AgentPanel context={{ currentContext: configStatus.currentContext }} onOpenChange={setAgentOpen} />
           </div>
@@ -921,14 +1015,14 @@ function App() {
           open={paletteOpen}
           onClose={() => setPaletteOpen(false)}
           onNavigate={(k) => showView(k)}
-          contexts={configStatus.contexts || []}
+          contexts={TAB_WINDOW ? [] : configStatus.contexts || []}
           currentContext={configStatus.currentContext}
           onSwitchContext={switchContext}
           onOpenPreferences={() => openPreferences('general')}
           onRefresh={handleRefresh}
           onSetTheme={setTheme}
-          prodMark={prodMark}
-          extraCommands={viewCommands}
+          prodMark={TAB_WINDOW ? null : prodMark}
+          extraCommands={TAB_WINDOW ? [] : viewCommands}
         />
       )}
     </div>
