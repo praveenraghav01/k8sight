@@ -314,6 +314,18 @@ const ICONS = {
   chevronDown: <path d="m6 9 6 6 6-6" />,
   arrowLeft: <path d="M19 12H5M12 19l-7-7 7-7" />,
   arrowRight: <path d="M5 12h14M12 5l7 7-7 7" />,
+  newWindow: (
+    <>
+      <rect x="3" y="7" width="14" height="14" rx="2" />
+      <path d="M8 3h11a2 2 0 0 1 2 2v11M14 10l7-7M15 3h6v6" />
+    </>
+  ),
+  demoteTab: (
+    <>
+      <rect x="3" y="3" width="18" height="18" rx="2" />
+      <path d="M3 9h18M12 13v6M9 16l3 3 3-3" />
+    </>
+  ),
   splitView: (
     <>
       <rect x="3" y="4" width="18" height="16" rx="2" />

@@ -56,7 +56,7 @@ function TabPane({ tab, visible, focused, pageKeyFor, renderTab, refreshTick, co
   );
 }
 
-function TabStrip({ state, group, index, dispatch, onNewTab, canSplit, column }) {
+function TabStrip({ state, group, index, dispatch, onNewTab, canSplit, column, onOpenInWindow }) {
   const [menu, setMenu] = useState(null); // { x, y, tab }
   const [dropAt, setDropAt] = useState(null); // insertion index while dragging over the strip
   const left = index > 0 ? state.groups[index - 1] : null;
@@ -80,6 +80,7 @@ function TabStrip({ state, group, index, dispatch, onNewTab, canSplit, column })
     else if (group.tabs.length > 1 && state.groups.length < MAX_GROUPS) {
       items.push({ label: 'Move to a new group on the right', icon: 'splitView', onClick: () => dispatch({ type: 'moveTabToNewGroup', tabId: tab.id, ofGroupId: group.id, side: 'right' }) });
     }
+    if (onOpenInWindow) items.push({ label: 'Open in new window', icon: 'newWindow', onClick: () => onOpenInWindow(tab) });
     if (items.length) items.push({ divider: true });
     items.push({ label: 'Close', icon: 'close', onClick: () => dispatch({ type: 'closeTab', tabId: tab.id, keepOne: true }) });
     if (group.tabs.length > 1) {
@@ -126,7 +127,14 @@ function TabStrip({ state, group, index, dispatch, onNewTab, canSplit, column })
                 e.dataTransfer.setData(TAB_MIME, tab.id);
                 document.body.classList.add('ws-dragging');
               }}
-              onDragEnd={() => { dragTabId = null; setDropAt(null); document.body.classList.remove('ws-dragging'); }}
+              onDragEnd={(e) => {
+                const dropped = e.dataTransfer?.dropEffect && e.dataTransfer.dropEffect !== 'none';
+                dragTabId = null; setDropAt(null); document.body.classList.remove('ws-dragging');
+                // Let go outside the window: open the tab in a window of its own there.
+                const outside = e.screenX < window.screenX || e.screenX > window.screenX + window.outerWidth
+                  || e.screenY < window.screenY || e.screenY > window.screenY + window.outerHeight;
+                if (!dropped && outside && (e.screenX || e.screenY) && onOpenInWindow) onOpenInWindow(tab, { x: e.screenX, y: e.screenY });
+              }}
             >
               <Icon name={viewIcon(tab.view)} size={13} className="ws-tab-icon" />
               <span className="ws-tab-label">{label}</span>
@@ -223,7 +231,7 @@ function Divider({ left, right, dispatch, containerRef, column }) {
 // pane is a direct child of the grid, keyed by tab id, so moving a tab to
 // another group only changes its column: it is never remounted, and a shell or
 // log stream open in it keeps running.
-export default function Workspace({ state, dispatch, renderTab, pageKeyFor, tabSignals, contextKey, onNewTab }) {
+export default function Workspace({ state, dispatch, renderTab, pageKeyFor, tabSignals, contextKey, onNewTab, onOpenInWindow = null, hideStrip = false }) {
   const containerRef = useRef(null);
   const canSplit = state.groups.length < MAX_GROUPS;
   const colOf = (i) => 2 * i + 1;
@@ -234,14 +242,14 @@ export default function Workspace({ state, dispatch, renderTab, pageKeyFor, tabS
     .flatMap((g, i) => g.tabs.map((tab) => ({ tab, group: g, i })))
     .sort((a, b) => (a.tab.id < b.tab.id ? -1 : 1));
   return (
-    <div className="ws" ref={containerRef} style={{ gridTemplateColumns: template }}>
+    <div className={`ws ${hideStrip ? 'no-strip' : ''}`} ref={containerRef} style={{ gridTemplateColumns: template }}>
       {state.groups.map((group, i) => {
         const focused = state.focus === group.id;
         const current = activeTab(group);
         return (
           <React.Fragment key={group.id}>
             {i > 0 && <Divider left={state.groups[i - 1]} right={group} dispatch={dispatch} containerRef={containerRef} column={colOf(i) - 1} />}
-            <TabStrip state={state} group={group} index={i} dispatch={dispatch} onNewTab={onNewTab} canSplit={canSplit} column={colOf(i)} />
+            {!hideStrip && <TabStrip state={state} group={group} index={i} dispatch={dispatch} onNewTab={onNewTab} canSplit={canSplit} column={colOf(i)} onOpenInWindow={onOpenInWindow} />}
             <section
               className={`ws-body ${focused && state.groups.length > 1 ? 'focused' : ''}`}
               style={{ gridColumn: colOf(i), gridRow: 2 }}

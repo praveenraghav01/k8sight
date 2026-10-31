@@ -15,6 +15,9 @@ contextBridge.exposeInMainWorld('k8sight', {
   getAutoUpdate: () => ipcRenderer.invoke('updater:get'),
   setAutoUpdate: (on) => ipcRenderer.invoke('updater:set', !!on),
   checkForUpdates: () => ipcRenderer.invoke('updater:check'),
+  // Tabs in windows: open `#tabwin=…` (one tab of the app) in a window of its
+  // own, near `at` ({ x, y } screen point) when the tab was dragged out.
+  openTabWindow: ({ wid, hash, at }) => ipcRenderer.send('tabwin:open', { wid, hash, at }),
   // Window → Close (⌘W / Ctrl+W) asks the page first: `handler()` returns true
   // when it closed a tab or an empty split-screen group itself. Otherwise the
   // window closes as before. Returns an unsubscribe function.

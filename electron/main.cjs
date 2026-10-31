@@ -196,36 +196,144 @@ function createWindow() {
     },
   });
 
-  // Tag the document so the frontend can offset content below the traffic
-  // lights and expose a draggable region (CSS `.is-electron` rules). Also track
-  // fullscreen so overlays (e.g. the production-mark edge) can match the window:
-  // macOS rounds windowed corners (~10px) but is square in fullscreen.
-  const syncFullscreen = () => {
-    mainWindow?.webContents
-      .executeJavaScript(`document.documentElement.classList.toggle('is-fullscreen', ${!!mainWindow?.isFullScreen?.()})`)
-      .catch(() => {});
-  };
-  mainWindow.webContents.on('did-finish-load', () => {
-    mainWindow.webContents
-      .executeJavaScript("document.documentElement.classList.add('is-electron')")
-      .catch(() => {});
-    syncFullscreen();
-  });
-  mainWindow.on('enter-full-screen', syncFullscreen);
-  mainWindow.on('leave-full-screen', syncFullscreen);
+  decorateWindow(mainWindow);
 
   // Show a lightweight loading page immediately.
   mainWindow.loadFile(path.join(__dirname, 'loading.html'));
   mainWindow.once('ready-to-show', () => mainWindow.show());
 
-  // Open target=_blank / external links in the default browser, not a new window.
-  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    if (url.startsWith('http')) shell.openExternal(url);
-    return { action: 'deny' };
-  });
-
   mainWindow.on('closed', () => {
     mainWindow = null;
+    // Windows/Linux have no Dock to bring the main window back, so closing it
+    // quits (tab windows are remembered and reopen next launch). On macOS tab
+    // windows stay open and clicking the Dock icon reopens the main window.
+    if (process.platform !== 'darwin' && !app.isQuitting) app.quit();
+  });
+}
+
+// Shared by the main window and tab windows.
+function windowChrome() {
+  return {
+    title: 'k8sight',
+    // Match the app's dark surface — no separate gray macOS title bar. On
+    // macOS `hiddenInset` floats the traffic lights over the (black) content;
+    // the frontend adds a draggable top strip via the `is-electron` class.
+    backgroundColor: '#000000',
+    titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
+    trafficLightPosition: { x: 18, y: 15 },
+    show: false,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.cjs'),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  };
+}
+
+function decorateWindow(win) {
+  // Tag the document so the frontend can offset content below the traffic
+  // lights and expose a draggable region (CSS `.is-electron` rules). Also track
+  // fullscreen so overlays (e.g. the production-mark edge) can match the window:
+  // macOS rounds windowed corners (~10px) but is square in fullscreen.
+  const syncFullscreen = () => {
+    if (win.isDestroyed()) return;
+    win.webContents
+      .executeJavaScript(`document.documentElement.classList.toggle('is-fullscreen', ${!!win.isFullScreen?.()})`)
+      .catch(() => {});
+  };
+  win.webContents.on('did-finish-load', () => {
+    win.webContents
+      .executeJavaScript("document.documentElement.classList.add('is-electron')")
+      .catch(() => {});
+    syncFullscreen();
+  });
+  win.on('enter-full-screen', syncFullscreen);
+  win.on('leave-full-screen', syncFullscreen);
+
+  // Open target=_blank / external links in the default browser, not a new window.
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    if (url.startsWith('http') && !url.startsWith(`${SERVER_URL}/`)) shell.openExternal(url);
+    return { action: 'deny' };
+  });
+}
+
+// --- Tabs in windows ------------------------------------------------------
+// A tab window shows one tab of the app (`#tabwin=…&wid=…`). They're
+// remembered across restarts: the list (id + bounds) lives in userData, and
+// each window's last tab in the page's localStorage (keyed by its id).
+const tabWindows = new Map(); // wid -> BrowserWindow
+function tabWindowsPath() { return path.join(app.getPath('userData'), 'tab-windows.json'); }
+function readTabWindows() {
+  try { return JSON.parse(fs.readFileSync(tabWindowsPath(), 'utf8')).filter((w) => w && /^[\w-]{1,64}$/.test(w.wid)); } catch { return []; }
+}
+let saveTabWindowsTimer = null;
+function saveTabWindows() {
+  clearTimeout(saveTabWindowsTimer);
+  saveTabWindowsTimer = setTimeout(() => {
+    const list = [...tabWindows].filter(([, w]) => !w.isDestroyed()).map(([wid, w]) => ({ wid, bounds: w.getBounds() }));
+    try { fs.writeFileSync(tabWindowsPath(), JSON.stringify(list)); } catch { /* best effort */ }
+  }, 300);
+}
+
+function createTabWindow({ wid, hash, at, bounds }) {
+  if (!/^[\w-]{1,64}$/.test(String(wid || ''))) return null;
+  const { screen } = require('electron');
+  const size = { width: bounds?.width || 1100, height: bounds?.height || 760 };
+  let pos = bounds && Number.isFinite(bounds.x) ? { x: bounds.x, y: bounds.y } : null;
+  if (!pos && at && Number.isFinite(at.x)) pos = { x: Math.round(at.x - 120), y: Math.round(at.y - 20) };
+  // Keep the window on a display that exists (a monitor may be gone since).
+  if (pos) {
+    const area = screen.getDisplayMatching({ ...pos, ...size }).workArea;
+    pos = {
+      x: Math.min(Math.max(pos.x, area.x), area.x + area.width - 200),
+      y: Math.min(Math.max(pos.y, area.y), area.y + area.height - 120),
+    };
+  }
+  const win = new BrowserWindow({ ...windowChrome(), ...size, ...(pos || {}), minWidth: 560, minHeight: 400 });
+  decorateWindow(win);
+  tabWindows.set(wid, win);
+  win.loadURL(`${SERVER_URL}/#${hash || new URLSearchParams({ tabwin: 'restore', wid }).toString()}`);
+  win.once('ready-to-show', () => win.show());
+  win.on('moved', saveTabWindows);
+  win.on('resized', saveTabWindows);
+  // Closing a tab window discards its tab; quitting the app keeps it for next launch.
+  win.on('closed', () => {
+    tabWindows.delete(wid);
+    if (!app.isQuitting) saveTabWindows();
+  });
+  saveTabWindows();
+  return win;
+}
+
+function restoreTabWindows() {
+  for (const { wid, bounds } of readTabWindows()) {
+    if (!tabWindows.has(wid)) createTabWindow({ wid, bounds });
+  }
+}
+
+ipcMain.on('tabwin:open', (event, payload = {}) => {
+  if (!isOurPage(event)) return;
+  const hash = String(payload.hash || '');
+  if (!/^tabwin=/.test(hash) || hash.length > 8192) return;
+  const at = payload.at && Number.isFinite(payload.at.x) && Number.isFinite(payload.at.y) ? payload.at : null;
+  createTabWindow({ wid: payload.wid, hash, at });
+});
+
+// Window → Cascade Windows: stack every app window over the screen you're on.
+function cascadeWindows() {
+  const { screen } = require('electron');
+  const wins = BrowserWindow.getAllWindows().filter((w) => !w.isDestroyed() && w.isVisible() && !w.isFullScreen());
+  if (!wins.length) return;
+  const focused = BrowserWindow.getFocusedWindow() || wins[0];
+  const area = screen.getDisplayMatching(focused.getBounds()).workArea;
+  const ordered = [mainWindow, ...wins.filter((w) => w !== mainWindow)].filter((w) => w && wins.includes(w));
+  const step = 32;
+  const width = Math.min(1200, area.width - step * (ordered.length - 1) - 40);
+  const height = Math.min(820, area.height - step * (ordered.length - 1) - 40);
+  ordered.forEach((w, i) => {
+    if (w.isMaximized()) w.unmaximize();
+    w.setBounds({ x: area.x + 20 + i * step, y: area.y + 20 + i * step, width: Math.max(560, width), height: Math.max(400, height) });
+    w.focus();
   });
 }
 
@@ -238,6 +346,7 @@ async function boot() {
   if (await pingServer()) {
     if (await serverAcceptsToken()) {
       if (mainWindow) mainWindow.loadURL(SERVER_URL);
+      restoreTabWindows();
       return;
     }
     dialog.showErrorBox('k8sight',
@@ -253,6 +362,7 @@ async function boot() {
 
   if (ready && await serverAcceptsToken()) {
     mainWindow.loadURL(SERVER_URL);
+    restoreTabWindows();
   } else {
     dialog.showErrorBox(
       'k8sight',
@@ -287,6 +397,7 @@ if (!gotLock) {
 
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) boot();
+      else if (!mainWindow) { createWindow(); mainWindow.loadURL(SERVER_URL); }
     });
   });
 }
@@ -337,10 +448,16 @@ ipcMain.on('window:close', (event) => {
 });
 
 ipcMain.on('api:token', (event) => {
-  const url = event.senderFrame?.url || '';
-  const ours = mainWindow && event.sender === mainWindow.webContents && url.startsWith(`${SERVER_URL}/`);
-  event.returnValue = ours ? API_TOKEN : null;
+  event.returnValue = isOurPage(event) ? API_TOKEN : null;
 });
+
+// A request from one of our own windows (main or tab window) showing our page.
+function isOurPage(event) {
+  const url = event.senderFrame?.url || '';
+  const ours = (mainWindow && event.sender === mainWindow.webContents)
+    || [...tabWindows.values()].some((w) => !w.isDestroyed() && event.sender === w.webContents);
+  return !!ours && url.startsWith(`${SERVER_URL}/`);
+}
 
 ipcMain.handle('updater:get', () => ({ autoCheck: autoCheckEnabled(), supported: canAutoUpdate() }));
 ipcMain.handle('updater:set', (_e, on) => {
@@ -472,6 +589,8 @@ function buildMenu() {
       submenu: [
         { role: 'minimize' },
         { role: 'zoom' },
+        { label: 'Cascade Windows', click: () => cascadeWindows() },
+        { type: 'separator' },
         // Instead of role 'close': let the page close a split-screen tab or
         // group first (see preload onCloseRequest); it sends 'window:close'
         // back when there's nothing left to close but the window.

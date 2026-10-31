@@ -5,7 +5,9 @@ import { getAiConfig, isExternalAgent, aiToolName, aiToolIcon } from '../aiConfi
 // Native-style global top toolbar. Spans the full window width, doubles as the
 // window drag region (macOS traffic lights sit at its left), and holds
 // back/forward history plus the right-side AI launcher and notifications.
-export default function TopBar({ onBack, onForward, canBack, canForward, onNotifications, onConfigureAi, onRefresh, refreshing }) {
+// In a tab window (`compact`) it shows the tab's title in the middle and
+// `actions` (Demote as Tab) instead of the AI launcher and notifications.
+export default function TopBar({ onBack, onForward, canBack, canForward, onNotifications, onConfigureAi, onRefresh, refreshing, compact = false, title = null, actions = null }) {
   const [cfg, setCfg] = useState(getAiConfig);
   useEffect(() => {
     const onChange = () => setCfg(getAiConfig());
@@ -32,8 +34,10 @@ export default function TopBar({ onBack, onForward, canBack, canForward, onNotif
         <button className="topbar-btn" disabled={!canBack} onClick={onBack} title="Back" aria-label="Back"><Icon name="arrowLeft" size={17} /></button>
         <button className="topbar-btn" disabled={!canForward} onClick={onForward} title="Forward" aria-label="Forward"><Icon name="arrowRight" size={17} /></button>
       </div>
-      <div className="topbar-spacer" />
+      <div className="topbar-spacer">{title}</div>
       <div className="topbar-actions">
+        {actions}
+        {!compact && (<>
         <div className="topbar-ai" title={aiTitle}>
           <button className="topbar-ai-main" onClick={launchAi} aria-label={aiTitle}>
             <Icon name={aiToolIcon(cfg)} size={15} /> <span>{aiLabel}</span>
@@ -45,6 +49,7 @@ export default function TopBar({ onBack, onForward, canBack, canForward, onNotif
         <button className="topbar-btn" onClick={onNotifications} title="Events &amp; alerts" aria-label="Notifications">
           <Icon name="bell" size={17} />
         </button>
+        </>)}
         {onRefresh && (
           <button
             className={`topbar-btn ${refreshing ? 'spinning' : ''}`}
