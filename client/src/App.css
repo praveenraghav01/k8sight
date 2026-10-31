@@ -4407,3 +4407,203 @@ button.sec-tr.row.sel { background: var(--accent-tint); }
   cursor: pointer;
 }
 .prod-marked-list { display: flex; flex-wrap: wrap; gap: 6px; }
+
+/* ── Split screen: groups of tabs side by side ───────────────────
+   One grid: a column per group with a 5px divider column between them,
+   tab strips in row 1, bodies in row 2. Every tab pane is a direct grid
+   child placed in its group's column, so moving a tab between groups
+   never remounts it. */
+.ws {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden;
+}
+.ws-strip {
+  display: flex;
+  align-items: stretch;
+  min-width: 0;
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--border);
+  position: relative;
+}
+.ws-tabs {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.ws-tabs::-webkit-scrollbar { display: none; }
+.ws-tab {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  flex-shrink: 0;
+  max-width: 240px;
+  padding: 0 6px 0 12px;
+  height: 34px;
+  border-right: 1px solid var(--border-subtle);
+  color: var(--text-muted);
+  font-size: 12.5px;
+  cursor: pointer;
+  user-select: none;
+  transition: color var(--dur-fast), background var(--dur-fast);
+}
+.ws-tab:hover { color: var(--text); background: var(--bg-hover); }
+.ws-tab.active { color: var(--text); background: var(--bg-base); }
+/* The selected tab of the focused group carries the accent; in other
+   groups it stays neutral so it's clear where the keyboard is. */
+.ws-tab.active::after {
+  content: "";
+  position: absolute;
+  left: 0; right: 0; top: 0;
+  height: 2px;
+  background: var(--accent);
+}
+.ws:has(.ws-divider) .ws-strip:not(.focused) .ws-tab.active::after { background: var(--border-strong); }
+.ws-tab:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.ws-tab-icon { flex-shrink: 0; opacity: 0.85; }
+.ws-tab-label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ws-tab-scope {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 90px;
+}
+.ws-tab-close {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border: none;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  opacity: 0;
+  flex-shrink: 0;
+}
+.ws-tab:hover .ws-tab-close,
+.ws-tab.active .ws-tab-close,
+.ws-tab-close:focus-visible { opacity: 0.6; }
+.ws-tab-close:hover { opacity: 1; background: var(--bg-elevated); color: var(--red); }
+/* Drop indicator while a tab is dragged over a strip. */
+.ws-tab.drop-before::before,
+.ws-tab.drop-after::before {
+  content: "";
+  position: absolute;
+  top: 6px; bottom: 6px;
+  width: 2px;
+  border-radius: 1px;
+  background: var(--accent);
+}
+.ws-tab.drop-before::before { left: -1px; }
+.ws-tab.drop-after::before { right: -1px; }
+.ws-strip-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 6px;
+  flex-shrink: 0;
+}
+.ws-strip-btn {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border: none;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: color var(--dur-fast), background var(--dur-fast);
+}
+.ws-strip-btn:hover:not(:disabled) { color: var(--text); background: var(--bg-hover); }
+.ws-strip-btn:disabled { opacity: 0.35; cursor: default; }
+.ws-strip-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+.ws-body {
+  min-width: 0;
+  min-height: 0;
+  background: var(--bg-base);
+}
+.ws-pane {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+.ws-pane[hidden] { display: none; }
+.ws-pane > .cached-view-slot {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+.ws-pane > .cached-view-slot[hidden] { display: none; }
+
+.ws-empty {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  color: var(--text-muted);
+  font-size: 13px;
+  text-align: center;
+  padding: 24px;
+}
+.ws-empty .icon { opacity: 0.6; }
+
+.ws-divider {
+  position: relative;
+  cursor: col-resize;
+  background: var(--border);
+  touch-action: none;
+  z-index: 6;
+}
+.ws-divider::after { /* wider grab area than the visible line */
+  content: "";
+  position: absolute;
+  top: 0; bottom: 0;
+  left: -4px; right: -4px;
+}
+.ws-divider:hover, body.ws-resizing .ws-divider { background: var(--accent); }
+body.ws-resizing { cursor: col-resize; user-select: none; }
+body.ws-resizing .ws-pane { pointer-events: none; }
+
+/* Drop zones sit over each group's body, only while a tab is dragged
+   (so terminals and editors underneath can't swallow the drag). */
+.ws-drop {
+  z-index: 5;
+  pointer-events: none;
+  position: relative;
+}
+body.ws-dragging .ws-drop { pointer-events: auto; }
+.ws-drop-hint {
+  position: absolute;
+  top: 0; bottom: 0;
+  border-radius: var(--radius-sm);
+  background: var(--accent-tint-strong);
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+  opacity: 0;
+  transition: opacity var(--dur-fast), left var(--dur-fast), right var(--dur-fast);
+  pointer-events: none;
+}
+.ws-drop.zone-center .ws-drop-hint { left: 4px; right: 4px; opacity: 1; }
+.ws-drop.zone-left .ws-drop-hint { left: 4px; right: 50%; opacity: 1; }
+.ws-drop.zone-right .ws-drop-hint { left: 50%; right: 4px; opacity: 1; }
+@media (prefers-reduced-motion: reduce) {
+  .ws-drop-hint, .ws-tab, .ws-strip-btn { transition: none; }
+}
